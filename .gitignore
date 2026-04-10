@@ -1,0 +1,4 @@
+# Ignore everything in agent-memory
+agent-memory/*
+# Except for the .keep file
+!agent-memory/.keep
