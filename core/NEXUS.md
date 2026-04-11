@@ -125,6 +125,17 @@ BLOCKED: [Phase N] — [reason] | Retries: [X/3]
 CONTEXT_HANDOFF_REQUIRED: [phase] — context at [X]%
 ```
 
+## Local Model Delegation (Task-Based Routing)
+
+NEXUS integrates native support for routing discrete micro-tasks to local LLMs via the Compute Plane (`ollama-delegate.sh`). This enables multi-agent pipelines to decouple structured execution steps away from Cloud APIs to strictly hardware-bound local nodes, maximizing latency efficiency.
+
+**Model Delegation Guidelines (Baseline: 4GB VRAM GPU):**
+- **[Supervisor Band] 0.5B – 1.5B (`qwen2.5-coder`):** Trivial pipeline checks, structured JSON generation, and `.md` boilerplate mapping. Expect >120 t/s.
+- **[Logic Band] 2B – 3B (`llama3.2`):** Primary agent tasks involving Python/JS logic and dense context refactors. Highest structural density scale before hitting the 4GB memory ceiling. Expect ~75 t/s.
+- **[Heavy Band] 7B+:** Total system architecture generation. DO NOT delegate blocking workflow tasks here dynamically on mobile hardware (spills to shared RAM causing <15 t/s drag). Reserve for machines with strictly >12GB dedicated VRAM.
+
+**Orchestrator Responsibility:** When structuring multi-step agent pipelines, consciously evaluate whether a generation step necessarily strictly requires Cloud cognition (Claude/Gemini) or if it can be securely routed iteratively to the Local Node using the defined complexity bands.
+
 ---
 
 ## Shell Environment

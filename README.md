@@ -35,12 +35,17 @@ graph TD
     R -->|Summaries/Basic UI| T2[Tier 2 Fast Cloud<br/><br/>Gemini Flash]:::agentT2
     T2 -->|Spawn Specialist| S2((Persona<br/>e.g. build-agent))
 
-    %% Tier 3
-    R -->|Linting/Simple Scripts| T3[Tier 3 Local Setup<br/><br/>Ollama / Llama 3]:::agentT3
-    T3 -->|Execute locally| S3((Tool<br/>e.g. ollama-delegate.sh))
-
+    %% Tier 3 (Local Edge Inference)
+    R -->|Complexity Triage| T3[Local LLM Compute Plane<br/>Ollama]:::agentT3
+    T3 -->|Trivial Formatting| T3_1[1.5B Scale<br/>e.g. qwen2.5-coder:1.5b]
+    T3 -->|Logic & Refactors| T3_3[3.0B Scale<br/>e.g. llama3.2:3b]
+    T3 -->|Heavy Architecture| T3_7[7.0B+ Scale<br/>e.g. qwen2.5:7b]
+    
     %% NEW: Conditional LLM Routing
-    S3 --> LLM_Check{Has .env <br/>Override?}
+    T3_1 --> LLM_Check{Has .env <br/>Override?}
+    T3_3 --> LLM_Check
+    T3_7 --> LLM_Check
+    
     LLM_Check -->|Yes| NetLLM((Network URL<br/>Compute Plane))
     LLM_Check -->|No| LocLLM((localhost:11434<br/>Compute Plane))
     
@@ -60,6 +65,14 @@ NEXUS decouples your orchestration logic (Control Plane) from your local inferen
 2. **Dedicated LLM Setup**: If you want to use a dedicated LLM server on your network:
    - Copy `.env.example` to `.env` in the root directory.
    - Update `OLLAMA_HOST_URL` inside `.env` to match your network machine's IP (e.g. `http://192.168.1.100:11434`).
+
+### Hardware Benchmarks & Model Delegation
+Current internal tracking evaluates local constraints against a **4GB VRAM limit (RTX 3050 Mobile)**. Based on strict hardware caps:
+- **0.5B - 1.5B (`qwen2.5-coder`)**: Runs blazing fast (>120 t/s). Route generic formatting and JSON abstractions here.
+- **2B - 3B (`llama3.2:3b`)**: The optimal laptop threshold (~75 t/s). Route complex code generation here. No memory spillover.
+- **4B - 7B+ (`qwen2.5:7b`)**: Drops rapidly (<15 t/s). VRAM spills into shared RAM. Avoid dynamic laptop execution.
+
+**Future Hardware Hypothesis**: When moving to systems with **12GB-16GB VRAM** (e.g., RTX 4070/4080 desktop variants), the 7B–9B logic band acts natively natively inside memory without latency tax. At that hardware cap, the toolkit can be completely detached from Cloud dependence (Gemini/Claude) up through **Advanced Architect** tasks via specific Unsloth finetunes. 
 
 ## Structure
 - `core/`: Core instructions (`NEXUS.md` replacing `GEMINI.md`).
