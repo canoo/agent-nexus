@@ -2,3 +2,6 @@
 agent-memory/*
 # Except for the .keep file
 !agent-memory/.keep
+
+# Nexus environment configuration
+.env

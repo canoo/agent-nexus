@@ -23,6 +23,9 @@
 
 set -euo pipefail
 
+# Load local .env overrides if present (relative to repo root)
+[ -f "$(dirname "$0")/../../.env" ] && source "$(dirname "$0")/../../.env"
+
 TASK_TYPE="${1:-}"
 CONTEXT_FILE="${2:-}"
 OLLAMA_HOST_URL="${OLLAMA_HOST_URL:-http://localhost:11434}"
@@ -42,22 +45,22 @@ if [ ! -f "$CONTEXT_FILE" ]; then
 fi
 
 # ── Model routing table ───────────────────────────────────────────────────────
-# SINGLE-NODE MODE: All tasks → gemma4:e4b (8GB VRAM constraint).
+# SINGLE-NODE MODE: All tasks → qwen2.5-coder:1.5b / llama3.2:3b (Laptop 3050 mobile optimization).
 # To add a second node (Mac Mini, second GPU), pattern:
 #   Add OLLAMA_HOST_URL_NODE2 env var, then route specific task types
 #   to NODE2 by swapping OLLAMA_HOST_URL before the curl call.
 #
 # Future routing example (do not enable until second node is available):
 #   logic-refactor → NODE2 with a larger model (e.g., qwen2.5-coder:32b)
-#   commit-msg     → NODE1 gemma4:e4b  (fast, small context)
+#   commit-msg     → NODE1 qwen2.5-coder:1.5b  (fast, small context)
 
 get_model() {
   case "$TASK_TYPE" in
-    commit-msg)      echo "gemma4:e4b" ;;
-    boilerplate)     echo "gemma4:e4b" ;;
-    test-scaffold)   echo "gemma4:e4b" ;;
-    lint-fix)        echo "gemma4:e4b" ;;
-    logic-refactor)  echo "gemma4:e4b" ;;
+    commit-msg)      echo "qwen2.5-coder:1.5b" ;;
+    boilerplate)     echo "qwen2.5-coder:1.5b" ;;
+    test-scaffold)   echo "qwen2.5-coder:1.5b" ;;
+    lint-fix)        echo "llama3.2:3b" ;;
+    logic-refactor)  echo "llama3.2:3b" ;;
     *)
       echo "ERROR: Unknown task type: $TASK_TYPE" >&2
       echo "Valid types: commit-msg, boilerplate, test-scaffold, lint-fix, logic-refactor" >&2

@@ -39,12 +39,27 @@ graph TD
     R -->|Linting/Simple Scripts| T3[Tier 3 Local Setup<br/><br/>Ollama / Llama 3]:::agentT3
     T3 -->|Execute locally| S3((Tool<br/>e.g. ollama-delegate.sh))
 
+    %% NEW: Conditional LLM Routing
+    S3 --> LLM_Check{Has .env <br/>Override?}
+    LLM_Check -->|Yes| NetLLM((Network URL<br/>Compute Plane))
+    LLM_Check -->|No| LocLLM((localhost:11434<br/>Compute Plane))
+    
     %% Result cycle
     S1 --> Final[Task Complete]
     S2 --> Final
-    S3 --> Final
+    NetLLM --> Final
+    LocLLM --> Final
     Final --> M
 ```
+
+## 🔌 Local LLM Configuration (Compute Plane)
+
+NEXUS decouples your orchestration logic (Control Plane) from your local inference execution (Compute Plane). This allows you to run orchestrators lightly on a laptop while routing raw compute tasks to a dedicated GPU machine.
+
+1. **Zero-Config Default**: By default, the toolkit routes all local micro-tasks directly to `http://localhost:11434`.
+2. **Dedicated LLM Setup**: If you want to use a dedicated LLM server on your network:
+   - Copy `.env.example` to `.env` in the root directory.
+   - Update `OLLAMA_HOST_URL` inside `.env` to match your network machine's IP (e.g. `http://192.168.1.100:11434`).
 
 ## Structure
 - `core/`: Core instructions (`NEXUS.md` replacing `GEMINI.md`).

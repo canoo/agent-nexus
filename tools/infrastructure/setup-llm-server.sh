@@ -27,7 +27,8 @@ fi
 
 # 5. Pull default NEXUS routing models required by ollama-delegate.sh
 echo "Pre-pulling models required by NEXUS (this may take a while)..."
-ollama pull gemma4:e4b
+ollama pull qwen2.5-coder:1.5b
+ollama pull llama3.2:3b
 
 echo "Ollama Server is now running and listening on the network!"
 echo "Find this machine's IP address by running: ip addr"
