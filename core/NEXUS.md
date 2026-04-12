@@ -1,7 +1,7 @@
 # Antigravity — Global Configuration (NEXUS Framework)
 
 This file provides global orchestration guidance for the NEXUS framework.
-It is symlinked from `~/.gemini/GEMINI.md`.
+Loaded by Gemini CLI, Claude Code, and Kiro CLI via `setup-nexus.sh`.
 
 ---
 

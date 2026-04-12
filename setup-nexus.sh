@@ -24,6 +24,30 @@ fi
 ln -s "$NEXUS_REPO/core/NEXUS.md" "$GEMINI_DIR/GEMINI.md"
 echo "Symlinked Core NEXUS.md -> ~/.gemini/GEMINI.md"
 
+# Link Claude Code logic
+CLAUDE_DIR="$HOME/.claude"
+mkdir -p "$CLAUDE_DIR"
+if [ -e "$CLAUDE_DIR/CLAUDE.md" ] && [ ! -L "$CLAUDE_DIR/CLAUDE.md" ]; then
+    echo "Backing up existing CLAUDE.md to CLAUDE.md.bak"
+    mv "$CLAUDE_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md.bak"
+elif [ -L "$CLAUDE_DIR/CLAUDE.md" ]; then
+    rm "$CLAUDE_DIR/CLAUDE.md"
+fi
+ln -s "$NEXUS_REPO/core/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
+echo "Symlinked Core CLAUDE.md -> ~/.claude/CLAUDE.md"
+
+# Link Kiro CLI logic
+KIRO_STEERING_DIR="$HOME/.kiro/steering"
+mkdir -p "$KIRO_STEERING_DIR"
+if [ -e "$KIRO_STEERING_DIR/nexus-orchestrator.md" ] && [ ! -L "$KIRO_STEERING_DIR/nexus-orchestrator.md" ]; then
+    echo "Backing up existing nexus-orchestrator.md to nexus-orchestrator.md.bak"
+    mv "$KIRO_STEERING_DIR/nexus-orchestrator.md" "$KIRO_STEERING_DIR/nexus-orchestrator.md.bak"
+elif [ -L "$KIRO_STEERING_DIR/nexus-orchestrator.md" ]; then
+    rm "$KIRO_STEERING_DIR/nexus-orchestrator.md"
+fi
+ln -s "$NEXUS_REPO/core/kiro-nexus-steering.md" "$KIRO_STEERING_DIR/nexus-orchestrator.md"
+echo "Symlinked kiro-nexus-steering.md -> ~/.kiro/steering/nexus-orchestrator.md"
+
 # Link directories to ~/.config/nexus
 for dir in personas tools prompts mcp-configs agent-memory; do
     if [ -L "$CONFIG_NEXUS_DIR/$dir" ]; then
