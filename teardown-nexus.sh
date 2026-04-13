@@ -4,54 +4,52 @@ set -e
 echo "Initiating NEXUS Framework Teardown..."
 
 GEMINI_DIR="$HOME/.gemini"
+CLAUDE_DIR="$HOME/.claude"
+KIRO_STEERING_DIR="$HOME/.kiro/steering"
 CONFIG_NEXUS_DIR="$HOME/.config/nexus"
 
-# 1. Restore the core GEMINI.md file
-if [ -L "$GEMINI_DIR/GEMINI.md" ]; then
-    rm "$GEMINI_DIR/GEMINI.md"
-    echo "Severed symlink: $GEMINI_DIR/GEMINI.md"
-fi
+# Helper: remove a symlink and restore its backup if one exists.
+# Usage: safe_unlink <target>
+safe_unlink() {
+    local target="$1"
 
-if [ -e "$GEMINI_DIR/GEMINI.md.bak" ]; then
-    mv "$GEMINI_DIR/GEMINI.md.bak" "$GEMINI_DIR/GEMINI.md"
-    echo "Restored original GEMINI.md from backup."
-fi
-
-# 2. Restore Claude Code CLAUDE.md
-CLAUDE_DIR="$HOME/.claude"
-if [ -L "$CLAUDE_DIR/CLAUDE.md" ]; then
-    rm "$CLAUDE_DIR/CLAUDE.md"
-    echo "Severed symlink: $CLAUDE_DIR/CLAUDE.md"
-fi
-if [ -e "$CLAUDE_DIR/CLAUDE.md.bak" ]; then
-    mv "$CLAUDE_DIR/CLAUDE.md.bak" "$CLAUDE_DIR/CLAUDE.md"
-    echo "Restored original CLAUDE.md from backup."
-fi
-
-# 3. Restore Kiro CLI nexus-orchestrator.md
-KIRO_STEERING_DIR="$HOME/.kiro/steering"
-if [ -L "$KIRO_STEERING_DIR/nexus-orchestrator.md" ]; then
-    rm "$KIRO_STEERING_DIR/nexus-orchestrator.md"
-    echo "Severed symlink: $KIRO_STEERING_DIR/nexus-orchestrator.md"
-fi
-if [ -e "$KIRO_STEERING_DIR/nexus-orchestrator.md.bak" ]; then
-    mv "$KIRO_STEERING_DIR/nexus-orchestrator.md.bak" "$KIRO_STEERING_DIR/nexus-orchestrator.md"
-    echo "Restored original nexus-orchestrator.md from backup."
-fi
-
-# 4. Restore the configuration directories
-for dir in personas tools prompts mcp-configs agent-memory; do
-    TARGET="$CONFIG_NEXUS_DIR/$dir"
-
-    if [ -L "$TARGET" ]; then
-        rm "$TARGET"
-        echo "Severed symlink: $TARGET"
+    if [ -L "$target" ]; then
+        rm "$target"
+        echo "  Removed symlink: $target"
+    elif [ -e "$target" ]; then
+        echo "  Skipped (not a symlink): $target"
+        return 0
+    else
+        echo "  Skipped (does not exist): $target"
     fi
 
-    if [ -e "${TARGET}.bak" ]; then
-        mv "${TARGET}.bak" "$TARGET"
-        echo "Restored original $dir from backup."
+    if [ -e "${target}.bak" ]; then
+        mv "${target}.bak" "$target"
+        echo "  Restored backup: ${target}.bak -> $target"
+    fi
+}
+
+echo ""
+echo "Unlinking core files..."
+safe_unlink "$GEMINI_DIR/GEMINI.md"
+safe_unlink "$CLAUDE_DIR/CLAUDE.md"
+safe_unlink "$KIRO_STEERING_DIR/nexus-orchestrator.md"
+
+echo ""
+echo "Unlinking config directories..."
+for dir in personas tools prompts mcp-configs agent-memory; do
+    safe_unlink "$CONFIG_NEXUS_DIR/$dir"
+done
+
+# Clean up empty directories that setup created.
+echo ""
+echo "Cleaning up empty directories..."
+for d in "$CONFIG_NEXUS_DIR" "$KIRO_STEERING_DIR" "$HOME/.kiro"; do
+    if [ -d "$d" ] && [ -z "$(ls -A "$d")" ]; then
+        rmdir "$d"
+        echo "  Removed empty directory: $d"
     fi
 done
 
-echo "Teardown complete! The system has been cleanly restored to its pre-NEXUS state."
+echo ""
+echo "Teardown complete. System restored to pre-NEXUS state."
