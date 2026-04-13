@@ -1,63 +1,101 @@
 #!/usr/bin/env bash
 set -e
 
-echo "Setting up NEXUS Framework..."
+# Derive repo root from this script's location, not a hardcoded path.
+NEXUS_REPO="$(cd "$(dirname "$0")" && pwd)"
 
-# Define paths
-NEXUS_REPO="$HOME/repos/agent-nexus"
-GEMINI_DIR="$HOME/.gemini"
-CONFIG_NEXUS_DIR="$HOME/.config/nexus"
+echo "Setting up NEXUS Framework from: $NEXUS_REPO"
 
-# Ensure target directories exist
-mkdir -p "$GEMINI_DIR"
-mkdir -p "$CONFIG_NEXUS_DIR"
-
-# Backup existing GEMINI.md if it's not our symlink
-if [ -e "$GEMINI_DIR/GEMINI.md" ] && [ ! -L "$GEMINI_DIR/GEMINI.md" ]; then
-    echo "Backing up existing GEMINI.md to GEMINI.md.bak"
-    mv "$GEMINI_DIR/GEMINI.md" "$GEMINI_DIR/GEMINI.md.bak"
-elif [ -L "$GEMINI_DIR/GEMINI.md" ]; then
-    rm "$GEMINI_DIR/GEMINI.md"
-fi
-
-# Link core NEXUS logic
-ln -s "$NEXUS_REPO/core/NEXUS.md" "$GEMINI_DIR/GEMINI.md"
-echo "Symlinked Core NEXUS.md -> ~/.gemini/GEMINI.md"
-
-# Link Claude Code logic
-CLAUDE_DIR="$HOME/.claude"
-mkdir -p "$CLAUDE_DIR"
-if [ -e "$CLAUDE_DIR/CLAUDE.md" ] && [ ! -L "$CLAUDE_DIR/CLAUDE.md" ]; then
-    echo "Backing up existing CLAUDE.md to CLAUDE.md.bak"
-    mv "$CLAUDE_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md.bak"
-elif [ -L "$CLAUDE_DIR/CLAUDE.md" ]; then
-    rm "$CLAUDE_DIR/CLAUDE.md"
-fi
-ln -s "$NEXUS_REPO/core/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
-echo "Symlinked Core CLAUDE.md -> ~/.claude/CLAUDE.md"
-
-# Link Kiro CLI logic
-KIRO_STEERING_DIR="$HOME/.kiro/steering"
-mkdir -p "$KIRO_STEERING_DIR"
-if [ -e "$KIRO_STEERING_DIR/nexus-orchestrator.md" ] && [ ! -L "$KIRO_STEERING_DIR/nexus-orchestrator.md" ]; then
-    echo "Backing up existing nexus-orchestrator.md to nexus-orchestrator.md.bak"
-    mv "$KIRO_STEERING_DIR/nexus-orchestrator.md" "$KIRO_STEERING_DIR/nexus-orchestrator.md.bak"
-elif [ -L "$KIRO_STEERING_DIR/nexus-orchestrator.md" ]; then
-    rm "$KIRO_STEERING_DIR/nexus-orchestrator.md"
-fi
-ln -s "$NEXUS_REPO/core/kiro-nexus-steering.md" "$KIRO_STEERING_DIR/nexus-orchestrator.md"
-echo "Symlinked kiro-nexus-steering.md -> ~/.kiro/steering/nexus-orchestrator.md"
-
-# Link directories to ~/.config/nexus
-for dir in personas tools prompts mcp-configs agent-memory; do
-    if [ -L "$CONFIG_NEXUS_DIR/$dir" ]; then
-        rm "$CONFIG_NEXUS_DIR/$dir"
-    elif [ -e "$CONFIG_NEXUS_DIR/$dir" ]; then
-        echo "Backing up existing $CONFIG_NEXUS_DIR/$dir"
-        mv "$CONFIG_NEXUS_DIR/$dir" "$CONFIG_NEXUS_DIR/${dir}.bak"
+# Validate that the repo looks correct before touching anything.
+for required in core/NEXUS.md core/CLAUDE.md core/kiro-nexus-steering.md personas tools prompts mcp-configs agent-memory; do
+    if [ ! -e "$NEXUS_REPO/$required" ]; then
+        echo "ERROR: Missing required path: $NEXUS_REPO/$required"
+        echo "Is this a complete agent-nexus clone? Aborting."
+        exit 1
     fi
-    ln -s "$NEXUS_REPO/$dir" "$CONFIG_NEXUS_DIR/$dir"
-    echo "Symlinked $dir -> $CONFIG_NEXUS_DIR/$dir"
 done
 
-echo "NEXUS setup complete! Local directories are now managed from ~/repos/agent-nexus."
+# Define targets
+GEMINI_DIR="$HOME/.gemini"
+CLAUDE_DIR="$HOME/.claude"
+KIRO_STEERING_DIR="$HOME/.kiro/steering"
+CONFIG_NEXUS_DIR="$HOME/.config/nexus"
+
+# Helper: create a symlink with backup logic.
+# Usage: safe_link <source> <target>
+safe_link() {
+    local source="$1"
+    local target="$2"
+    local target_dir
+    target_dir="$(dirname "$target")"
+
+    mkdir -p "$target_dir"
+
+    if [ -L "$target" ]; then
+        local existing_target
+        existing_target="$(readlink "$target")"
+        if [ "$existing_target" = "$source" ]; then
+            echo "  Already linked: $target -> $source (skipped)"
+            return 0
+        fi
+        rm "$target"
+        echo "  Removed stale symlink: $target (was -> $existing_target)"
+    elif [ -e "$target" ]; then
+        mv "$target" "${target}.bak"
+        echo "  Backed up: $target -> ${target}.bak"
+    fi
+
+    ln -s "$source" "$target"
+    echo "  Linked: $target -> $source"
+}
+
+# Verify a symlink actually resolves after creation.
+verify_link() {
+    local target="$1"
+    local label="$2"
+    if [ ! -e "$target" ]; then
+        echo "ERROR: $label symlink is broken — $target does not resolve."
+        echo "This likely means the repo was moved after setup. Re-run setup-nexus.sh from the new location."
+        exit 1
+    fi
+}
+
+echo ""
+echo "Linking core files..."
+safe_link "$NEXUS_REPO/core/NEXUS.md"               "$GEMINI_DIR/GEMINI.md"
+safe_link "$NEXUS_REPO/core/CLAUDE.md"               "$CLAUDE_DIR/CLAUDE.md"
+safe_link "$NEXUS_REPO/core/kiro-nexus-steering.md"  "$KIRO_STEERING_DIR/nexus-orchestrator.md"
+
+echo ""
+echo "Linking config directories..."
+for dir in personas tools prompts mcp-configs agent-memory; do
+    safe_link "$NEXUS_REPO/$dir" "$CONFIG_NEXUS_DIR/$dir"
+done
+
+# Post-setup validation: make sure every symlink actually resolves.
+echo ""
+echo "Verifying all symlinks..."
+ERRORS=0
+for link in \
+    "$GEMINI_DIR/GEMINI.md" \
+    "$CLAUDE_DIR/CLAUDE.md" \
+    "$KIRO_STEERING_DIR/nexus-orchestrator.md" \
+    "$CONFIG_NEXUS_DIR/personas" \
+    "$CONFIG_NEXUS_DIR/tools" \
+    "$CONFIG_NEXUS_DIR/prompts" \
+    "$CONFIG_NEXUS_DIR/mcp-configs" \
+    "$CONFIG_NEXUS_DIR/agent-memory"; do
+    if [ ! -e "$link" ]; then
+        echo "  BROKEN: $link -> $(readlink "$link")"
+        ERRORS=$((ERRORS + 1))
+    else
+        echo "  OK: $link"
+    fi
+done
+
+echo ""
+if [ "$ERRORS" -gt 0 ]; then
+    echo "Setup completed with $ERRORS broken symlink(s). Check the paths above."
+    exit 1
+fi
+echo "NEXUS setup complete. All symlinks verified."
