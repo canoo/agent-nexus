@@ -5,3 +5,6 @@ agent-memory/*
 
 # Nexus environment configuration
 .env
+
+# Node dependencies
+node_modules/

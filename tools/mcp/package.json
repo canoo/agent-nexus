@@ -1,0 +1,16 @@
+{
+  "name": "@nexus/ollama-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server that delegates micro-tasks to local Ollama models",
+  "main": "server.mjs",
+  "type": "module",
+  "bin": {
+    "nexus-ollama-mcp": "./server.mjs"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}

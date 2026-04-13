@@ -136,6 +136,30 @@ NEXUS integrates native support for routing discrete micro-tasks to local LLMs v
 
 **Orchestrator Responsibility:** When structuring multi-step agent pipelines, consciously evaluate whether a generation step necessarily strictly requires Cloud cognition (Claude/Gemini) or if it can be securely routed iteratively to the Local Node using the defined complexity bands.
 
+### MCP Tools (Automatic Delegation)
+
+When the `nexus-ollama` MCP server is configured, the following tools are available.
+**Use these tools instead of cloud models** for the listed task types:
+
+| Tool | Task | Model |
+|------|------|-------|
+| `ollama_health` | Check local compute plane status | — |
+| `ollama_commit_msg` | Generate conventional commit messages from diffs | qwen2.5-coder:1.5b |
+| `ollama_boilerplate` | Generate component/route/model scaffolding | qwen2.5-coder:1.5b |
+| `ollama_test_scaffold` | Generate test file structure (no implementations) | qwen2.5-coder:1.5b |
+| `ollama_lint_fix` | Fix lint errors in a file | llama3.2:3b |
+| `ollama_logic_refactor` | Refactor code for clarity | llama3.2:3b |
+
+Before delegating, call `ollama_health` to confirm the compute plane is reachable.
+If any `ollama_*` tool returns `CIRCUIT_BREAKER`, fall back to handling the task directly — do not retry silently.
+
+### Fallback: Shell Script
+
+If MCP is not available, the same delegation can be done manually via:
+```bash
+bash ~/.config/nexus/tools/automation/ollama-delegate.sh <task-type> <context-file>
+```
+
 ---
 
 ## Shell Environment

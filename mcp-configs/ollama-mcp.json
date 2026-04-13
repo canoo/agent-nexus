@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "nexus-ollama": {
+      "command": "node",
+      "args": ["~/.config/nexus/tools/mcp/server.mjs"],
+      "env": {}
+    }
+  }
+}
