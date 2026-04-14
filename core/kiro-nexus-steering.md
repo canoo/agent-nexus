@@ -1,7 +1,8 @@
-# Antigravity — Global Configuration (NEXUS Framework)
+# NEXUS Framework — Kiro CLI
 
-This file provides global orchestration guidance for the NEXUS framework.
-Loaded by Gemini CLI, Claude Code, and Kiro CLI via `setup-nexus.sh`.
+This file provides the central orchestration logic for Kiro CLI within the
+NEXUS framework. It is self-contained because Kiro steering files cannot
+import other files.
 
 ---
 
@@ -127,14 +128,14 @@ CONTEXT_HANDOFF_REQUIRED: [phase] — context at [X]%
 
 ## Local Model Delegation (Task-Based Routing)
 
-NEXUS integrates native support for routing discrete micro-tasks to local LLMs via the Compute Plane (`ollama-delegate.sh`). This enables multi-agent pipelines to decouple structured execution steps away from Cloud APIs to strictly hardware-bound local nodes, maximizing latency efficiency.
+NEXUS integrates native support for routing discrete micro-tasks to local LLMs via the Compute Plane. This enables multi-agent pipelines to decouple structured execution steps away from Cloud APIs to strictly hardware-bound local nodes, maximizing latency efficiency.
 
 **Model Delegation Guidelines (Baseline: 4GB VRAM GPU):**
 - **[Supervisor Band] 0.5B – 1.5B (`qwen2.5-coder`):** Trivial pipeline checks, structured JSON generation, and `.md` boilerplate mapping. Expect >120 t/s.
 - **[Logic Band] 2B – 3B (`llama3.2`):** Primary agent tasks involving Python/JS logic and dense context refactors. Highest structural density scale before hitting the 4GB memory ceiling. Expect ~75 t/s.
 - **[Heavy Band] 7B+:** Total system architecture generation. DO NOT delegate blocking workflow tasks here dynamically on mobile hardware (spills to shared RAM causing <15 t/s drag). Reserve for machines with strictly >12GB dedicated VRAM.
 
-**Orchestrator Responsibility:** When structuring multi-step agent pipelines, consciously evaluate whether a generation step necessarily strictly requires Cloud cognition (Claude/Gemini) or if it can be securely routed iteratively to the Local Node using the defined complexity bands.
+**Orchestrator Responsibility:** When structuring multi-step agent pipelines, consciously evaluate whether a generation step necessarily strictly requires Cloud cognition or if it can be securely routed iteratively to the Local Node using the defined complexity bands.
 
 ### MCP Tools (Automatic Delegation)
 
@@ -159,12 +160,3 @@ If MCP is not available, the same delegation can be done manually via:
 ```bash
 bash ~/.config/nexus/tools/automation/ollama-delegate.sh <task-type> <context-file>
 ```
-
----
-
-## Shell Environment
-
-- **Default shell:** Zsh
-- **Default terminal:** Ghostty
-- All terminal commands should assume Zsh syntax.
-- When running background or long-running processes, use Zsh-compatible job control.

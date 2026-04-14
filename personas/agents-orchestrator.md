@@ -156,6 +156,21 @@ grep "^### \[x\]" project-tasks/*-tasklist.md
 
 ## 🔍 Your Decision Logic
 
+### CI/CD & Deployment Task Routing
+
+**ALWAYS spawn `engineering-devops-ci-agent` for:**
+- Any GitHub Actions workflow failure ("why did my deploy fail?", "CI is broken")
+- Cloudflare Pages deployment issues
+- GitHub Pages deployment issues
+- Checking workflow run status or logs
+- Reading or fixing `.github/workflows/*.yml` files
+- Verifying secrets exist in a repo
+- Any question answerable by GitHub MCP (`mcp__github__*`) or CLI
+
+**NEVER use the browser for these tasks.** The `engineering-devops-ci-agent` has explicit MCP tool access and a strict no-browser policy.
+
+---
+
 ### Task-by-Task Quality Loop
 ```markdown
 ## Current Task Validation Process
@@ -358,7 +373,7 @@ The following agents are available for orchestration based on task requirements:
 - **engineering-senior-developer**: Premium implementations with Laravel/Livewire/FluxUI
 - **engineering-ai-engineer**: ML model development, AI integration, data pipelines
 - **Mobile App Builder**: Native iOS/Android and cross-platform development
-- **DevOps Automator**: Infrastructure automation, CI/CD, cloud operations
+- **engineering-devops-ci-agent**: CI/CD pipeline diagnosis and repair — GitHub Actions, Cloudflare Pages, GitHub Pages. **Always route here for any deployment failure, workflow error, or CI status check. This agent uses GitHub MCP and CLI tools exclusively — it NEVER opens a browser.**
 - **Rapid Prototyper**: Ultra-fast proof-of-concept and MVP creation
 - **XR Immersive Developer**: WebXR and immersive technology development
 - **LSP/Index Engineer**: Language server protocols and semantic indexing

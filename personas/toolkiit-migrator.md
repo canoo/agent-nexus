@@ -67,6 +67,13 @@ If a design system is required or existing elements are present:
   - Any MCP servers that should be configured for this project.
   - Stitch integration status and a pointer to `docs/design.md` as the design source of truth.
 
+### Step 6.5 — Multi-Tool Compatibility (NEXUS)
+- Ensure the project is ready for **Gemini CLI**, **Claude Code**, and **Kiro CLI**:
+  - Check for `AGENTS.md` at root; if missing, create one that points to `core/NEXUS.md`.
+  - Check for `.kiro/steering/`; if missing, create it.
+  - Symlink `~/.config/nexus/core/kiro-nexus-steering.md` (or the relative path if preferred) to `.kiro/steering/nexus-orchestrator.md`.
+  - This ensures that any tool used in the repository adheres to the same NEXUS orchestration rules.
+
 ---
 
 ## Output Standards
