@@ -72,6 +72,40 @@ for dir in personas tools prompts mcp-configs agent-memory; do
     safe_link "$NEXUS_REPO/$dir" "$CONFIG_NEXUS_DIR/$dir"
 done
 
+# Configure MCP server for Kiro CLI.
+# Kiro reads MCP config from ~/.kiro/settings/mcp.json (not symlinked — it's
+# a standalone JSON file that references the server script via the symlinked path).
+KIRO_SETTINGS_DIR="$HOME/.kiro/settings"
+KIRO_MCP_FILE="$KIRO_SETTINGS_DIR/mcp.json"
+MCP_SERVER_PATH="$CONFIG_NEXUS_DIR/tools/mcp/server.mjs"
+
+echo ""
+echo "Configuring Kiro MCP..."
+mkdir -p "$KIRO_SETTINGS_DIR"
+
+if [ -f "$KIRO_MCP_FILE" ]; then
+    # Check if nexus-ollama is already configured.
+    if grep -q '"nexus-ollama"' "$KIRO_MCP_FILE" 2>/dev/null; then
+        echo "  Already configured: nexus-ollama in $KIRO_MCP_FILE (skipped)"
+    else
+        echo "  Existing $KIRO_MCP_FILE found with other servers."
+        echo "  Add the following manually to your mcpServers block:"
+        echo "    \"nexus-ollama\": { \"command\": \"node\", \"args\": [\"$MCP_SERVER_PATH\"] }"
+    fi
+else
+    cat > "$KIRO_MCP_FILE" <<MCPEOF
+{
+  "mcpServers": {
+    "nexus-ollama": {
+      "command": "node",
+      "args": ["$MCP_SERVER_PATH"]
+    }
+  }
+}
+MCPEOF
+    echo "  Created: $KIRO_MCP_FILE"
+fi
+
 # Post-setup validation: make sure every symlink actually resolves.
 echo ""
 echo "Verifying all symlinks..."

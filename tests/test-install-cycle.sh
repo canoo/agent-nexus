@@ -109,6 +109,14 @@ for dir in personas tools prompts mcp-configs agent-memory; do
     assert_link_resolves "$path"              "config/$dir"
 done
 
+# Kiro MCP config
+assert_file_exists "$FAKE_HOME/.kiro/settings/mcp.json" "kiro mcp.json"
+if grep -q '"nexus-ollama"' "$FAKE_HOME/.kiro/settings/mcp.json" 2>/dev/null; then
+    pass "kiro mcp.json contains nexus-ollama"
+else
+    fail "kiro mcp.json missing nexus-ollama entry"
+fi
+
 # ── Test 2: Idempotency ────────────────────────────────────────────
 echo ""
 echo "=== Test 2: Idempotent re-run ==="
@@ -131,6 +139,9 @@ for dir in personas tools prompts mcp-configs agent-memory; do
     assert_link_exists   "$path"              "idempotent config/$dir"
     assert_link_target   "$path" "$FAKE_REPO/$dir" "idempotent config/$dir"
 done
+
+# Kiro MCP should still be there and unchanged
+assert_file_exists "$FAKE_HOME/.kiro/settings/mcp.json" "idempotent kiro mcp.json"
 
 # ── Test 3: Backup & restore of pre-existing files ──────────────────
 echo ""
@@ -188,6 +199,9 @@ assert_not_exists "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md"    "kiro ste
 for dir in personas tools prompts mcp-configs agent-memory; do
     assert_not_exists "$FAKE_HOME/.config/nexus/$dir" "config/$dir removed"
 done
+
+# Kiro MCP config should be removed.
+assert_not_exists "$FAKE_HOME/.kiro/settings/mcp.json" "kiro mcp.json removed"
 
 # Empty dirs should be cleaned up.
 assert_not_exists "$FAKE_HOME/.config/nexus" "~/.config/nexus cleaned up"
