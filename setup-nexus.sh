@@ -83,27 +83,29 @@ echo ""
 echo "Configuring Kiro MCP..."
 mkdir -p "$KIRO_SETTINGS_DIR"
 
-if [ -f "$KIRO_MCP_FILE" ]; then
-    # Check if nexus-ollama is already configured.
-    if grep -q '"nexus-ollama"' "$KIRO_MCP_FILE" 2>/dev/null; then
-        echo "  Already configured: nexus-ollama in $KIRO_MCP_FILE (skipped)"
-    else
-        echo "  Existing $KIRO_MCP_FILE found with other servers."
-        echo "  Add the following manually to your mcpServers block:"
-        echo "    \"nexus-ollama\": { \"command\": \"node\", \"args\": [\"$MCP_SERVER_PATH\"] }"
-    fi
+if [ -f "$KIRO_MCP_FILE" ] && grep -q '"nexus-ollama"' "$KIRO_MCP_FILE" 2>/dev/null; then
+    echo "  Already configured: nexus-ollama in $KIRO_MCP_FILE (skipped)"
 else
-    cat > "$KIRO_MCP_FILE" <<MCPEOF
-{
-  "mcpServers": {
-    "nexus-ollama": {
-      "command": "node",
-      "args": ["$MCP_SERVER_PATH"]
-    }
-  }
-}
-MCPEOF
-    echo "  Created: $KIRO_MCP_FILE"
+    # Merge nexus-ollama into existing config (or create new).
+    # Uses Node since it's already a dependency for the MCP server.
+    node -e "
+      const fs = require('fs');
+      const path = '$KIRO_MCP_FILE';
+      let config = { mcpServers: {} };
+      try { config = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
+      if (!config.mcpServers) config.mcpServers = {};
+      config.mcpServers['nexus-ollama'] = {
+        command: 'node',
+        args: ['$MCP_SERVER_PATH']
+      };
+      fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+    "
+    if grep -q '"nexus-ollama"' "$KIRO_MCP_FILE" 2>/dev/null; then
+        echo "  Configured: nexus-ollama in $KIRO_MCP_FILE"
+    else
+        echo "  ERROR: Failed to configure nexus-ollama in $KIRO_MCP_FILE"
+        ERRORS=$((ERRORS + 1))
+    fi
 fi
 
 # Post-setup validation: make sure every symlink actually resolves.

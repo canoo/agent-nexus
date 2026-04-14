@@ -41,21 +41,29 @@ for dir in personas tools prompts mcp-configs agent-memory; do
     safe_unlink "$CONFIG_NEXUS_DIR/$dir"
 done
 
-# Remove Kiro MCP config if it only contains our nexus-ollama entry.
+# Remove nexus-ollama from Kiro MCP config.
 KIRO_MCP_FILE="$HOME/.kiro/settings/mcp.json"
 echo ""
 echo "Cleaning up Kiro MCP config..."
-if [ -f "$KIRO_MCP_FILE" ]; then
-    # Only remove if nexus-ollama is the sole server configured.
-    SERVER_COUNT=$(grep -c '"command"' "$KIRO_MCP_FILE" 2>/dev/null || echo "0")
-    if grep -q '"nexus-ollama"' "$KIRO_MCP_FILE" 2>/dev/null && [ "$SERVER_COUNT" -le 1 ]; then
-        rm "$KIRO_MCP_FILE"
-        echo "  Removed: $KIRO_MCP_FILE"
-    elif grep -q '"nexus-ollama"' "$KIRO_MCP_FILE" 2>/dev/null; then
-        echo "  Other MCP servers configured — remove nexus-ollama manually from $KIRO_MCP_FILE"
-    else
-        echo "  No nexus-ollama entry found (skipped)"
-    fi
+if [ -f "$KIRO_MCP_FILE" ] && grep -q '"nexus-ollama"' "$KIRO_MCP_FILE" 2>/dev/null; then
+    # Remove the nexus-ollama key, preserving other servers.
+    node -e "
+      const fs = require('fs');
+      const path = '$KIRO_MCP_FILE';
+      const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+      delete config.mcpServers['nexus-ollama'];
+      if (Object.keys(config.mcpServers).length === 0) {
+        fs.unlinkSync(path);
+        console.log('  Removed: $KIRO_MCP_FILE (no servers remaining)');
+      } else {
+        fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+        console.log('  Removed nexus-ollama from $KIRO_MCP_FILE (other servers preserved)');
+      }
+    "
+elif [ -f "$KIRO_MCP_FILE" ]; then
+    echo "  No nexus-ollama entry found (skipped)"
+else
+    echo "  No Kiro MCP config found (skipped)"
 fi
 
 # Clean up empty directories that setup created.
