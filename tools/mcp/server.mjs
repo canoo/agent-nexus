@@ -19,12 +19,25 @@ const REQUEST_TIMEOUT_MS = 120000;
 // ── Model routing table ─────────────────────────────────────────────────────
 // Matches ollama-delegate.sh: supervisor band (1.5B) for fast tasks,
 // logic band (3B) for heavier reasoning.
+//
+// Override any route via environment variables:
+//   NEXUS_SUPERVISOR_MODEL  → replaces all supervisor band routes
+//   NEXUS_LOGIC_MODEL       → replaces all logic band routes
+//   NEXUS_MODEL_<TASK>      → replaces a single task route (e.g. NEXUS_MODEL_COMMIT_MSG)
+//
+// See docs/model-configuration.md for hardware-specific presets.
+const DEFAULT_SUPERVISOR = "qwen2.5-coder:1.5b";
+const DEFAULT_LOGIC = "llama3.2:3b";
+
+const supervisorModel = process.env.NEXUS_SUPERVISOR_MODEL || DEFAULT_SUPERVISOR;
+const logicModel = process.env.NEXUS_LOGIC_MODEL || DEFAULT_LOGIC;
+
 const MODEL_ROUTES = {
-  "commit-msg": "qwen2.5-coder:1.5b",
-  boilerplate: "qwen2.5-coder:1.5b",
-  "test-scaffold": "qwen2.5-coder:1.5b",
-  "lint-fix": "llama3.2:3b",
-  "logic-refactor": "llama3.2:3b",
+  "commit-msg": process.env.NEXUS_MODEL_COMMIT_MSG || supervisorModel,
+  boilerplate: process.env.NEXUS_MODEL_BOILERPLATE || supervisorModel,
+  "test-scaffold": process.env.NEXUS_MODEL_TEST_SCAFFOLD || supervisorModel,
+  "lint-fix": process.env.NEXUS_MODEL_LINT_FIX || logicModel,
+  "logic-refactor": process.env.NEXUS_MODEL_LOGIC_REFACTOR || logicModel,
 };
 
 // ── Prompt templates ────────────────────────────────────────────────────────

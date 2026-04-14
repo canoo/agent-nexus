@@ -78,7 +78,16 @@ Current internal tracking evaluates local constraints against a **4GB VRAM limit
 - **2B - 3B (`llama3.2:3b`)**: The optimal laptop threshold (~75 t/s). Route complex code generation here. No memory spillover.
 - **4B - 7B+ (`qwen2.5:7b`)**: Drops rapidly (<15 t/s). VRAM spills into shared RAM. Avoid dynamic laptop execution.
 
-**Future Hardware Hypothesis**: When moving to systems with **12GB-16GB VRAM** (e.g., RTX 4070/4080 desktop variants), the 7B–9B logic band acts natively natively inside memory without latency tax. At that hardware cap, the toolkit can be completely detached from Cloud dependence (Gemini/Claude) up through **Advanced Architect** tasks via specific Unsloth finetunes. 
+**Better hardware?** The default models target 4GB VRAM. If you have more VRAM, you should upgrade — see **[docs/model-configuration.md](docs/model-configuration.md)** for hardware-specific presets covering RTX 3060 through RTX 5090, MacBook M3/M3 Pro/M3 Max, and multi-GPU setups.
+
+Quick override example (16GB+ VRAM):
+```bash
+# .env
+NEXUS_SUPERVISOR_MODEL="qwen2.5-coder:7b"
+NEXUS_LOGIC_MODEL="qwen2.5:14b"
+```
+
+**Future Hardware Hypothesis**: When moving to systems with **12GB-16GB VRAM** (e.g., RTX 4070/4080 desktop variants), the 7B–9B logic band acts natively inside memory without latency tax. At that hardware cap, the toolkit can be completely detached from Cloud dependence (Gemini/Claude) up through **Advanced Architect** tasks via specific Unsloth finetunes.
 
 ### MCP Server (Automatic Local Delegation)
 
@@ -127,6 +136,8 @@ Once configured, the AI will have access to tools like `ollama_commit_msg`, `oll
 - `tools/mcp/`: Ollama MCP server for local model delegation.
 - `prompts/`: Standard engineering rules and quality gates.
 - `mcp-configs/`: MCP configuration templates.
+- `docs/`: Documentation and test results.
+- `docs/model-configuration.md`: Hardware-specific model presets and override guide.
 - `agent-memory/`: Locally tracked storage structure (not synced to source control).
 
 ## Installation
