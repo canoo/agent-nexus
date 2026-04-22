@@ -2,7 +2,8 @@
 version: 2
 
 builds:
-  - main: ./tools/tui
+  - main: .
+    dir: tools/tui
     binary: nexus
     env:
       - CGO_ENABLED=0
