@@ -66,6 +66,17 @@ else
     echo "  No Kiro MCP config found (skipped)"
 fi
 
+# Remove the TUI binary.
+NEXUS_BIN="$HOME/.local/bin/nexus"
+echo ""
+echo "Removing NEXUS TUI binary..."
+if [ -f "$NEXUS_BIN" ]; then
+    rm "$NEXUS_BIN"
+    echo "  Removed: $NEXUS_BIN"
+else
+    echo "  Skipped (does not exist): $NEXUS_BIN"
+fi
+
 # Clean up empty directories that setup created.
 echo ""
 echo "Cleaning up empty directories..."

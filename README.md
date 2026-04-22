@@ -1,10 +1,15 @@
 # NEXUS Environment (Agentic Framework)
 
+![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)
+![Bubbletea](https://img.shields.io/badge/Bubbletea-v2-FF69B4?logo=go&logoColor=white)
+![Shell](https://img.shields.io/badge/Shell-Bash-4EAA25?logo=gnubash&logoColor=white)
+![Node](https://img.shields.io/badge/Node.js-MCP_Server-339933?logo=nodedotjs&logoColor=white)
+
 NEXUS (Network of EXperts, Unified in Strategy) is a central repository for defining multi-model agentic behaviors, personas, prompts, and orchestration tools.
 
 ## Architecture
 
-This repository operates by decoupling monolithic agent `.md` files into a lightweight, structural format. Once instantiated out to your local environment (via `setup-nexus.sh`), the OS hot-swaps dotfiles to point straight into this centralized workflow.
+This repository operates by decoupling monolithic agent `.md` files into a lightweight, structural format. Once instantiated out to your local environment (via `setup-nexus.sh` or the `nexus` TUI), the OS hot-swaps dotfiles to point straight into this centralized workflow.
 
 ## Developer Workflow
 
@@ -93,13 +98,6 @@ NEXUS_LOGIC_MODEL="qwen2.5:14b"
 
 The MCP server lets Claude Code, Gemini CLI, and Kiro CLI route micro-tasks to your local Ollama instance automatically — no manual script calls needed.
 
-**Prerequisites:**
-```bash
-ollama pull qwen2.5-coder:1.5b
-ollama pull llama3.2:3b
-cd tools/mcp && npm install
-```
-
 **Claude Code setup** — add to your project or global `.claude/settings.json`:
 ```json
 {
@@ -133,6 +131,7 @@ Once configured, the AI will have access to tools like `ollama_commit_msg`, `oll
 - `core/`: Core instructions (`NEXUS.md` replacing `GEMINI.md`).
 - `personas/`: Granular agent personas.
 - `tools/`: Utility scripts and MCP servers.
+- `tools/tui/`: NEXUS TUI application (Go / Bubbletea v2).
 - `tools/mcp/`: Ollama MCP server for local model delegation.
 - `prompts/`: Standard engineering rules and quality gates.
 - `mcp-configs/`: MCP configuration templates.
@@ -140,33 +139,93 @@ Once configured, the AI will have access to tools like `ollama_commit_msg`, `oll
 - `docs/model-configuration.md`: Hardware-specific model presets and override guide.
 - `agent-memory/`: Locally tracked storage structure (not synced to source control).
 
+## Prerequisites
+
+**Required:**
+- Bash
+- One or more AI CLI tools: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Kiro CLI](https://kiro.dev)
+
+**Optional (recommended):**
+- [Node.js](https://nodejs.org/) — required for the Ollama MCP server
+- [Ollama](https://ollama.com/) — enables local LLM delegation via MCP
+
+> **No Go? No problem.** The `nexus` binary is distributed as a pre-built download — no Go toolchain needed. If you prefer to build from source, you'll need [Go 1.25+](https://go.dev/dl/).
+
 ## Installation
 
-Clone the repo anywhere on your machine:
+One command:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/your-org/agent-nexus/main/install.sh | bash
+```
+
+This downloads the `nexus` binary for your platform and clones the repo to `~/.config/nexus/repo`. Then run:
+
+```bash
+nexus
+```
+
+The TUI walks you through setup interactively:
+
+```
+⚡ Install NEXUS
+
+✓ Validate repo              ~/.config/nexus/repo
+✓ Symlink core files          3 core files linked
+✓ Symlink config directories  5 directories linked
+✓ Configure MCP server        nexus-ollama configured
+✓ Check dependencies          found: node, ollama, git
+⠋ Pull Ollama models
+
+esc: back
+```
+
+Each step runs with a live spinner and reports what it did. Steps 1–4 (symlinks, MCP) are critical — if one fails, it stops and tells you why. Steps 5–6 (dependency checks, model pulls) are informational — missing Node or Ollama won't block setup, you just won't have MCP/local models until you install them.
+
+> Make sure `~/.local/bin` is in your `PATH`. If it isn't, add this to your shell profile:
+> ```bash
+> export PATH="$HOME/.local/bin:$PATH"
+> ```
+
+### Alternative: Clone and Setup
+
+If you prefer to clone manually or want to develop on the repo:
 
 ```bash
 git clone https://github.com/your-org/agent-nexus.git
 cd agent-nexus
-```
-
-Run the setup script:
-
-```bash
 bash setup-nexus.sh
 ```
 
-This will:
-1. Symlink `core/NEXUS.md` to `~/.gemini/GEMINI.md` (Gemini CLI)
-2. Symlink `core/CLAUDE.md` to `~/.claude/CLAUDE.md` (Claude Code)
-3. Symlink `core/kiro-nexus-steering.md` to `~/.kiro/steering/nexus-orchestrator.md` (Kiro CLI)
-4. Symlink `personas/`, `tools/`, `prompts/`, `mcp-configs/`, and `agent-memory/` into `~/.config/nexus/`
+The setup script does the same symlinks and MCP configuration. If Go 1.25+ is installed, it also builds the `nexus` binary to `~/.local/bin/nexus`.
 
-If any of these files already exist, the originals are backed up with a `.bak` extension before linking. The script auto-detects its own location, so it works from any clone path. Running it again is safe — it skips symlinks that are already correct.
+## NEXUS TUI
 
-After setup, all symlinks are verified. If anything is broken, the script exits with a non-zero code and tells you which link failed.
+The `nexus` command launches an interactive terminal UI for managing your NEXUS installation.
+
+```
+⚡ NEXUS Framework Manager
+   v0.1.0
+
+▸ Install NEXUS
+  Configure
+  Health Check
+  Uninstall NEXUS
+
+j/k: navigate • enter: select • q: quit
+```
+
+**Screens:**
+- **Install** — step-by-step wizard: validates repo, creates symlinks, configures MCP, checks dependencies, pulls Ollama models
+- **Configure** — edit Ollama host URL and model overrides inline, saves to `.env`
+- **Health Check** — verifies Ollama reachability and all symlink status
+- **Uninstall** — runs teardown with progress feedback
 
 ## Uninstallation
 
+From the TUI: select **Uninstall NEXUS**.
+
+Or via script:
 ```bash
 bash teardown-nexus.sh
 ```
@@ -174,7 +233,8 @@ bash teardown-nexus.sh
 This will:
 1. Remove all symlinks created by setup
 2. Restore any `.bak` backups to their original paths
-3. Clean up empty directories (`~/.config/nexus/`, `~/.kiro/`) so nothing is left behind
+3. Remove the `nexus` binary from `~/.local/bin/`
+4. Clean up empty directories (`~/.config/nexus/`, `~/.kiro/`) so nothing is left behind
 
 Files that aren't NEXUS symlinks are never touched — teardown only removes what setup created.
 
