@@ -338,6 +338,237 @@ case cmdDoneMsg:
 
 ---
 
+## Proven Patterns (from NEXUS TUI)
+
+These patterns are battle-tested in production. Use them as the starting point for new TUIs.
+
+### Step-by-Step Wizard with Live Status
+
+Run sequential async operations with per-step spinner, status icons, and error handling:
+
+```go
+type stepStatus int
+const (
+    stepPending stepStatus = iota
+    stepRunning
+    stepDone
+    stepSkipped
+    stepFailed
+)
+
+type installStep struct {
+    label  string
+    status stepStatus
+    detail string
+}
+
+type stepDoneMsg struct {
+    idx    int
+    ok     bool
+    detail string
+}
+
+// Build the step list:
+func buildSteps() []installStep {
+    return []installStep{
+        {label: "Validate config"},
+        {label: "Create symlinks"},
+        {label: "Check dependencies"},
+    }
+}
+
+// Run a step as an async command:
+func runStep(m model, idx int) tea.Cmd {
+    return func() tea.Msg {
+        switch idx {
+        case 0:
+            // ... do work ...
+            return stepDoneMsg{idx: idx, ok: true, detail: "config valid"}
+        }
+        return stepDoneMsg{idx: idx, ok: true}
+    }
+}
+
+// Advance to next step after completion:
+func advanceSteps(m *model, fromIdx int) tea.Cmd {
+    next := fromIdx + 1
+    if next < len(m.steps) {
+        m.currentStep = next
+        m.steps[next].status = stepRunning
+        return runStep(*m, next)
+    }
+    m.done = true
+    return nil
+}
+
+// Render with status icons:
+for _, step := range m.steps {
+    var icon string
+    switch step.status {
+    case stepPending: icon = "○"    // subtle
+    case stepRunning: icon = m.spinner.View()
+    case stepDone:    icon = "✓"    // green
+    case stepSkipped: icon = "–"    // yellow
+    case stepFailed:  icon = "✗"    // red
+    }
+    s += icon + " " + step.label
+    if step.detail != "" && step.status >= stepDone {
+        s += "  " + step.detail  // subtle
+    }
+    s += "\n"
+}
+```
+
+Critical steps (e.g. validation, symlinks) should halt the wizard on failure. Informational steps (dependency checks, model pulls) should continue.
+
+### Mid-Flow User Prompts
+
+Pause a wizard to ask the user a question before continuing:
+
+```go
+// In the model:
+type model struct {
+    // ...
+    promptAnswered bool
+}
+
+// In Update — after the step that triggers the prompt completes:
+case stepDoneMsg:
+    // ... mark step done ...
+    if msg.idx == 2 && !m.promptAnswered {
+        return m, nil  // stop advancing, wait for input
+    }
+    return m, advanceSteps(&m, msg.idx)
+
+// Handle the prompt input:
+case tea.KeyPressMsg:
+    if !m.promptAnswered && m.steps[2].status == stepDone {
+        switch msg.String() {
+        case "y":
+            m.promptAnswered = true
+            return m, advanceSteps(&m, 2)
+        case "n":
+            m.promptAnswered = true
+            // Skip remaining steps
+            for i := 3; i < len(m.steps); i++ {
+                m.steps[i].status = stepSkipped
+                m.steps[i].detail = "user declined"
+            }
+            m.done = true
+            return m, nil
+        }
+    }
+
+// In View — show the prompt when waiting:
+if !m.promptAnswered && m.steps[2].status == stepDone {
+    s += "\nEnable feature X?\n"
+    s += "y: yes • n: no\n"
+}
+```
+
+### Inline Config Editor with Toggle Support
+
+Mix toggleable boolean fields with editable text fields in one screen:
+
+```go
+type model struct {
+    configCursor  int
+    configEditing bool
+    configKeys    []string  // e.g. ["ENABLE_FEATURE", "HOST_URL", "MODEL"]
+    configVals    []string  // e.g. ["true", "http://localhost:8080", "gpt-4"]
+    editBuf       string
+}
+
+// In Update:
+case "enter":
+    if m.configCursor == 0 {
+        // Toggle boolean
+        if m.configVals[0] == "true" {
+            m.configVals[0] = "false"
+        } else {
+            m.configVals[0] = "true"
+        }
+    } else {
+        // Enter edit mode for text field
+        m.configEditing = true
+        m.editBuf = m.configVals[m.configCursor]
+    }
+
+// In View — render toggles vs text differently:
+if i == 0 {
+    toggle := "OFF"
+    if m.configVals[0] == "true" { toggle = "ON" }
+    line = fmt.Sprintf("%s%-28s [%s]", cursor, "Feature", toggle)
+} else {
+    val := m.configVals[i]
+    if m.configEditing && m.configCursor == i {
+        val = m.editBuf + "▏"  // cursor indicator
+    }
+    line = fmt.Sprintf("%s%-28s %s", cursor, key, val)
+}
+```
+
+### .env File Persistence
+
+Load and save config as key=value pairs:
+
+```go
+func loadEnv(m *model) {
+    data, _ := os.ReadFile(filepath.Join(m.dir, ".env"))
+    for _, line := range strings.Split(string(data), "\n") {
+        line = strings.TrimSpace(line)
+        if line == "" || strings.HasPrefix(line, "#") { continue }
+        parts := strings.SplitN(line, "=", 2)
+        if len(parts) != 2 { continue }
+        key := strings.TrimSpace(parts[0])
+        val := strings.Trim(strings.TrimSpace(parts[1]), "\"")
+        for i, k := range m.configKeys {
+            if k == key { m.configVals[i] = val }
+        }
+    }
+}
+
+func saveEnv(m model) {
+    var lines []string
+    for i, key := range m.configKeys {
+        lines = append(lines, fmt.Sprintf("%s=%q", key, m.configVals[i]))
+    }
+    os.WriteFile(filepath.Join(m.dir, ".env"), []byte(strings.Join(lines, "\n")+"\n"), 0644)
+}
+```
+
+### Smart Binary Location Detection
+
+Find the project root regardless of how the binary was installed:
+
+```go
+func findProjectDir() string {
+    if env := os.Getenv("PROJECT_DIR"); env != "" {
+        return env  // explicit override
+    }
+    exe, _ := os.Executable()
+    candidate := filepath.Dir(filepath.Dir(exe))  // adjust depth for your layout
+    if _, err := os.Stat(filepath.Join(candidate, "marker-file")); err == nil {
+        return candidate  // running from inside the repo
+    }
+    home, _ := os.UserHomeDir()
+    return filepath.Join(home, ".config", "project", "repo")  // default install location
+}
+```
+
+### Distribution Checklist
+
+When shipping a TUI as a standalone CLI:
+
+1. **GoReleaser** (`.goreleaser.yml`) — use `dir:` to point to the Go module subdirectory
+2. **Install script** — detect OS/arch, download binary from GitHub Releases, clone repo
+3. **GitHub Actions** — CI on PRs (build + vet + tests), release on tags
+4. **Version injection** — `ldflags: -X main.version={{.Version}}`
+5. **`--version` flag** — `if os.Args[1] == "--version" { fmt.Println(version) }`
+6. **`.gitignore`** — exclude compiled binary from the repo
+
+---
+
 ## Workflow
 
 ### New TUI Project
