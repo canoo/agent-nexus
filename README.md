@@ -9,7 +9,7 @@ NEXUS (Network of EXperts, Unified in Strategy) is a central repository for defi
 ## Quick Start
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/your-org/agent-nexus/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/canoo/agent-nexus/main/install.sh | bash
 nexus
 ```
 
@@ -166,7 +166,7 @@ Once configured, the AI will have access to tools like `ollama_commit_msg`, `oll
 One command:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/your-org/agent-nexus/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/canoo/agent-nexus/main/install.sh | bash
 ```
 
 This downloads the `nexus` binary for your platform and clones the repo to `~/.config/nexus/repo`. Then run:
@@ -202,7 +202,7 @@ Each step runs with a live spinner and reports what it did. Steps 1–4 (symlink
 If you prefer to clone manually or want to develop on the repo:
 
 ```bash
-git clone https://github.com/your-org/agent-nexus.git
+git clone https://github.com/canoo/agent-nexus.git
 cd agent-nexus
 bash setup-nexus.sh
 ```

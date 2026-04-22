@@ -2,9 +2,9 @@
 set -e
 
 # NEXUS installer — downloads the nexus binary and clones the repo.
-# Usage: curl -sSL https://raw.githubusercontent.com/your-org/agent-nexus/main/install.sh | bash
+# Usage: curl -sSL https://raw.githubusercontent.com/canoo/agent-nexus/main/install.sh | bash
 
-REPO="your-org/agent-nexus"
+REPO="canoo/agent-nexus"
 INSTALL_DIR="$HOME/.local/bin"
 NEXUS_DIR="$HOME/.config/nexus/repo"
 

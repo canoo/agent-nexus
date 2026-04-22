@@ -25,7 +25,7 @@ checksum:
 
 release:
   github:
-    owner: your-org
+    owner: canoo
     name: agent-nexus
   draft: false
   prerelease: auto
