@@ -1,11 +1,21 @@
 # NEXUS Environment (Agentic Framework)
 
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)
-![Bubbletea](https://img.shields.io/badge/Bubbletea-v2-FF69B4?logo=go&logoColor=white)
 ![Shell](https://img.shields.io/badge/Shell-Bash-4EAA25?logo=gnubash&logoColor=white)
 ![Node](https://img.shields.io/badge/Node.js-MCP_Server-339933?logo=nodedotjs&logoColor=white)
 
 NEXUS (Network of EXperts, Unified in Strategy) is a central repository for defining multi-model agentic behaviors, personas, prompts, and orchestration tools.
+
+## Quick Start
+
+```bash
+curl -sSL https://raw.githubusercontent.com/your-org/agent-nexus/main/install.sh | bash
+nexus
+```
+
+That's it. The first command downloads the `nexus` binary and clones the repo. The second launches the TUI to walk you through setup interactively.
+
+> Make sure `~/.local/bin` is in your `PATH`. If it isn't: `export PATH="$HOME/.local/bin:$PATH"`
 
 ## Architecture
 
