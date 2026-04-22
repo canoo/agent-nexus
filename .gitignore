@@ -8,3 +8,6 @@ agent-memory/*
 
 # Node dependencies
 node_modules/
+
+# TUI compiled binary
+tools/tui/nexus

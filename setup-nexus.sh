@@ -108,6 +108,29 @@ else
     fi
 fi
 
+# Build and install the TUI binary.
+NEXUS_BIN_DIR="$HOME/.local/bin"
+NEXUS_BIN="$NEXUS_BIN_DIR/nexus"
+TUI_SRC="$NEXUS_REPO/tools/tui"
+
+echo ""
+echo "Building NEXUS TUI..."
+if command -v go &>/dev/null; then
+    mkdir -p "$NEXUS_BIN_DIR"
+    if (cd "$TUI_SRC" && go build -o "$NEXUS_BIN" .); then
+        echo "  Installed: $NEXUS_BIN"
+        # Hint if ~/.local/bin isn't in PATH
+        if ! echo "$PATH" | tr ':' '\n' | grep -qx "$NEXUS_BIN_DIR"; then
+            echo "  NOTE: Add $NEXUS_BIN_DIR to your PATH to run 'nexus' from anywhere."
+        fi
+    else
+        echo "  WARNING: TUI build failed. You can still use the bash scripts directly."
+    fi
+else
+    echo "  SKIPPED: Go not found. Install Go 1.25+ to build the TUI."
+    echo "  You can still use setup-nexus.sh and teardown-nexus.sh directly."
+fi
+
 # Post-setup validation: make sure every symlink actually resolves.
 echo ""
 echo "Verifying all symlinks..."
@@ -135,3 +158,7 @@ if [ "$ERRORS" -gt 0 ]; then
     exit 1
 fi
 echo "NEXUS setup complete. All symlinks verified."
+if [ -x "$NEXUS_BIN" ]; then
+    echo ""
+    echo "  Run 'nexus' to manage your NEXUS installation via TUI."
+fi
