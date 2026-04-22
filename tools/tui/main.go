@@ -99,9 +99,11 @@ type model struct {
 	spinner  spinner.Model
 
 	// install wizard
-	steps       []installStep
-	currentStep int
-	installDone bool
+	steps        []installStep
+	currentStep  int
+	installDone  bool
+	localAI      bool
+	localAIAsked bool // true after user answered the prompt during install
 
 	// uninstall / generic operation
 	running bool
@@ -149,17 +151,22 @@ func initialModel() model {
 		styles:   newStyles(),
 		nexusDir: findNexusDir(),
 		spinner:  s,
+		localAI:  true, // default on
 		configKeys: []string{
+			"NEXUS_LOCAL_AI",
 			"OLLAMA_HOST_URL",
 			"NEXUS_SUPERVISOR_MODEL",
 			"NEXUS_LOGIC_MODEL",
 		},
 		configVals: []string{
+			"true",
 			"http://localhost:11434",
 			"qwen2.5-coder:1.5b",
 			"llama3.2:3b",
 		},
 	}
+	loadEnv(&m)
+	m.localAI = m.configVals[0] != "false"
 	return m
 }
 
@@ -394,15 +401,37 @@ func updateInstall(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Advance to next step
-		next := msg.idx + 1
-		if next < len(m.steps) {
-			m.currentStep = next
-			m.steps[next].status = stepRunning
-			return m, runInstallStep(m, next)
+		// After symlink dirs (step 2), pause to ask about local AI
+		if msg.idx == 2 && !m.localAIAsked {
+			return m, nil // wait for y/n input
 		}
-		m.installDone = true
-		return m, nil
+
+		return m, advanceInstall(&m, msg.idx)
+
+	case tea.KeyPressMsg:
+		// Handle the local AI prompt
+		if !m.localAIAsked && m.currentStep == 2 && m.steps[2].status == stepDone {
+			switch msg.String() {
+			case "y":
+				m.localAI = true
+				m.localAIAsked = true
+				m.configVals[0] = "true"
+				saveEnv(m)
+				return m, advanceInstall(&m, 2)
+			case "n":
+				m.localAI = false
+				m.localAIAsked = true
+				m.configVals[0] = "false"
+				saveEnv(m)
+				// Skip MCP, deps, models
+				for i := 3; i < len(m.steps); i++ {
+					m.steps[i].status = stepSkipped
+					m.steps[i].detail = "local AI disabled"
+				}
+				m.installDone = true
+				return m, nil
+			}
+		}
 
 	case spinner.TickMsg:
 		if !m.installDone {
@@ -412,6 +441,17 @@ func updateInstall(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func advanceInstall(m *model, fromIdx int) tea.Cmd {
+	next := fromIdx + 1
+	if next < len(m.steps) {
+		m.currentStep = next
+		m.steps[next].status = stepRunning
+		return runInstallStep(*m, next)
+	}
+	m.installDone = true
+	return nil
 }
 
 func installView(m model) string {
@@ -453,6 +493,9 @@ func installView(m model) string {
 		} else {
 			s += m.styles.errStyle.Render("Setup failed — check errors above.") + "\n"
 		}
+	} else if !m.localAIAsked && m.currentStep == 2 && len(m.steps) > 2 && m.steps[2].status == stepDone {
+		s += "\n" + m.styles.selected.Render("Enable local AI? (MCP server, Ollama models)") + "\n"
+		s += m.styles.subtle.Render("y: yes • n: no") + "\n"
 	}
 
 	s += "\n" + m.styles.subtle.Render("esc: back")
@@ -565,8 +608,19 @@ func updateConfigure(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				m.configCursor++
 			}
 		case "enter":
-			m.configEditing = true
-			m.editBuf = m.configVals[m.configCursor]
+			if m.configCursor == 0 {
+				// Toggle local AI
+				if m.configVals[0] == "true" {
+					m.configVals[0] = "false"
+					m.localAI = false
+				} else {
+					m.configVals[0] = "true"
+					m.localAI = true
+				}
+			} else {
+				m.configEditing = true
+				m.editBuf = m.configVals[m.configCursor]
+			}
 		case "s":
 			saveEnv(m)
 			m.output = "Saved .env"
@@ -582,11 +636,21 @@ func configureView(m model) string {
 		if m.configCursor == i {
 			cursor = "▸ "
 		}
-		val := m.configVals[i]
-		if m.configEditing && m.configCursor == i {
-			val = m.editBuf + "▏"
+		var line string
+		if i == 0 {
+			// Toggle display for NEXUS_LOCAL_AI
+			toggle := "OFF"
+			if m.configVals[0] == "true" {
+				toggle = "ON"
+			}
+			line = fmt.Sprintf("%s%-28s [%s]", cursor, "Local AI", toggle)
+		} else {
+			val := m.configVals[i]
+			if m.configEditing && m.configCursor == i {
+				val = m.editBuf + "▏"
+			}
+			line = fmt.Sprintf("%s%-28s %s", cursor, key, val)
 		}
-		line := fmt.Sprintf("%s%-28s %s", cursor, key, val)
 		if m.configCursor == i {
 			s += m.styles.selected.Render(line) + "\n"
 		} else {
@@ -737,6 +801,7 @@ func loadEnv(m *model) {
 			}
 		}
 	}
+	m.localAI = m.configVals[0] != "false"
 }
 
 func saveEnv(m model) {
