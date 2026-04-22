@@ -72,7 +72,7 @@ assert_dir_exists() {
 
 # ── Create isolated HOME ────────────────────────────────────────────
 FAKE_HOME="$(mktemp -d)"
-trap 'rm -rf "$FAKE_HOME"' EXIT
+trap 'chmod -R u+w "$FAKE_HOME" 2>/dev/null; rm -rf "$FAKE_HOME"' EXIT
 
 # Clone the repo into the fake HOME at an unusual path to prove
 # that hardcoded paths would break.
