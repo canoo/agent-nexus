@@ -26,6 +26,7 @@ const (
 	screenConfigure
 	screenHealth
 	screenUninstall
+	screenUpdate
 )
 
 // --- install step types ---
@@ -61,6 +62,16 @@ type cmdDoneMsg struct {
 
 type saveFeedbackMsg struct{}
 
+type versionCheckMsg struct {
+	latest    string
+	updateURL string
+	err       error
+}
+
+type updateDoneMsg struct {
+	err error
+}
+
 type healthMsg struct {
 	ollamaUp bool
 	links    []string
@@ -80,15 +91,19 @@ type styles struct {
 }
 
 func newStyles() styles {
+	teaGreen := lipgloss.Color("#c7efcf")
+	gold := lipgloss.Color("#f7b538")
+	ochre := lipgloss.Color("#db7c26")
+
 	return styles{
-		title:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).MarginBottom(1),
+		title:    lipgloss.NewStyle().Bold(true).Foreground(gold).MarginBottom(1),
 		menu:     lipgloss.NewStyle().PaddingLeft(2),
-		selected: lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true),
-		subtle:   lipgloss.NewStyle().Foreground(lipgloss.Color("241")),
-		success:  lipgloss.NewStyle().Foreground(lipgloss.Color("82")),
-		warn:     lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
+		selected: lipgloss.NewStyle().Foreground(gold).Bold(true),
+		subtle:   lipgloss.NewStyle().Foreground(teaGreen),
+		success:  lipgloss.NewStyle().Foreground(teaGreen),
+		warn:     lipgloss.NewStyle().Foreground(ochre),
 		errStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("196")),
-		border:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).BorderForeground(lipgloss.Color("63")),
+		border:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).BorderForeground(ochre),
 	}
 }
 
@@ -137,12 +152,18 @@ type model struct {
 	configLabels  []string
 	configVals    []string
 	editBuf       string
+
+	// update
+	latestVersion string
+	updateURL     string
+	updateNotice  string
 }
 
 var menuItems = []string{
 	"Install NEXUS",
 	"Configure",
 	"Health Check",
+	"Update NEXUS",
 	"Uninstall NEXUS",
 }
 
@@ -172,7 +193,7 @@ func findNexusDir() string {
 
 func initialModel() model {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot))
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#f7b538"))
 
 	m := model{
 		styles:   newStyles(),
@@ -203,13 +224,21 @@ func initialModel() model {
 	return m
 }
 
-func (m model) Init() tea.Cmd { return nil }
+func (m model) Init() tea.Cmd { return checkLatestVersion() }
 
 // --- root update / view ---
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
+		return m, nil
+	}
+	if msg, ok := msg.(versionCheckMsg); ok {
+		if msg.err == nil && msg.latest != "" && msg.latest != version && version != "dev" {
+			m.latestVersion = msg.latest
+			m.updateURL = msg.updateURL
+			m.updateNotice = "Update available: v" + msg.latest
+		}
 		return m, nil
 	}
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
@@ -237,6 +266,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return updateHealth(msg, m)
 	case screenUninstall:
 		return updateUninstall(msg, m)
+	case screenUpdate:
+		return updateUpdateScreen(msg, m)
 	}
 	return m, nil
 }
@@ -254,6 +285,8 @@ func (m model) View() tea.View {
 		s = healthView(m)
 	case screenUninstall:
 		s = uninstallView(m)
+	case screenUpdate:
+		s = updateScreenView(m)
 	}
 	v := tea.NewView(s)
 	v.AltScreen = true
@@ -292,6 +325,16 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				m.running = true
 				return m, tea.Batch(m.spinner.Tick, checkHealth(m.nexusDir, m.configVals[1]))
 			case 3:
+				m.screen = screenUpdate
+				m.running = false
+				m.output = ""
+				m.err = nil
+				if m.latestVersion == "" {
+					m.running = true
+					return m, tea.Batch(m.spinner.Tick, checkLatestVersion())
+				}
+				return m, nil
+			case 4:
 				m.screen = screenUninstall
 				m.running = false
 				m.output = ""
@@ -321,6 +364,9 @@ func menuView(m model) string {
 		s += style.Render(cursor+item) + "\n"
 	}
 	s += "\n" + m.styles.subtle.Render("j/k: navigate • enter: select • q: quit")
+	if m.updateNotice != "" {
+		s += "\n" + m.styles.warn.Render("⬆ "+m.updateNotice)
+	}
 	return m.borderBox(s)
 }
 
@@ -741,6 +787,110 @@ func configureView(m model) string {
 		hint = "type value • enter: confirm • esc: cancel"
 	}
 	s += "\n" + m.styles.subtle.Render(hint)
+	return m.borderBox(s)
+}
+
+// --- update ---
+
+const repoAPI = "https://api.github.com/repos/canoo/agent-nexus/releases/latest"
+
+func checkLatestVersion() tea.Cmd {
+	return func() tea.Msg {
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Get(repoAPI)
+		if err != nil {
+			return versionCheckMsg{err: err}
+		}
+		defer resp.Body.Close()
+		var release struct {
+			TagName string `json:"tag_name"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+			return versionCheckMsg{err: err}
+		}
+		latest := strings.TrimPrefix(release.TagName, "v")
+		return versionCheckMsg{
+			latest:    latest,
+			updateURL: "https://github.com/canoo/agent-nexus/releases/tag/" + release.TagName,
+		}
+	}
+}
+
+func runSelfUpdate() tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("bash", "-c",
+			`curl -sSL https://raw.githubusercontent.com/canoo/agent-nexus/main/install.sh | bash`)
+		_, err := cmd.CombinedOutput()
+		return updateDoneMsg{err: err}
+	}
+}
+
+func updateUpdateScreen(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case versionCheckMsg:
+		m.running = false
+		if msg.err != nil {
+			m.err = msg.err
+		} else if msg.latest != "" {
+			m.latestVersion = msg.latest
+			m.updateURL = msg.updateURL
+			if msg.latest == version {
+				m.updateNotice = ""
+			} else {
+				m.updateNotice = "Update available: v" + msg.latest
+			}
+		}
+		return m, nil
+	case updateDoneMsg:
+		m.running = false
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.output = "Updated successfully! Restart nexus to use the new version."
+			m.latestVersion = ""
+			m.updateNotice = ""
+		}
+		return m, nil
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "esc":
+			m.screen = screenMenu
+			return m, nil
+		case "u":
+			if m.latestVersion != "" && m.latestVersion != version && !m.running {
+				m.running = true
+				m.output = ""
+				m.err = nil
+				return m, tea.Batch(m.spinner.Tick, runSelfUpdate())
+			}
+		}
+	}
+	return m, nil
+}
+
+func updateScreenView(m model) string {
+	s := m.styles.title.Render("⬆ Update NEXUS") + "\n\n"
+	s += m.styles.subtle.Render("Current version: v"+version) + "\n"
+
+	if m.running {
+		s += m.spinner.View() + " Checking...\n"
+	} else if m.err != nil {
+		s += m.styles.errStyle.Render("✗ "+m.err.Error()) + "\n"
+	} else if m.output != "" {
+		s += m.styles.success.Render("✓ "+m.output) + "\n"
+	} else if m.latestVersion == "" || m.latestVersion == version {
+		s += m.styles.success.Render("✓ You're on the latest version") + "\n"
+	} else {
+		s += m.styles.warn.Render("⬆ New version available: v"+m.latestVersion) + "\n"
+		s += "\n" + m.styles.subtle.Render("Press u to update • esc: back")
+		return m.borderBox(s)
+	}
+
+	s += "\n" + m.styles.subtle.Render("esc: back")
 	return m.borderBox(s)
 }
 
