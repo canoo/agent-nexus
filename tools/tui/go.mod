@@ -1,4 +1,4 @@
-module github.com/cano/nexus-tui
+module github.com/canoo/agent-nexus/tools/tui
 
 go 1.26.2
 

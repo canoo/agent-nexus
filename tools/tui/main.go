@@ -150,11 +150,20 @@ func findNexusDir() string {
 	if env := os.Getenv("NEXUS_REPO"); env != "" {
 		return env
 	}
-	// Check if we're running from inside the repo (dev mode)
-	exe, _ := os.Executable()
-	candidate := filepath.Dir(filepath.Dir(filepath.Dir(exe))) // tools/tui/nexus -> repo root
-	if _, err := os.Stat(filepath.Join(candidate, "core", "NEXUS.md")); err == nil {
-		return candidate
+	// Walk up from the executable looking for the repo root (dev/source build).
+	// Stops after 5 levels to avoid traversing the whole filesystem.
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		for i := 0; i < 5; i++ {
+			if _, err := os.Stat(filepath.Join(dir, "core", "NEXUS.md")); err == nil {
+				return dir
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
 	}
 	// Default: curl installer clones here
 	home, _ := os.UserHomeDir()
