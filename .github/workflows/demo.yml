@@ -24,17 +24,29 @@ jobs:
       - name: Build TUI
         run: |
           cd tools/tui && go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" -o nexus .
-          cp nexus /usr/local/bin/nexus
+          sudo cp nexus /usr/local/bin/nexus
+
+      - name: Install VHS dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg chromium-browser fonts-noto-color-emoji
+
+      - name: Install ttyd
+        run: |
+          curl -sSL -o /tmp/ttyd https://github.com/nicm/ttyd/releases/latest/download/ttyd.x86_64 || \
+          curl -sSL -o /tmp/ttyd https://github.com/nicm/ttyd/releases/download/1.7.7/ttyd.x86_64
+          chmod +x /tmp/ttyd
+          sudo mv /tmp/ttyd /usr/local/bin/ttyd
 
       - name: Install VHS
-        uses: charmbracelet/vhs-action@v2
-        with:
-          install-only: true
+        run: |
+          go install charm.land/vhs@latest
+          sudo cp "$(go env GOPATH)/bin/vhs" /usr/local/bin/vhs
 
       - name: Generate demo.gif
-        run: |
-          export NEXUS_REPO=$PWD
-          vhs demo.tape
+        env:
+          NEXUS_REPO: ${{ github.workspace }}
+        run: vhs demo.tape
 
       - name: Commit demo.gif
         run: |
