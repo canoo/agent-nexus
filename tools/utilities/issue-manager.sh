@@ -13,7 +13,7 @@
 #             Does NOT ask the local model to use MCP tools.
 #
 # Env vars (optional):
-#   OLLAMA_HOST_URL   — Ollama base URL (default: http://192.168.1.101:11434)
+#   OLLAMA_HOST_URL   — Ollama base URL (default: http://localhost:11434)
 #   GITHUB_REPO       — Target repo for gh issues, e.g. owner/repo (default: current repo)
 #
 # Exit codes:
@@ -26,7 +26,7 @@ set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 ROADMAP="docs/dev-roadmap.md"
-OLLAMA_HOST_URL="${OLLAMA_HOST_URL:-http://192.168.1.101:11434}"
+OLLAMA_HOST_URL="${OLLAMA_HOST_URL:-http://localhost:11434}"
 OLLAMA_MODEL="qwen3:8b"
 HAIKU_MODEL="claude-haiku-4-5-20251001"
 CONNECT_TIMEOUT=5
