@@ -1,12 +1,5 @@
 # NEXUS
 
-```
- _____  _____  __  __  __ __  _____
-/  _  \/   __\/  \/  \/  |  \/  ___>
-|  |  ||   __|>-    -<|  |  ||___  |
-\__|__/\_____/\__/\__/\_____/<_____/
-```
-
 [![Release](https://img.shields.io/github/v/release/canoo/agent-nexus?style=flat-square)](https://github.com/canoo/agent-nexus/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/canoo/agent-nexus/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/canoo/agent-nexus/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
