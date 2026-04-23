@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GIF_TOKEN }}
 
       - uses: actions/setup-go@v5
         with:
@@ -54,7 +56,7 @@ jobs:
           if [ -f demo.gif ]; then
             git add demo.gif
             git diff --cached --quiet || git commit -m "docs: update demo.gif [skip ci]"
-            git push || echo "Push failed (branch protection). Download the artifact instead."
+            git diff --cached --quiet || git push
           fi
 
       - name: Upload demo.gif
