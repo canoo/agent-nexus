@@ -1,0 +1,47 @@
+name: Demo GIF
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "demo.tape"
+      - "tools/tui/**"
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/tui/go.mod
+
+      - name: Build TUI
+        run: |
+          cd tools/tui && go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" -o nexus .
+          cp nexus /usr/local/bin/nexus
+
+      - name: Install VHS
+        uses: charmbracelet/vhs-action@v2
+        with:
+          install-only: true
+
+      - name: Generate demo.gif
+        run: |
+          export NEXUS_REPO=$PWD
+          vhs demo.tape
+
+      - name: Commit demo.gif
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -f demo.gif ]; then
+            git add demo.gif
+            git diff --cached --quiet || git commit -m "docs: update demo.gif [skip ci]"
+            git push
+          fi

@@ -1,52 +1,69 @@
 # NEXUS TUI Demo
-# Run: vhs demo.tape
+# Generates demo.gif — runs automatically via GitHub Actions on push to main.
+# Manual: vhs demo.tape (requires VHS, Go 1.25+, nexus binary in PATH)
+
+Require nexus
 
 Output demo.gif
 
 Set Shell "bash"
-Set FontSize 14
-Set Width 900
-Set Height 600
-Set Padding 20
+Set FontSize 16
+Set Width 800
+Set Height 500
+Set Padding 10
 Set Theme "Catppuccin Mocha"
+Set TypingSpeed 50ms
 
-# Build and launch
-Type "cd tools/tui && go build -o nexus . && ./nexus"
+Type "nexus"
+Enter
+Sleep 3s
+
+# Navigate down through all menu items
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+Type "j"
+Sleep 600ms
+
+# Navigate back up
+Type "k"
+Sleep 600ms
+Type "k"
+Sleep 600ms
+Type "k"
+Sleep 800ms
+
+# Open Configure screen
+Type "j"
+Sleep 400ms
 Enter
 Sleep 2s
 
-# Show menu
-Sleep 1s
-
-# Navigate to Configure
+# Navigate config items
 Type "j"
 Sleep 500ms
-Enter
-Sleep 1s
+Type "j"
+Sleep 500ms
+Type "j"
+Sleep 500ms
 
-# Show configure screen
+# Back to menu
+Escape
 Sleep 1.5s
 
-# Go back
+# Open Health Check
+Type "j"
+Sleep 400ms
+Type "j"
+Sleep 400ms
+Enter
+Sleep 3s
+
+# Back to menu
 Escape
 Sleep 1s
 
-# Navigate to Health Check
-Type "jj"
-Sleep 500ms
-Enter
-Sleep 2s
-
-# Go back
-Escape
-Sleep 1s
-
-# Show Install option
-Enter
-Sleep 2s
-
-# Go back and quit
-Escape
-Sleep 500ms
+# Quit
 Type "q"
-Sleep 500ms
+Sleep 1s

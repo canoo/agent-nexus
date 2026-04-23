@@ -14,9 +14,6 @@ tools/tui/nexus
 tools/tui/nexus-tui
 tools/tui/tui
 
-# VHS output
-demo.gif
-
 # OS files
 .DS_Store
 Thumbs.db
