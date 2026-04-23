@@ -305,7 +305,11 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 }
 
 func menuView(m model) string {
-	s := m.styles.title.Render("⚡ NEXUS Framework Manager") + "\n"
+	logo := " _____  _____  __  __  __ __  _____\n" +
+		"/  _  \\/   __\\/  \\/  \\/  |  \\/  ___>\n" +
+		"|  |  ||   __|>-    -<|  |  ||___  |\n" +
+		"\\__|__/\\_____/\\__/\\__/\\_____/<_____/"
+	s := m.styles.title.Render(logo) + "\n"
 	s += m.styles.subtle.Render("   v"+version) + "\n\n"
 	for i, item := range menuItems {
 		cursor := "  "
