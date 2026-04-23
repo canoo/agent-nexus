@@ -48,18 +48,54 @@ get_latest_version() {
 
 download_binary() {
     local url="https://github.com/$REPO/releases/download/$VERSION/nexus-${OS}-${ARCH}"
+    local checksum_url="https://github.com/$REPO/releases/download/$VERSION/checksums.txt"
     local dest="$INSTALL_DIR/nexus"
+    local checksum_file
+    checksum_file="$(mktemp)"
 
     mkdir -p "$INSTALL_DIR"
 
     info "Downloading nexus $VERSION ($OS/$ARCH)..."
     if command -v curl &>/dev/null; then
         curl -sSL "$url" -o "$dest"
+        curl -sSL "$checksum_url" -o "$checksum_file"
     else
         wget -qO "$dest" "$url"
+        wget -qO "$checksum_file" "$checksum_url"
     fi
+
+    info "Verifying checksum..."
+    local binary_name="nexus-${OS}-${ARCH}"
+    if command -v sha256sum &>/dev/null; then
+        # Extract expected hash for this binary and verify
+        local expected
+        expected=$(grep "$binary_name" "$checksum_file" | awk '{print $1}')
+        if [ -z "$expected" ]; then
+            rm -f "$checksum_file"
+            fail "Checksum entry for $binary_name not found in checksums.txt"
+        fi
+        echo "$expected  $dest" | sha256sum --check --status || {
+            rm -f "$dest" "$checksum_file"
+            fail "Checksum verification failed — binary may be corrupted or tampered with"
+        }
+    elif command -v shasum &>/dev/null; then
+        local expected
+        expected=$(grep "$binary_name" "$checksum_file" | awk '{print $1}')
+        if [ -z "$expected" ]; then
+            rm -f "$checksum_file"
+            fail "Checksum entry for $binary_name not found in checksums.txt"
+        fi
+        echo "$expected  $dest" | shasum -a 256 --check --status || {
+            rm -f "$dest" "$checksum_file"
+            fail "Checksum verification failed — binary may be corrupted or tampered with"
+        }
+    else
+        warn "Neither sha256sum nor shasum found — skipping checksum verification"
+    fi
+
+    rm -f "$checksum_file"
     chmod +x "$dest"
-    ok "Installed to $dest"
+    ok "Checksum verified. Installed to $dest"
 }
 
 clone_repo() {

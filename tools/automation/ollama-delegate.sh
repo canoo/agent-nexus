@@ -23,8 +23,34 @@
 
 set -euo pipefail
 
-# Load local .env overrides if present (relative to repo root)
-[ -f "$(dirname "$0")/../../.env" ] && source "$(dirname "$0")/../../.env"
+# Load local .env overrides if present (relative to repo root).
+# Parses only KEY=VALUE lines — does not execute shell code.
+_load_env() {
+    local env_file="$1"
+    [ -f "$env_file" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Skip blank lines and comments
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        # Reject lines containing command substitution or backticks
+        if [[ "$line" =~ \$\( ]] || [[ "$line" =~ \` ]]; then
+            echo "WARN: Skipping unsafe .env line: $line" >&2
+            continue
+        fi
+        # Accept only KEY=VALUE (KEY may contain letters, digits, underscores)
+        if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
+            local key="${line%%=*}"
+            local value="${line#*=}"
+            # Strip surrounding quotes if present
+            value="${value%\"}"
+            value="${value#\"}"
+            value="${value%\'}"
+            value="${value#\'}"
+            export "$key=$value"
+        fi
+    done < "$env_file"
+}
+_load_env "$(dirname "$0")/../../.env"
 
 TASK_TYPE="${1:-}"
 CONTEXT_FILE="${2:-}"
