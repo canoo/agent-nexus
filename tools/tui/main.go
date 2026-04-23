@@ -819,7 +819,7 @@ func checkLatestVersion() tea.Cmd {
 func runSelfUpdate() tea.Cmd {
 	return func() tea.Msg {
 		cmd := exec.Command("bash", "-c",
-			`curl -sSL https://raw.githubusercontent.com/canoo/agent-nexus/main/install.sh | bash`)
+			`t=$(mktemp) && curl -sSL https://raw.githubusercontent.com/canoo/agent-nexus/main/install.sh -o "$t" && bash "$t"; rm -f "$t"`)
 		_, err := cmd.CombinedOutput()
 		return updateDoneMsg{err: err}
 	}
@@ -831,7 +831,7 @@ func updateUpdateScreen(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 		m.running = false
 		if msg.err != nil {
 			m.err = msg.err
-		} else if msg.latest != "" {
+		} else if msg.latest != "" && version != "dev" {
 			m.latestVersion = msg.latest
 			m.updateURL = msg.updateURL
 			if msg.latest == version {
@@ -852,9 +852,12 @@ func updateUpdateScreen(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
+		if m.running {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc":

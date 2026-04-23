@@ -286,7 +286,7 @@ func TestConfigureToggleLocalAI(t *testing.T) {
 func TestViewsDoNotPanic(t *testing.T) {
 	m := initialModel()
 
-	screens := []screen{screenMenu, screenInstall, screenConfigure, screenHealth, screenUninstall}
+	screens := []screen{screenMenu, screenInstall, screenConfigure, screenHealth, screenUninstall, screenUpdate}
 	for _, s := range screens {
 		m.screen = s
 		m.steps = buildInstallSteps()
