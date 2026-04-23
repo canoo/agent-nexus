@@ -11,8 +11,6 @@
   <img src="demo.gif" alt="NEXUS TUI Demo" width="700">
 </p>
 
-> **No demo.gif yet?** Run `vhs demo.tape` to generate it (requires [VHS](https://github.com/charmbracelet/vhs)).
-
 ## Quick Start
 
 ```bash
