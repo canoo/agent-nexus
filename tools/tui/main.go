@@ -255,7 +255,9 @@ func (m model) View() tea.View {
 	case screenUninstall:
 		s = uninstallView(m)
 	}
-	return tea.NewView(s)
+	v := tea.NewView(s)
+	v.AltScreen = true
+	return v
 }
 
 // --- menu ---
