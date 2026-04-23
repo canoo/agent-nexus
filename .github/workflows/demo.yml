@@ -33,14 +33,13 @@ jobs:
 
       - name: Install ttyd
         run: |
-          curl -sSL -o /tmp/ttyd https://github.com/nicm/ttyd/releases/latest/download/ttyd.x86_64 || \
-          curl -sSL -o /tmp/ttyd https://github.com/nicm/ttyd/releases/download/1.7.7/ttyd.x86_64
+          curl -sSL -o /tmp/ttyd https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64
           chmod +x /tmp/ttyd
           sudo mv /tmp/ttyd /usr/local/bin/ttyd
 
       - name: Install VHS
         run: |
-          go install charm.land/vhs@latest
+          go install github.com/charmbracelet/vhs@latest
           sudo cp "$(go env GOPATH)/bin/vhs" /usr/local/bin/vhs
 
       - name: Generate demo.gif
