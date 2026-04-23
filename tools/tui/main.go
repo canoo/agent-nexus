@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -251,7 +252,7 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 			case 2:
 				m.screen = screenHealth
 				m.running = true
-				return m, tea.Batch(m.spinner.Tick, checkHealth(m.nexusDir))
+				return m, tea.Batch(m.spinner.Tick, checkHealth(m.nexusDir, m.configVals[1]))
 			case 3:
 				m.screen = screenUninstall
 				m.running = true
@@ -359,11 +360,11 @@ func runInstallStep(m model, idx int) tea.Cmd {
 			if _, err := exec.LookPath("ollama"); err != nil {
 				return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not installed)"}
 			}
-			// Check if ollama is reachable
+			// Check if ollama is reachable using the configured URL
 			client := &http.Client{Timeout: 3 * time.Second}
-			ollamaURL := "http://localhost:11434"
-			if env := os.Getenv("OLLAMA_HOST_URL"); env != "" {
-				ollamaURL = env
+			ollamaURL := m.configVals[1]
+			if ollamaURL == "" {
+				ollamaURL = "http://localhost:11434"
 			}
 			if _, err := client.Get(ollamaURL); err != nil {
 				return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not running)"}
@@ -416,13 +417,13 @@ func updateInstall(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				m.localAI = true
 				m.localAIAsked = true
 				m.configVals[0] = "true"
-				saveEnv(m)
+				_ = saveEnv(m)
 				return m, advanceInstall(&m, 2)
 			case "n":
 				m.localAI = false
 				m.localAIAsked = true
 				m.configVals[0] = "false"
-				saveEnv(m)
+				_ = saveEnv(m)
 				// Skip MCP, deps, models
 				for i := 3; i < len(m.steps); i++ {
 					m.steps[i].status = stepSkipped
@@ -622,8 +623,13 @@ func updateConfigure(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				m.editBuf = m.configVals[m.configCursor]
 			}
 		case "s":
-			saveEnv(m)
-			m.output = "Saved .env"
+			if err := saveEnv(m); err != nil {
+				m.output = "Error saving .env: " + err.Error()
+				m.err = err
+			} else {
+				m.output = "Saved .env"
+				m.err = nil
+			}
 		}
 	}
 	return m, nil
@@ -658,7 +664,11 @@ func configureView(m model) string {
 		}
 	}
 	if m.output != "" {
-		s += "\n" + m.styles.success.Render("✓ "+m.output) + "\n"
+		if m.err != nil {
+			s += "\n" + m.styles.errStyle.Render("✗ "+m.output) + "\n"
+		} else {
+			s += "\n" + m.styles.success.Render("✓ "+m.output) + "\n"
+		}
 	}
 	hint := "j/k: navigate • enter: edit • s: save .env • esc: back"
 	if m.configEditing {
@@ -678,12 +688,11 @@ func runScript(nexusDir, script string) tea.Cmd {
 	}
 }
 
-func checkHealth(nexusDir string) tea.Cmd {
+func checkHealth(nexusDir, ollamaURL string) tea.Cmd {
 	return func() tea.Msg {
 		h := healthMsg{}
-		ollamaURL := "http://localhost:11434"
-		if env := os.Getenv("OLLAMA_HOST_URL"); env != "" {
-			ollamaURL = env
+		if ollamaURL == "" {
+			ollamaURL = "http://localhost:11434"
 		}
 		client := &http.Client{Timeout: 3 * time.Second}
 		if _, err := client.Get(ollamaURL); err == nil {
@@ -740,41 +749,36 @@ func safeLink(source, target string) error {
 }
 
 func configureMCP(mcpFile, serverPath string) error {
-	dir := filepath.Dir(mcpFile)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mcpFile), 0755); err != nil {
 		return err
 	}
 
-	// Read existing or start fresh
-	content, err := os.ReadFile(mcpFile)
-	if err != nil {
-		content = []byte(`{"mcpServers":{}}`)
+	type serverEntry struct {
+		Command string   `json:"command"`
+		Args    []string `json:"args"`
+	}
+	type mcpConfig struct {
+		MCPServers map[string]serverEntry `json:"mcpServers"`
 	}
 
-	// Check if already configured
-	if strings.Contains(string(content), "nexus-ollama") {
-		return nil
-	}
-
-	// Simple JSON injection — find the mcpServers object and add our entry
-	entry := fmt.Sprintf(`"nexus-ollama":{"command":"node","args":[%q]}`, serverPath)
-	s := string(content)
-	if idx := strings.Index(s, `"mcpServers"`); idx >= 0 {
-		// Find the opening brace after "mcpServers"
-		braceIdx := strings.Index(s[idx:], "{")
-		if braceIdx >= 0 {
-			insertAt := idx + braceIdx + 1
-			if strings.TrimSpace(s[insertAt:insertAt+1]) == "}" {
-				// Empty object
-				s = s[:insertAt] + entry + s[insertAt:]
-			} else {
-				// Has existing entries
-				s = s[:insertAt] + entry + "," + s[insertAt:]
-			}
+	cfg := mcpConfig{MCPServers: map[string]serverEntry{}}
+	if data, err := os.ReadFile(mcpFile); err == nil {
+		_ = json.Unmarshal(data, &cfg)
+		if cfg.MCPServers == nil {
+			cfg.MCPServers = map[string]serverEntry{}
 		}
 	}
 
-	return os.WriteFile(mcpFile, []byte(s), 0644)
+	if _, exists := cfg.MCPServers["nexus-ollama"]; exists {
+		return nil
+	}
+
+	cfg.MCPServers["nexus-ollama"] = serverEntry{Command: "node", Args: []string{serverPath}}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(mcpFile, data, 0644)
 }
 
 // --- .env helpers ---
@@ -804,12 +808,12 @@ func loadEnv(m *model) {
 	m.localAI = m.configVals[0] != "false"
 }
 
-func saveEnv(m model) {
+func saveEnv(m model) error {
 	var lines []string
 	for i, key := range m.configKeys {
 		lines = append(lines, fmt.Sprintf("%s=%q", key, m.configVals[i]))
 	}
-	os.WriteFile(filepath.Join(m.nexusDir, ".env"), []byte(strings.Join(lines, "\n")+"\n"), 0644)
+	return os.WriteFile(filepath.Join(m.nexusDir, ".env"), []byte(strings.Join(lines, "\n")+"\n"), 0644)
 }
 
 func truncate(s string, max int) string {
