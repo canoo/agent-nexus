@@ -54,5 +54,12 @@ jobs:
           if [ -f demo.gif ]; then
             git add demo.gif
             git diff --cached --quiet || git commit -m "docs: update demo.gif [skip ci]"
-            git push
+            git push || echo "Push failed (branch protection). Download the artifact instead."
           fi
+
+      - name: Upload demo.gif
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-gif
+          path: demo.gif
