@@ -59,6 +59,8 @@ type cmdDoneMsg struct {
 	err    error
 }
 
+type saveFeedbackMsg struct{}
+
 type healthMsg struct {
 	ollamaUp bool
 	links    []string
@@ -90,6 +92,18 @@ func newStyles() styles {
 	}
 }
 
+// borderBox returns the border style capped to the terminal width (min 40, max 100).
+func (m model) borderBox(content string) string {
+	w := m.width - 4 // account for border + padding
+	if w < 40 {
+		w = 40
+	}
+	if w > 100 || m.width == 0 {
+		w = 100
+	}
+	return m.styles.border.MaxWidth(w).Render(content)
+}
+
 // --- model ---
 
 type model struct {
@@ -98,6 +112,7 @@ type model struct {
 	styles   styles
 	nexusDir string
 	spinner  spinner.Model
+	width    int
 
 	// install wizard
 	steps        []installStep
@@ -107,9 +122,10 @@ type model struct {
 	localAIAsked bool // true after user answered the prompt during install
 
 	// uninstall / generic operation
-	running bool
-	output  string
-	err     error
+	running           bool
+	output            string
+	err               error
+	uninstallConfirmed bool
 
 	// health
 	health healthMsg
@@ -118,6 +134,7 @@ type model struct {
 	configCursor  int
 	configEditing bool
 	configKeys    []string
+	configLabels  []string
 	configVals    []string
 	editBuf       string
 }
@@ -159,6 +176,12 @@ func initialModel() model {
 			"NEXUS_SUPERVISOR_MODEL",
 			"NEXUS_LOGIC_MODEL",
 		},
+		configLabels: []string{
+			"Local AI",
+			"Ollama Host URL",
+			"Supervisor Model",
+			"Logic Model",
+		},
 		configVals: []string{
 			"true",
 			"http://localhost:11434",
@@ -176,6 +199,10 @@ func (m model) Init() tea.Cmd { return nil }
 // --- root update / view ---
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if msg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = msg.Width
+		return m, nil
+	}
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -255,10 +282,11 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.spinner.Tick, checkHealth(m.nexusDir, m.configVals[1]))
 			case 3:
 				m.screen = screenUninstall
-				m.running = true
+				m.running = false
 				m.output = ""
 				m.err = nil
-				return m, tea.Batch(m.spinner.Tick, runScript(m.nexusDir, "teardown-nexus.sh"))
+				m.uninstallConfirmed = false
+				return m, nil
 			}
 		}
 	}
@@ -278,7 +306,7 @@ func menuView(m model) string {
 		s += style.Render(cursor+item) + "\n"
 	}
 	s += "\n" + m.styles.subtle.Render("j/k: navigate • enter: select • q: quit")
-	return m.styles.border.Render(s)
+	return m.borderBox(s)
 }
 
 // --- install wizard ---
@@ -495,12 +523,13 @@ func installView(m model) string {
 			s += m.styles.errStyle.Render("Setup failed — check errors above.") + "\n"
 		}
 	} else if !m.localAIAsked && m.currentStep == 2 && len(m.steps) > 2 && m.steps[2].status == stepDone {
-		s += "\n" + m.styles.selected.Render("Enable local AI? (MCP server, Ollama models)") + "\n"
-		s += m.styles.subtle.Render("y: yes • n: no") + "\n"
+		s += "\n" + m.styles.subtle.Render("────────────────────────────────") + "\n"
+		s += m.styles.selected.Render("Enable local AI? (MCP server + Ollama models)") + "\n"
+		s += m.styles.subtle.Render("y: yes • n: no (skip remaining steps)") + "\n"
 	}
 
 	s += "\n" + m.styles.subtle.Render("esc: back")
-	return m.styles.border.Render(s)
+	return m.borderBox(s)
 }
 
 // --- health ---
@@ -536,13 +565,25 @@ func healthView(m model) string {
 		}
 	}
 	s += "\n" + m.styles.subtle.Render("esc: back")
-	return m.styles.border.Render(s)
+	return m.borderBox(s)
 }
 
 // --- uninstall ---
 
 func updateUninstall(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		if !m.uninstallConfirmed && !m.running {
+			switch msg.String() {
+			case "y":
+				m.uninstallConfirmed = true
+				m.running = true
+				return m, tea.Batch(m.spinner.Tick, runScript(m.nexusDir, "teardown-nexus.sh"))
+			case "n":
+				m.screen = screenMenu
+				return m, nil
+			}
+		}
 	case cmdDoneMsg:
 		m.running = false
 		m.output = msg.output
@@ -559,7 +600,10 @@ func updateUninstall(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 
 func uninstallView(m model) string {
 	s := m.styles.title.Render("⚡ Uninstall") + "\n\n"
-	if m.running {
+	if !m.uninstallConfirmed && !m.running {
+		s += m.styles.warn.Render("This will remove all NEXUS symlinks and the nexus binary.") + "\n\n"
+		s += m.styles.selected.Render("Are you sure? (y/n)") + "\n"
+	} else if m.running {
 		s += m.spinner.View() + " Running teardown...\n"
 	} else if m.err != nil {
 		s += m.styles.errStyle.Render("✗ Error: "+m.err.Error()) + "\n\n"
@@ -573,12 +617,18 @@ func uninstallView(m model) string {
 		}
 	}
 	s += "\n" + m.styles.subtle.Render("esc: back")
-	return m.styles.border.Render(s)
+	return m.borderBox(s)
 }
 
 // --- configure ---
 
 func updateConfigure(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
+	if msg, ok := msg.(saveFeedbackMsg); ok {
+		_ = msg
+		m.output = ""
+		m.err = nil
+		return m, nil
+	}
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		if m.configEditing {
 			switch msg.String() {
@@ -630,6 +680,7 @@ func updateConfigure(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				m.output = "Saved .env"
 				m.err = nil
 			}
+			return m, tea.Tick(2*time.Second, func(time.Time) tea.Msg { return saveFeedbackMsg{} })
 		}
 	}
 	return m, nil
@@ -637,25 +688,25 @@ func updateConfigure(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 
 func configureView(m model) string {
 	s := m.styles.title.Render("⚡ Configure") + "\n\n"
-	for i, key := range m.configKeys {
+	for i := range m.configKeys {
 		cursor := "  "
 		if m.configCursor == i {
 			cursor = "▸ "
 		}
+		label := m.configLabels[i]
 		var line string
 		if i == 0 {
-			// Toggle display for NEXUS_LOCAL_AI
 			toggle := "OFF"
 			if m.configVals[0] == "true" {
 				toggle = "ON"
 			}
-			line = fmt.Sprintf("%s%-28s [%s]", cursor, "Local AI", toggle)
+			line = fmt.Sprintf("%s%-24s [%s]", cursor, label, toggle)
 		} else {
 			val := m.configVals[i]
 			if m.configEditing && m.configCursor == i {
 				val = m.editBuf + "▏"
 			}
-			line = fmt.Sprintf("%s%-28s %s", cursor, key, val)
+			line = fmt.Sprintf("%s%-24s %s", cursor, label, val)
 		}
 		if m.configCursor == i {
 			s += m.styles.selected.Render(line) + "\n"
@@ -675,7 +726,7 @@ func configureView(m model) string {
 		hint = "type value • enter: confirm • esc: cancel"
 	}
 	s += "\n" + m.styles.subtle.Render(hint)
-	return m.styles.border.Render(s)
+	return m.borderBox(s)
 }
 
 // --- commands ---
