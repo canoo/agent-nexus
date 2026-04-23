@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 
-**Network of EXperts, Unified in Strategy** — a framework for multi-model agentic orchestration. Define personas, route tasks to cloud or local LLMs, and manage everything through an interactive TUI.
+**Network of EXperts, Unified in Strategy** — a tool-agnostic framework for multi-model agentic orchestration. Whatever AI tools you use today, NEXUS makes them better. Define personas, route tasks to cloud or local LLMs, track usage across every tool, and manage everything through an interactive TUI.
 
 <p align="center">
   <img src="demo.gif" alt="NEXUS TUI Demo" width="700">
@@ -22,9 +22,20 @@ The first command downloads the `nexus` binary and clones the repo. The second l
 
 > Make sure `~/.local/bin` is in your `PATH`: `export PATH="$HOME/.local/bin:$PATH"`
 
+## Philosophy
+
+The AI tooling landscape changes every week. New CLIs, new models, new frameworks. NEXUS doesn't bet on any single tool — it's the layer underneath all of them.
+
+- **Bring your own tools.** Claude Code, Gemini CLI, Kiro CLI, Cursor, Codex, OpenClaw, or whatever ships next month. NEXUS works with what you already use.
+- **Bring your own models.** Cloud APIs, local Ollama, or both. NEXUS routes tasks to the right tier based on complexity, not vendor lock-in.
+- **One config, every tool.** Personas, routing rules, and orchestration logic are defined once and shared across all your AI tools via symlinks.
+- **Observe everything.** Track usage, costs, and routing decisions across your entire AI toolkit — not just one tool's silo.
+
+NEXUS doesn't replace your tools. It amplifies them.
+
 ## What NEXUS Does
 
-NEXUS sits between your AI CLI tools (Claude Code, Gemini CLI, Kiro CLI) and your local/cloud models. It:
+NEXUS sits between your AI CLI tools and your local/cloud models. It:
 
 1. **Routes tasks** to the right model tier — cloud for deep work, local for micro-tasks
 2. **Manages personas** — specialized agent definitions for different engineering roles
