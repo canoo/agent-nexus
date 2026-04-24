@@ -4,6 +4,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/canoo/agent-nexus/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/canoo/agent-nexus/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
+[![CodeRabbit Reviews](https://img.shields.io/coderabbit/prs/github/canoo/agent-nexus?style=flat-square&labelColor=171717&color=FF570A&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
 **Network of EXperts, Unified in Strategy** — a tool-agnostic framework for multi-model agentic orchestration. Whatever AI tools you use today, NEXUS makes them better. Define personas, route tasks to cloud or local LLMs, track usage across every tool, and manage everything through an interactive TUI.
 

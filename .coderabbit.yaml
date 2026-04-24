@@ -1,0 +1,33 @@
+language: en-US
+reviews:
+  profile: chill
+  high_level_summary: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "**/*.sh"
+      instructions: >
+        Review shell scripts for security issues: command injection,
+        unsafe variable expansion, missing quotes, and unsafe use of
+        eval/source. Flag any use of curl|bash patterns without
+        checksum verification.
+    - path: "**/*.go"
+      instructions: >
+        Review Go code for error handling, resource leaks, and
+        adherence to Bubbletea v2 patterns. This is a TUI application
+        using the Charm ecosystem.
+    - path: "**/*.mjs"
+      instructions: >
+        This is an MCP server for Ollama delegation. Review for input
+        validation, error handling, and safe HTTP request construction.
+    - path: "personas/**"
+      instructions: >
+        Review persona files for PII, hardcoded secrets, prompt
+        injection patterns, and unsafe command examples.
+    - path: "core/**"
+      instructions: >
+        Review orchestrator instructions for prompt injection risks
+        and overly permissive agent instructions.
+chat:
+  auto_reply: true
