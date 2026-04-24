@@ -43,10 +43,11 @@ _load_env() {
         if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
             local key="${line%%=*}"
             local value="${line#*=}"
-            # Strip surrounding quotes only if they match as a pair
-            if [[ "$value" =~ ^\".*\"$ ]] || [[ "$value" =~ ^\'.*\'$ ]]; then
-                value="${value:1:-1}"
-            fi
+            # Strip surrounding quotes only if they match as a pair (Bash 3.2 portable)
+            case "$value" in
+                \"*\") value="${value#\"}"; value="${value%\"}" ;;
+                \'*\') value="${value#\'}"; value="${value%\'}" ;;
+            esac
             export "$key=$value"
         fi
     done < "$env_file"
