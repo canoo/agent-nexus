@@ -90,7 +90,8 @@ download_binary() {
             fail "Checksum verification failed — binary may be corrupted or tampered with"
         }
     else
-        warn "Neither sha256sum nor shasum found — skipping checksum verification"
+        rm -f "$dest" "$checksum_file"
+        fail "Neither sha256sum nor shasum found — cannot verify binary integrity. Install coreutils and retry."
     fi
 
     rm -f "$checksum_file"
