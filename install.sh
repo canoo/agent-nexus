@@ -69,7 +69,7 @@ download_binary() {
     if command -v sha256sum &>/dev/null; then
         # Extract expected hash for this binary and verify
         local expected
-        expected=$(grep "^${binary_name} " "$checksum_file" | awk '{print $1}')
+        expected=$(awk -v name="$binary_name" '$2 == name {print $1}' "$checksum_file")
         if [ -z "$expected" ]; then
             rm -f "$dest" "$checksum_file"
             fail "Checksum entry for $binary_name not found in checksums.txt"
@@ -80,7 +80,7 @@ download_binary() {
         }
     elif command -v shasum &>/dev/null; then
         local expected
-        expected=$(grep "^${binary_name} " "$checksum_file" | awk '{print $1}')
+        expected=$(awk -v name="$binary_name" '$2 == name {print $1}' "$checksum_file")
         if [ -z "$expected" ]; then
             rm -f "$dest" "$checksum_file"
             fail "Checksum entry for $binary_name not found in checksums.txt"
