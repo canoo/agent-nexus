@@ -1141,7 +1141,8 @@ func checkHealth(nexusDir, ollamaURL string) tea.Cmd {
 			ollamaURL = "http://localhost:11434"
 		}
 		client := &http.Client{Timeout: 3 * time.Second}
-		if _, err := client.Get(ollamaURL); err == nil {
+		if resp, err := client.Get(ollamaURL); err == nil {
+			resp.Body.Close()
 			h.ollamaUp = true
 		}
 

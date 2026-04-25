@@ -74,10 +74,10 @@ command -v ollama >/dev/null && echo "ollama: OK" || echo "ollama: MISSING (need
 ```
 
 If Ollama is missing, provide the install command:
-- Linux: `curl -fsSL https://ollama.com/install.sh | sh`
+- Linux: `curl -fsSL https://ollama.com/install.sh -o install.sh && less install.sh && sh install.sh`
 - macOS: `brew install ollama` or download from https://ollama.com
 
-> **Security note:** Piping scripts directly from the internet into a shell carries risk. For security-conscious users, download and inspect the script first: `curl -fsSL https://ollama.com/install.sh -o install.sh && less install.sh && sh install.sh`. See https://ollama.com/download for alternative installation methods.
+> **Quick install (less secure):** `curl -fsSL https://ollama.com/install.sh | sh` — skips script inspection. See https://ollama.com/download for all installation methods.
 
 ### Step 4: Verify NEXUS Installation
 
@@ -115,16 +115,23 @@ If the health check returns available models, tell the user: "You're set. NEXUS 
 
 ### Step 6: Save Configuration
 
-If the user accepted non-default models, update `.env`:
+If the user accepted non-default models, update `.env` without overwriting existing settings:
 
 ```bash
-cat > ~/.config/nexus/repo/.env << 'EOF'
-NEXUS_LOCAL_AI="true"
-OLLAMA_HOST_URL="http://localhost:11434"
-NEXUS_SUPERVISOR_MODEL="<chosen-supervisor>"
-NEXUS_LOGIC_MODEL="<chosen-logic>"
-EOF
+ENV_FILE=~/.config/nexus/repo/.env
+touch "$ENV_FILE"
+for kv in \
+  'NEXUS_LOCAL_AI="true"' \
+  'OLLAMA_HOST_URL="http://localhost:11434"' \
+  'NEXUS_SUPERVISOR_MODEL="<chosen-supervisor>"' \
+  'NEXUS_LOGIC_MODEL="<chosen-logic>"'; do
+  key="${kv%%=*}"
+  grep -q "^${key}=" "$ENV_FILE" && sed -i.tmp "s|^${key}=.*|${kv}|" "$ENV_FILE" || echo "$kv" >> "$ENV_FILE"
+done
+rm -f "${ENV_FILE}.tmp"
 ```
+
+This preserves any existing settings (like a custom `OLLAMA_HOST_URL`) while updating only the relevant keys.
 
 ## 🔧 Critical Rules
 
