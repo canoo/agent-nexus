@@ -106,13 +106,13 @@ func detectGPU() gpuInfo {
 	// Linux: NVIDIA via nvidia-smi
 	if out, err := exec.Command("nvidia-smi", "--query-gpu=name,memory.total",
 		"--format=csv,noheader,nounits").Output(); err == nil {
-		line := strings.TrimSpace(string(out))
-		// Format: "NVIDIA GeForce RTX 3050 ..., 4096"
-		parts := strings.SplitN(line, ", ", 2)
-		if len(parts) == 2 {
+		// Multi-GPU: take the first line only
+		line := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
+		// Split by last ", " to handle GPU names containing commas
+		if idx := strings.LastIndex(line, ", "); idx > 0 {
 			mem := 0
-			fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &mem)
-			return gpuInfo{Name: strings.TrimSpace(parts[0]), MemoryMB: mem, Platform: "nvidia"}
+			fmt.Sscanf(strings.TrimSpace(line[idx+2:]), "%d", &mem)
+			return gpuInfo{Name: strings.TrimSpace(line[:idx]), MemoryMB: mem, Platform: "nvidia"}
 		}
 	}
 
@@ -849,7 +849,7 @@ func taskLogView(m model) string {
 			}
 			ts := time.UnixMilli(e.Ts).Format("15:04:05")
 			s += fmt.Sprintf("  %-24s %-22s %8s  %s  %s\n",
-				e.Tool, e.Model, dur, status, m.styles.subtle.Render(ts))
+				truncateCol(e.Tool, 24), truncateCol(e.Model, 22), dur, status, m.styles.subtle.Render(ts))
 		}
 	}
 	s += "\n" + m.styles.subtle.Render("r: refresh • esc: back")
@@ -1268,6 +1268,13 @@ func saveEnv(m model) error {
 func truncate(s string, max int) string {
 	if len(s) > max {
 		return s[:max] + "\n... (truncated)"
+	}
+	return s
+}
+
+func truncateCol(s string, max int) string {
+	if len(s) > max {
+		return s[:max-1] + "…"
 	}
 	return s
 }
