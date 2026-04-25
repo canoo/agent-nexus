@@ -10,7 +10,7 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
+    # Windows support planned for v1.0.0 (#18)
     goarch:
       - amd64
       - arm64

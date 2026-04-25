@@ -66,25 +66,26 @@ download_binary() {
 
     info "Verifying checksum..."
     local binary_name="nexus-${OS}-${ARCH}"
-    if command -v sha256sum &>/dev/null; then
-        # Extract expected hash for this binary and verify
-        local expected
-        expected=$(awk -v name="$binary_name" '$2 == name {print $1}' "$checksum_file")
-        if [ -z "$expected" ]; then
+    local expected
+    expected=$(awk -v name="$binary_name" '$2 == name {print $1}' "$checksum_file")
+    if [ -z "$expected" ]; then
+        rm -f "$dest" "$checksum_file"
+        fail "Checksum entry for $binary_name not found in checksums.txt"
+    fi
+
+    # On macOS, BSD sha256sum does not support --check/--status; prefer shasum -a 256.
+    # On Linux, prefer sha256sum (GNU coreutils).
+    if [ "$OS" = "darwin" ] && command -v shasum &>/dev/null; then
+        echo "$expected  $dest" | shasum -a 256 --check --status || {
             rm -f "$dest" "$checksum_file"
-            fail "Checksum entry for $binary_name not found in checksums.txt"
-        fi
+            fail "Checksum verification failed — binary may be corrupted or tampered with"
+        }
+    elif command -v sha256sum &>/dev/null; then
         echo "$expected  $dest" | sha256sum --check --status || {
             rm -f "$dest" "$checksum_file"
             fail "Checksum verification failed — binary may be corrupted or tampered with"
         }
     elif command -v shasum &>/dev/null; then
-        local expected
-        expected=$(awk -v name="$binary_name" '$2 == name {print $1}' "$checksum_file")
-        if [ -z "$expected" ]; then
-            rm -f "$dest" "$checksum_file"
-            fail "Checksum entry for $binary_name not found in checksums.txt"
-        fi
         echo "$expected  $dest" | shasum -a 256 --check --status || {
             rm -f "$dest" "$checksum_file"
             fail "Checksum verification failed — binary may be corrupted or tampered with"

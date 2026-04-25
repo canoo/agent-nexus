@@ -166,6 +166,8 @@ tests/          Integration tests
 
 **Optional:** [Node.js](https://nodejs.org/) (for MCP server), [Ollama](https://ollama.com/) (for local LLM delegation)
 
+> **Platform support:** Linux and macOS. Windows is not yet supported — see [#18](https://github.com/canoo/agent-nexus/issues/18) for tracking.
+
 > No Go toolchain needed — the `nexus` binary is distributed as a pre-built download.
 
 ## Testing
