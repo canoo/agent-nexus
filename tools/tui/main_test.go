@@ -286,7 +286,7 @@ func TestConfigureToggleLocalAI(t *testing.T) {
 func TestViewsDoNotPanic(t *testing.T) {
 	m := initialModel()
 
-	screens := []screen{screenMenu, screenInstall, screenConfigure, screenHealth, screenUninstall, screenUpdate}
+	screens := []screen{screenMenu, screenInstall, screenConfigure, screenHealth, screenUninstall, screenUpdate, screenTaskLog}
 	for _, s := range screens {
 		m.screen = s
 		m.steps = buildInstallSteps()
@@ -310,5 +310,58 @@ func TestBorderBoxClampsWidth(t *testing.T) {
 	out = m.borderBox("test")
 	if out == "" {
 		t.Error("borderBox returned empty string for narrow terminal")
+	}
+}
+
+func TestGpuInfoString(t *testing.T) {
+	tests := []struct {
+		name string
+		gpu  gpuInfo
+		want string
+	}{
+		{"unknown", gpuInfo{Platform: "unknown"}, "No GPU detected"},
+		{"nvidia", gpuInfo{Name: "RTX 3060", MemoryMB: 12288, Platform: "nvidia"}, "RTX 3060 — 12 GB VRAM"},
+		{"apple", gpuInfo{Name: "Apple M3 Pro", MemoryMB: 18432, Platform: "apple"}, "Apple M3 Pro — 18 GB unified memory"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.gpu.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRecommendedModels(t *testing.T) {
+	tests := []struct {
+		name    string
+		gpu     gpuInfo
+		wantSup string
+		wantLog string
+	}{
+		{"4gb", gpuInfo{MemoryMB: 4096, Platform: "nvidia"}, "qwen2.5-coder:1.5b", "llama3.2:3b"},
+		{"8gb nvidia", gpuInfo{MemoryMB: 8192, Platform: "nvidia"}, "qwen2.5-coder:7b", "llama3.1:8b"},
+		{"8gb apple", gpuInfo{MemoryMB: 8192, Platform: "apple"}, "qwen2.5-coder:3b", "llama3.2:3b"},
+		{"24gb", gpuInfo{MemoryMB: 24576, Platform: "nvidia"}, "qwen2.5-coder:14b", "qwen2.5:32b"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sup, logic := tt.gpu.RecommendedModels()
+			if sup != tt.wantSup {
+				t.Errorf("supervisor: got %q, want %q", sup, tt.wantSup)
+			}
+			if logic != tt.wantLog {
+				t.Errorf("logic: got %q, want %q", logic, tt.wantLog)
+			}
+		})
+	}
+}
+
+func TestDetectGPU_ReturnsValidStruct(t *testing.T) {
+	// Just verify it doesn't panic and returns a valid platform
+	gpu := detectGPU()
+	validPlatforms := map[string]bool{"nvidia": true, "amd": true, "apple": true, "unknown": true}
+	if !validPlatforms[gpu.Platform] {
+		t.Errorf("unexpected platform: %q", gpu.Platform)
 	}
 }

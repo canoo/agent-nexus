@@ -27,6 +27,7 @@ const (
 	screenHealth
 	screenUninstall
 	screenUpdate
+	screenTaskLog
 )
 
 // --- install step types ---
@@ -75,6 +76,111 @@ type updateDoneMsg struct {
 type healthMsg struct {
 	ollamaUp bool
 	links    []string
+	gpu      gpuInfo
+}
+
+// --- task log ---
+
+type taskLogEntry struct {
+	Tool  string `json:"tool"`
+	Model string `json:"model"`
+	Ms    int    `json:"ms"`
+	Ok    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+	Ts    int64  `json:"ts"`
+}
+
+type taskLogMsg struct {
+	entries []taskLogEntry
+}
+
+// --- GPU detection ---
+
+type gpuInfo struct {
+	Name     string
+	MemoryMB int
+	Platform string // "nvidia", "amd", "apple", "unknown"
+}
+
+func detectGPU() gpuInfo {
+	// Linux: NVIDIA via nvidia-smi
+	if out, err := exec.Command("nvidia-smi", "--query-gpu=name,memory.total",
+		"--format=csv,noheader,nounits").Output(); err == nil {
+		line := strings.TrimSpace(string(out))
+		// Format: "NVIDIA GeForce RTX 3050 ..., 4096"
+		parts := strings.SplitN(line, ", ", 2)
+		if len(parts) == 2 {
+			mem := 0
+			fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &mem)
+			return gpuInfo{Name: strings.TrimSpace(parts[0]), MemoryMB: mem, Platform: "nvidia"}
+		}
+	}
+
+	// macOS: Apple Silicon via system_profiler
+	if out, err := exec.Command("system_profiler", "SPHardwareDataType").Output(); err == nil {
+		text := string(out)
+		info := gpuInfo{Platform: "apple"}
+		for _, line := range strings.Split(text, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "Chip:") {
+				info.Name = strings.TrimSpace(strings.TrimPrefix(line, "Chip:"))
+			}
+			if strings.HasPrefix(line, "Memory:") {
+				val := strings.TrimSpace(strings.TrimPrefix(line, "Memory:"))
+				mem := 0
+				if strings.Contains(val, "GB") {
+					fmt.Sscanf(val, "%d", &mem)
+					mem *= 1024
+				}
+				info.MemoryMB = mem
+			}
+		}
+		if info.Name != "" {
+			return info
+		}
+	}
+
+	// Linux: AMD via sysfs
+	matches, _ := filepath.Glob("/sys/class/drm/card*/device/mem_info_vram_total")
+	if len(matches) > 0 {
+		if data, err := os.ReadFile(matches[0]); err == nil {
+			bytes := 0
+			fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &bytes)
+			return gpuInfo{Name: "AMD GPU", MemoryMB: bytes / 1024 / 1024, Platform: "amd"}
+		}
+	}
+
+	return gpuInfo{Platform: "unknown"}
+}
+
+func (g gpuInfo) String() string {
+	if g.Platform == "unknown" {
+		return "No GPU detected"
+	}
+	mem := g.MemoryMB / 1024
+	unit := "GB"
+	if g.Platform == "apple" {
+		return fmt.Sprintf("%s — %d %s unified memory", g.Name, mem, unit)
+	}
+	return fmt.Sprintf("%s — %d %s VRAM", g.Name, mem, unit)
+}
+
+func (g gpuInfo) RecommendedModels() (supervisor, logic string) {
+	mem := g.MemoryMB
+	switch {
+	case g.Platform == "apple" && mem <= 8*1024:
+		return "qwen2.5-coder:3b", "llama3.2:3b"
+	case mem <= 4*1024:
+		return "qwen2.5-coder:1.5b", "llama3.2:3b"
+	case mem <= 8*1024:
+		return "qwen2.5-coder:7b", "llama3.1:8b"
+	case mem <= 18*1024:
+		return "qwen2.5-coder:7b", "llama3.1:8b"
+	case mem <= 24*1024:
+		return "qwen2.5-coder:14b", "qwen2.5:32b"
+	default:
+		return "qwen2.5-coder:14b", "qwen2.5:32b"
+	}
 }
 
 // --- styles ---
@@ -145,6 +251,9 @@ type model struct {
 	// health
 	health healthMsg
 
+	// task log
+	taskLog []taskLogEntry
+
 	// configure
 	configCursor  int
 	configEditing bool
@@ -163,6 +272,7 @@ var menuItems = []string{
 	"Install NEXUS",
 	"Configure",
 	"Health Check",
+	"Task Log",
 	"Update NEXUS",
 	"Uninstall NEXUS",
 }
@@ -268,6 +378,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return updateUninstall(msg, m)
 	case screenUpdate:
 		return updateUpdateScreen(msg, m)
+	case screenTaskLog:
+		return updateTaskLog(msg, m)
 	}
 	return m, nil
 }
@@ -287,6 +399,8 @@ func (m model) View() tea.View {
 		s = uninstallView(m)
 	case screenUpdate:
 		s = updateScreenView(m)
+	case screenTaskLog:
+		s = taskLogView(m)
 	}
 	v := tea.NewView(s)
 	v.AltScreen = true
@@ -325,6 +439,10 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				m.running = true
 				return m, tea.Batch(m.spinner.Tick, checkHealth(m.nexusDir, m.configVals[1]))
 			case 3:
+				m.screen = screenTaskLog
+				m.running = true
+				return m, tea.Batch(m.spinner.Tick, loadTaskLog())
+			case 4:
 				m.screen = screenUpdate
 				m.running = false
 				m.output = ""
@@ -334,7 +452,7 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 					return m, tea.Batch(m.spinner.Tick, checkLatestVersion())
 				}
 				return m, nil
-			case 4:
+			case 5:
 				m.screen = screenUninstall
 				m.running = false
 				m.output = ""
@@ -620,6 +738,16 @@ func healthView(m model) string {
 		} else {
 			s += m.styles.errStyle.Render("✗ Ollama unreachable") + "\n"
 		}
+
+		s += "\nGPU:\n"
+		if m.health.gpu.Platform == "unknown" {
+			s += "  " + m.styles.warn.Render("⚠ No GPU detected") + "\n"
+		} else {
+			s += "  " + m.styles.success.Render("✓ "+m.health.gpu.String()) + "\n"
+			sup, logic := m.health.gpu.RecommendedModels()
+			s += m.styles.subtle.Render(fmt.Sprintf("    Recommended: supervisor=%s  logic=%s", sup, logic)) + "\n"
+		}
+
 		s += "\nSymlinks:\n"
 		for _, l := range m.health.links {
 			s += "  " + l + "\n"
@@ -630,6 +758,87 @@ func healthView(m model) string {
 }
 
 // --- uninstall ---
+
+func loadTaskLog() tea.Cmd {
+	return func() tea.Msg {
+		home, _ := os.UserHomeDir()
+		logFile := filepath.Join(home, ".config", "nexus", "logs", "mcp-tasks.jsonl")
+		data, err := os.ReadFile(logFile)
+		if err != nil {
+			return taskLogMsg{}
+		}
+		var entries []taskLogEntry
+		for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+			if line == "" {
+				continue
+			}
+			var e taskLogEntry
+			if json.Unmarshal([]byte(line), &e) == nil {
+				entries = append(entries, e)
+			}
+		}
+		// Show most recent first, cap at 50
+		for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+			entries[i], entries[j] = entries[j], entries[i]
+		}
+		if len(entries) > 50 {
+			entries = entries[:50]
+		}
+		return taskLogMsg{entries: entries}
+	}
+}
+
+func updateTaskLog(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case taskLogMsg:
+		m.running = false
+		m.taskLog = msg.entries
+	case spinner.TickMsg:
+		if m.running {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
+	case tea.KeyPressMsg:
+		if msg.String() == "r" {
+			m.running = true
+			return m, tea.Batch(m.spinner.Tick, loadTaskLog())
+		}
+	}
+	return m, nil
+}
+
+func taskLogView(m model) string {
+	s := m.styles.title.Render("⚡ Task Log") + "\n\n"
+	if m.running {
+		s += m.spinner.View() + " Loading...\n"
+	} else if len(m.taskLog) == 0 {
+		s += m.styles.subtle.Render("No MCP tasks recorded yet.") + "\n"
+		s += m.styles.subtle.Render("Tasks appear here when AI tools use the nexus-ollama MCP server.") + "\n"
+	} else {
+		// Header
+		s += fmt.Sprintf("  %-24s %-22s %8s  %s\n",
+			"Tool", "Model", "Time", "Status")
+		s += m.styles.subtle.Render("  "+strings.Repeat("─", 66)) + "\n"
+		for _, e := range m.taskLog {
+			status := m.styles.success.Render("✓")
+			if !e.Ok {
+				status = m.styles.errStyle.Render("✗")
+			}
+			dur := fmt.Sprintf("%dms", e.Ms)
+			if e.Ms == 0 && e.Ok {
+				dur = "<1ms"
+			}
+			ts := time.UnixMilli(e.Ts).Format("15:04:05")
+			s += fmt.Sprintf("  %-24s %-22s %8s  %s  %s\n",
+				e.Tool, e.Model, dur, status, m.styles.subtle.Render(ts))
+		}
+	}
+	s += "\n" + m.styles.subtle.Render("r: refresh • esc: back")
+	return m.borderBox(s)
+}
+
+// --- uninstall (original) ---
 
 func updateUninstall(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -917,6 +1126,8 @@ func checkHealth(nexusDir, ollamaURL string) tea.Cmd {
 		if _, err := client.Get(ollamaURL); err == nil {
 			h.ollamaUp = true
 		}
+
+		h.gpu = detectGPU()
 
 		home, _ := os.UserHomeDir()
 		links := []struct{ label, path string }{

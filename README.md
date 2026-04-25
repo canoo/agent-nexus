@@ -8,7 +8,7 @@
 [![macOS](https://img.shields.io/badge/macOS-supported-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/canoo/agent-nexus)
 [![CodeRabbit Reviews](https://img.shields.io/coderabbit/prs/github/canoo/agent-nexus?style=flat-square&labelColor=171717&color=FF570A&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
-**Network of EXperts, Unified in Strategy** — a tool-agnostic framework for multi-model agentic orchestration. Whatever AI tools you use today, NEXUS makes them better. Define personas, route tasks to cloud or local LLMs, track usage across every tool, and manage everything through an interactive TUI.
+**Network of EXperts, Unified in Strategy** — one config for every AI tool you use. NEXUS unifies Claude Code, Gemini CLI, Kiro CLI, and any future AI CLI under a single configuration layer. Define personas once, route micro-tasks to local models, and track costs across your entire toolkit — all managed through an interactive TUI.
 
 <p align="center">
   <img src="demo.gif" alt="NEXUS TUI Demo" width="700">
@@ -27,23 +27,23 @@ The first command downloads the `nexus` binary and clones the repo. The second l
 
 ## Philosophy
 
-The AI tooling landscape changes every week. New CLIs, new models, new frameworks. NEXUS doesn't bet on any single tool — it's the layer underneath all of them.
+You use three AI tools. You manage three configs. When a new tool ships, you set up a fourth. NEXUS makes it one.
 
-- **Bring your own tools.** Claude Code, Gemini CLI, Kiro CLI, Cursor, Codex, OpenClaw, or whatever ships next month. NEXUS works with what you already use.
+- **Subtract, don't add.** NEXUS replaces per-tool configuration with a single source of truth. One set of personas, one routing config, one place to look. Fewer files, fewer conflicts, less drift.
+- **Bring your own tools.** Claude Code, Gemini CLI, Kiro CLI, Cursor, Codex, OpenClaw, or whatever ships next month. NEXUS works with what you already use — it doesn't lock you in.
 - **Bring your own models.** Cloud APIs, local Ollama, or both. NEXUS routes tasks to the right tier based on complexity, not vendor lock-in.
-- **One config, every tool.** Personas, routing rules, and orchestration logic are defined once and shared across all your AI tools via symlinks.
 - **Observe everything.** Track usage, costs, and routing decisions across your entire AI toolkit — not just one tool's silo.
 
 NEXUS doesn't replace your tools. It amplifies them.
 
 ## What NEXUS Does
 
-NEXUS sits between your AI CLI tools and your local/cloud models. It:
+NEXUS is the configuration and routing layer between you and your AI CLI tools. It:
 
-1. **Routes tasks** to the right model tier — cloud for deep work, local for micro-tasks
-2. **Manages personas** — specialized agent definitions for different engineering roles
-3. **Delegates locally** via an MCP server that routes to Ollama models on your machine or network
-4. **Configures everything** through symlinks — your AI tools read from NEXUS without knowing it
+1. **Unifies config** — write personas and routing rules once, share them across every AI CLI via symlinks
+2. **Routes micro-tasks locally** — commit messages, scaffolds, and lint fixes go to Ollama on your machine instead of burning cloud API tokens
+3. **Detects your hardware** — auto-selects the right local model based on your GPU and available VRAM
+4. **Manages everything via TUI** — install, configure, health-check, and update from a single terminal interface
 
 ## Architecture
 
