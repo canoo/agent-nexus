@@ -119,6 +119,10 @@ func detectGPU() gpuInfo {
 	// macOS: Apple Silicon via system_profiler
 	if out, err := exec.Command("system_profiler", "SPHardwareDataType").Output(); err == nil {
 		text := string(out)
+		// Intel Macs have "Processor Name:" instead of "Chip:" — skip them
+		if strings.Contains(text, "Processor Name:") {
+			return gpuInfo{Platform: "unknown"}
+		}
 		info := gpuInfo{Platform: "apple"}
 		for _, line := range strings.Split(text, "\n") {
 			line = strings.TrimSpace(line)
@@ -174,6 +178,8 @@ func (g gpuInfo) RecommendedModels() (supervisor, logic string) {
 		return "qwen2.5-coder:1.5b", "llama3.2:3b"
 	case mem <= 8*1024:
 		return "qwen2.5-coder:7b", "llama3.1:8b"
+	case mem <= 16*1024:
+		return "qwen2.5-coder:7b", "qwen2.5:14b"
 	case mem <= 18*1024:
 		return "qwen2.5-coder:7b", "llama3.1:8b"
 	case mem <= 24*1024:
@@ -767,8 +773,20 @@ func loadTaskLog() tea.Cmd {
 		if err != nil {
 			return taskLogMsg{}
 		}
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+
+		// Log rotation: cap file at 5000 lines
+		const maxLines = 5000
+		if len(lines) > maxLines {
+			lines = lines[len(lines)-maxLines:]
+			tmp := logFile + ".tmp"
+			if os.WriteFile(tmp, []byte(strings.Join(lines, "\n")+"\n"), 0644) == nil {
+				os.Rename(tmp, logFile)
+			}
+		}
+
 		var entries []taskLogEntry
-		for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		for _, line := range lines {
 			if line == "" {
 				continue
 			}
@@ -777,7 +795,7 @@ func loadTaskLog() tea.Cmd {
 				entries = append(entries, e)
 			}
 		}
-		// Show most recent first, cap at 50
+		// Show most recent first, cap display at 50
 		for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
 			entries[i], entries[j] = entries[j], entries[i]
 		}

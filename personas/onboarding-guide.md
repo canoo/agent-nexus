@@ -77,6 +77,8 @@ If Ollama is missing, provide the install command:
 - Linux: `curl -fsSL https://ollama.com/install.sh | sh`
 - macOS: `brew install ollama` or download from https://ollama.com
 
+> **Security note:** Piping scripts directly from the internet into a shell carries risk. For security-conscious users, download and inspect the script first: `curl -fsSL https://ollama.com/install.sh -o install.sh && less install.sh && sh install.sh`. See https://ollama.com/download for alternative installation methods.
+
 ### Step 4: Verify NEXUS Installation
 
 Check that symlinks and directories are in place:

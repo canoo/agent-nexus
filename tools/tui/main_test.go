@@ -342,6 +342,7 @@ func TestRecommendedModels(t *testing.T) {
 		{"4gb", gpuInfo{MemoryMB: 4096, Platform: "nvidia"}, "qwen2.5-coder:1.5b", "llama3.2:3b"},
 		{"8gb nvidia", gpuInfo{MemoryMB: 8192, Platform: "nvidia"}, "qwen2.5-coder:7b", "llama3.1:8b"},
 		{"8gb apple", gpuInfo{MemoryMB: 8192, Platform: "apple"}, "qwen2.5-coder:3b", "llama3.2:3b"},
+		{"16gb", gpuInfo{MemoryMB: 16384, Platform: "nvidia"}, "qwen2.5-coder:7b", "qwen2.5:14b"},
 		{"24gb", gpuInfo{MemoryMB: 24576, Platform: "nvidia"}, "qwen2.5-coder:14b", "qwen2.5:32b"},
 	}
 	for _, tt := range tests {

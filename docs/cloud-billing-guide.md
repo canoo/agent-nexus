@@ -12,7 +12,7 @@ NEXUS helps by routing high-volume, low-complexity tasks to local models — rem
 
 ## Official Pricing References
 
-Always check the source for current rates:
+Always check the source for current rates — pricing pages may move or update without notice:
 
 - **Anthropic (Claude)**: https://anthropic.com/pricing
 - **Google (Gemini)**: https://ai.google.dev/pricing
