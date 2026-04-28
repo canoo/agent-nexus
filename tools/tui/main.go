@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -1043,11 +1044,45 @@ func checkLatestVersion() tea.Cmd {
 	}
 }
 
-func runSelfUpdate() tea.Cmd {
+var validTag = regexp.MustCompile(`^[0-9A-Za-z._-]+$`)
+
+func runSelfUpdate(tag string) tea.Cmd {
 	return func() tea.Msg {
-		cmd := exec.Command("bash", "-c",
-			`t=$(mktemp) && curl -sSL https://raw.githubusercontent.com/canoo/agent-nexus/main/install.sh -o "$t" && bash "$t"; rm -f "$t"`)
-		_, err := cmd.CombinedOutput()
+		if !validTag.MatchString(tag) {
+			return updateDoneMsg{err: fmt.Errorf("invalid version tag: %q", tag)}
+		}
+		// tag is passed as $1 so it is never interpolated into the script text.
+		script := `
+set -e
+TAG="$1"
+BASE="https://github.com/canoo/agent-nexus/releases/download/v${TAG}"
+SCRIPT=$(mktemp)
+SUMS=$(mktemp)
+trap 'rm -f "$SCRIPT" "$SUMS"' EXIT
+
+curl -sSL "${BASE}/install.sh"      -o "$SCRIPT"
+curl -sSL "${BASE}/checksums.txt"   -o "$SUMS"
+
+EXPECTED=$(awk '$2 == "install.sh" {print $1}' "$SUMS")
+if [ -z "$EXPECTED" ]; then
+  echo "checksum entry for install.sh not found" >&2; exit 1
+fi
+
+if command -v shasum >/dev/null 2>&1; then
+  echo "$EXPECTED  $SCRIPT" | shasum -a 256 --check --status
+elif command -v sha256sum >/dev/null 2>&1; then
+  echo "$EXPECTED  $SCRIPT" | sha256sum --check --status
+else
+  echo "no sha256 tool available" >&2; exit 1
+fi
+
+bash "$SCRIPT"
+`
+		cmd := exec.Command("bash", "-c", script, "bash", tag)
+		out, err := cmd.CombinedOutput()
+		if err != nil && len(out) > 0 {
+			err = fmt.Errorf("%w: %s", err, string(out))
+		}
 		return updateDoneMsg{err: err}
 	}
 }
@@ -1095,7 +1130,7 @@ func updateUpdateScreen(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				m.running = true
 				m.output = ""
 				m.err = nil
-				return m, tea.Batch(m.spinner.Tick, runSelfUpdate())
+				return m, tea.Batch(m.spinner.Tick, runSelfUpdate(m.latestVersion))
 			}
 		}
 	}
