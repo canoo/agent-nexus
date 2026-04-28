@@ -158,5 +158,5 @@ If any `ollama_*` tool returns `CIRCUIT_BREAKER`, fall back to handling the task
 
 If MCP is not available, the same delegation can be done manually via:
 ```bash
-bash ~/.config/nexus/tools/automation/ollama-delegate.sh <task-type> <context-file>
+bash ~/.config/nexus/tools/utilities/ollama-delegate.sh <task-type> <context-file>
 ```
