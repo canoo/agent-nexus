@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -1043,13 +1044,17 @@ func checkLatestVersion() tea.Cmd {
 	}
 }
 
+var validTag = regexp.MustCompile(`^[0-9A-Za-z._-]+$`)
+
 func runSelfUpdate(tag string) tea.Cmd {
 	return func() tea.Msg {
-		// Download install.sh and its checksum from the versioned release tag,
-		// verify integrity before executing — mirrors the pattern in install.sh itself.
+		if !validTag.MatchString(tag) {
+			return updateDoneMsg{err: fmt.Errorf("invalid version tag: %q", tag)}
+		}
+		// tag is passed as $1 so it is never interpolated into the script text.
 		script := `
 set -e
-TAG="` + tag + `"
+TAG="$1"
 BASE="https://github.com/canoo/agent-nexus/releases/download/v${TAG}"
 SCRIPT=$(mktemp)
 SUMS=$(mktemp)
@@ -1073,7 +1078,7 @@ fi
 
 bash "$SCRIPT"
 `
-		cmd := exec.Command("bash", "-c", script)
+		cmd := exec.Command("bash", "-c", script, "bash", tag)
 		_, err := cmd.CombinedOutput()
 		return updateDoneMsg{err: err}
 	}
