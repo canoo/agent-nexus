@@ -2,22 +2,12 @@ name: Demo GIF
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "demo.tape"
-      - "tools/tui/**"
-    branches: [main]
-
-permissions:
-  contents: write
 
 jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
@@ -49,18 +39,7 @@ jobs:
           NEXUS_REPO: ${{ github.workspace }}
         run: vhs demo.tape
 
-      - name: Commit demo.gif
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if [ -f demo.gif ]; then
-            git add demo.gif
-            git diff --cached --quiet || git commit -m "docs: update demo.gif [skip ci]"
-            git diff --cached --quiet || git push
-          fi
-
       - name: Upload demo.gif
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: demo-gif
