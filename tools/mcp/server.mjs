@@ -296,7 +296,7 @@ server.tool(
 server.tool(
   "ollama_commit_msg",
   "Generate a conventional commit message from a git diff using a local 1.5B model. Use this instead of writing commit messages with cloud models.",
-  { diff: z.string().describe("The git diff to summarize") },
+  { diff: z.string().max(500000).describe("The git diff to summarize") },
   async ({ diff }) => {
     // Fast-path: deterministic commit messages for trivial diffs
     const fastResult = fastPathCommitMsg(diff);
@@ -331,7 +331,7 @@ server.tool(
 server.tool(
   "ollama_boilerplate",
   "Generate a clean boilerplate file from a specification using a local 1.5B model. Use for component/route/model scaffolding.",
-  { specification: z.string().describe("Description of the boilerplate to generate, including framework and patterns to follow") },
+  { specification: z.string().max(500000).describe("Description of the boilerplate to generate, including framework and patterns to follow") },
   async ({ specification }) => {
     const model = MODEL_ROUTES["boilerplate"];
     const prompt = PROMPTS["boilerplate"](specification);
@@ -360,7 +360,7 @@ server.tool(
 server.tool(
   "ollama_test_scaffold",
   "Generate a test file scaffold (describe blocks, test names, no implementations) from a source file using a local 1.5B model.",
-  { source_code: z.string().describe("The source file content to generate tests for") },
+  { source_code: z.string().max(500000).describe("The source file content to generate tests for") },
   async ({ source_code }) => {
     const model = MODEL_ROUTES["test-scaffold"];
     const prompt = PROMPTS["test-scaffold"](source_code);
@@ -389,7 +389,7 @@ server.tool(
 server.tool(
   "ollama_lint_fix",
   "Fix lint errors in a file using a local 3B model. Preserves all logic and behavior — only fixes reported errors.",
-  { file_and_errors: z.string().describe("The file content followed by the lint errors to fix") },
+  { file_and_errors: z.string().max(500000).describe("The file content followed by the lint errors to fix") },
   async ({ file_and_errors }) => {
     const model = MODEL_ROUTES["lint-fix"];
     const prompt = PROMPTS["lint-fix"](file_and_errors);
@@ -418,7 +418,7 @@ server.tool(
 server.tool(
   "ollama_logic_refactor",
   "Refactor a code block for clarity and maintainability using a local 3B model. Preserves behavior and public interfaces.",
-  { code: z.string().describe("The code to refactor") },
+  { code: z.string().max(500000).describe("The code to refactor") },
   async ({ code }) => {
     const model = MODEL_ROUTES["logic-refactor"];
     const prompt = PROMPTS["logic-refactor"](code);
