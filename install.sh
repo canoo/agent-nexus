@@ -51,10 +51,11 @@ download_binary() {
     local checksum_url="https://github.com/$REPO/releases/download/$VERSION/checksums.txt"
     local dest="$INSTALL_DIR/nexus"
     local tmp_binary checksum_file
-    tmp_binary="$(mktemp)"
-    checksum_file="$(mktemp)"
 
     mkdir -p "$INSTALL_DIR"
+    tmp_binary="$(mktemp "$INSTALL_DIR/.nexus.XXXXXX")"
+    checksum_file="$(mktemp)"
+    trap 'rm -f "$tmp_binary" "$checksum_file"' EXIT
 
     info "Downloading nexus $VERSION ($OS/$ARCH)..."
     if command -v curl &>/dev/null; then

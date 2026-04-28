@@ -1079,7 +1079,10 @@ fi
 bash "$SCRIPT"
 `
 		cmd := exec.Command("bash", "-c", script, "bash", tag)
-		_, err := cmd.CombinedOutput()
+		out, err := cmd.CombinedOutput()
+		if err != nil && len(out) > 0 {
+			err = fmt.Errorf("%w: %s", err, string(out))
+		}
 		return updateDoneMsg{err: err}
 	}
 }
