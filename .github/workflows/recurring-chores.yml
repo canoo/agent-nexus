@@ -39,11 +39,13 @@ jobs:
           cd tools/tui
           go get -u ./...
           go mod tidy
+          go mod verify
 
       - name: Update Node.js dependencies
         run: |
           cd tools/mcp
           npm update
+          npm install
 
       - name: Run Go security audit
         run: |

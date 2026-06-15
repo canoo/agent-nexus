@@ -25,14 +25,19 @@ fi
 
 echo "Mapping structure for baseline ($REPO_A) and target ($REPO_B)..."
 
-# Use tree to map the directory structure, excluding common noise
+# Use tree to map the directory structure, excluding common noise.
+# Using 'tree' is preferred for its visual representation.
 map_structure() {
     local repo_path="$1"
     if command -v tree >/dev/null 2>&1; then
+        # -L 3: limit depth to 3 levels
+        # -a: include hidden files
+        # -I: ignore common large/unnecessary directories
         tree -L 3 -a -I '.git|node_modules|dist|build|vendor' "$repo_path"
     else
-        # Fallback if tree is not installed
-        find "$repo_path" -maxdepth 3 -not -path '*/.*' | sed "s|$repo_path||"
+        # Fallback if tree is not installed.
+        # We use a non-pipe delimiter for sed and ensure the path is treated as a literal.
+        find "$repo_path" -maxdepth 3 -not -path '*/.*' | sed "s|^${repo_path}||"
     fi
 }
 
@@ -69,5 +74,5 @@ $STRUCTURE_B
 Output your analysis in Markdown format.
 EOF
 
-echo "Analysis prompt generated at: nexus-audit-prompt.md"
-echo "You can now pipe this to your Tier 1 Agent (e.g., 'cat nexus-audit-prompt.md | claude' or 'gemini-audit.sh nexus-audit-prompt.md .')"
+printf "Analysis prompt generated at: nexus-audit-prompt.md\n"
+printf "You can now pipe this to your Tier 1 Agent (e.g., 'cat nexus-audit-prompt.md | claude' or 'gemini-audit.sh nexus-audit-prompt.md .')\n"
