@@ -198,6 +198,11 @@ j/k: navigate • enter: select • q: quit
 | **Update** | Checks latest release and self-updates with checksum verification |
 | **Uninstall** | Removes all symlinks and binary with confirmation |
 
+### Maintenance
+
+NEXUS includes automated maintenance via GitHub Actions:
+- **Recurring Chores**: Runs twice-weekly to update Go/Node.js dependencies, perform security audits (`govulncheck`, `npm audit`), and verify project integrity.
+
 ---
 
 ## Installation

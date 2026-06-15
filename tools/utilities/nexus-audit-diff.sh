@@ -24,7 +24,50 @@ if [ ! -d "$REPO_A" ] || [ ! -d "$REPO_B" ]; then
 fi
 
 echo "Mapping structure for baseline ($REPO_A) and target ($REPO_B)..."
-# TODO: Implement local directory tree/ast mapping
 
-echo "Submitting analysis request to Tier 1 Agent..."
-# TODO: Pipe gathered context to cloud model (e.g., Claude/Gemini) for gap breakdown
+# Use tree to map the directory structure, excluding common noise
+map_structure() {
+    local repo_path="$1"
+    if command -v tree >/dev/null 2>&1; then
+        tree -L 3 -a -I '.git|node_modules|dist|build|vendor' "$repo_path"
+    else
+        # Fallback if tree is not installed
+        find "$repo_path" -maxdepth 3 -not -path '*/.*' | sed "s|$repo_path||"
+    fi
+}
+
+STRUCTURE_A=$(map_structure "$REPO_A")
+STRUCTURE_B=$(map_structure "$REPO_B")
+
+echo "Generating analysis prompt for Tier 1 Agent..."
+
+cat <<EOF > nexus-audit-prompt.md
+# NEXUS Architectural Gap Analysis
+
+You are a senior systems architect. Your task is to perform a gap analysis between two repositories to identify architectural differences, missing patterns, and integration opportunities.
+
+## Repository A (Baseline)
+Location: $REPO_A
+Structure:
+\`\`\`
+$STRUCTURE_A
+\`\`\`
+
+## Repository B (Target)
+Location: $REPO_B
+Structure:
+\`\`\`
+$STRUCTURE_B
+\`\`\`
+
+## Task
+1. **Structural Audit**: Compare the directory layouts. Identify key architectural patterns present in A but missing in B (and vice-versa).
+2. **Gap Identification**: Highlight missing core components, utility layers, or configuration patterns in Repository B that are established in Repository A.
+3. **Integration Strategy**: Suggest how Repository B could adopt the strengths of Repository A without introducing unnecessary complexity.
+4. **Consistency Check**: Look for naming convention drifts and standard violations.
+
+Output your analysis in Markdown format.
+EOF
+
+echo "Analysis prompt generated at: nexus-audit-prompt.md"
+echo "You can now pipe this to your Tier 1 Agent (e.g., 'cat nexus-audit-prompt.md | claude' or 'gemini-audit.sh nexus-audit-prompt.md .')"
