@@ -1,0 +1,7 @@
+# CodeRabbit is disabled for this repository.
+# Remove the GitHub App installation from repo settings to fully disconnect it.
+reviews:
+  review_status: false
+  auto_review:
+    enabled: false
+    auto_incremental_review: false
