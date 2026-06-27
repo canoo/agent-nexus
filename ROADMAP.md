@@ -20,6 +20,9 @@ Extend observability to AI CLI tools by integrating [Tokscale](https://github.co
 - **Graceful degradation** — if Tokscale is not installed, dashboard shows NEXUS-native metrics only with an install hint (#25)
 - **Session retention guidance** — warn if Claude Code cleanup is set to < 30 days (data loss risk) (#26)
 
+**Automated Maintenance**
+- **Recurring Chores** — GitHub Action running twice-weekly for dependency updates, security audits, and cleanup [DONE]
+
 **What Tokscale provides (data only):** Token counts, cost estimates, and model breakdowns from 20+ CLI tools including Claude Code, Gemini CLI, Cursor, Codex, Copilot, Amp, OpenClaw, and more. Real-time pricing via LiteLLM.
 
 **What NEXUS still owns:** Routing decisions (cloud vs local), Ollama MCP latency, persona-to-task mapping, cost *savings* from local routing, and session-to-task correlation. The combined view shows total cloud CLI spend alongside NEXUS routing savings.

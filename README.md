@@ -6,7 +6,6 @@
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![Linux](https://img.shields.io/badge/Linux-supported-FCC624?style=flat-square&logo=linux&logoColor=black)](https://github.com/canoo/agent-nexus)
 [![macOS](https://img.shields.io/badge/macOS-supported-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/canoo/agent-nexus)
-[![CodeRabbit Reviews](https://img.shields.io/coderabbit/prs/github/canoo/agent-nexus?style=flat-square&labelColor=171717&color=FF570A&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
 **Network of EXperts, Unified in Strategy**
 
@@ -197,6 +196,11 @@ j/k: navigate • enter: select • q: quit
 | **Health Check** | Verifies Ollama reachability, symlink integrity, MCP server status |
 | **Update** | Checks latest release and self-updates with checksum verification |
 | **Uninstall** | Removes all symlinks and binary with confirmation |
+
+### Maintenance
+
+NEXUS includes automated maintenance via GitHub Actions:
+- **Recurring Chores**: Runs twice-weekly to update Go/Node.js dependencies, perform security audits (`govulncheck`, `npm audit`), and verify project integrity.
 
 ---
 
