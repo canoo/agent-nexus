@@ -300,24 +300,28 @@ func TestSummarizeTaskLog(t *testing.T) {
 	entries := []taskLogEntry{
 		{Tool: "ollama_commit_msg", Model: "qwen2.5-coder:1.5b", Routing: "local", CloudCostEquivalent: 0.001, Ms: 10, Ok: true},
 		{Tool: "ollama_boilerplate", Model: "qwen2.5-coder:1.5b", Routing: "local", CloudCostEquivalent: 0.002, Ms: 20, Ok: true},
+		{Tool: "ollama_commit_msg", Model: "fast-path", Routing: "deterministic", CloudCostEquivalent: 0.001, Ms: 0, Ok: true},
 		{Tool: "ollama_lint_fix", Model: "llama3.2:3b", Routing: "local", CloudCostEquivalent: 0.003, Ms: 30, Ok: false},
 	}
 
 	stats := summarizeTaskLog(entries)
-	if stats.total != 3 {
-		t.Errorf("total: got %d, want 3", stats.total)
+	if stats.total != 4 {
+		t.Errorf("total: got %d, want 4", stats.total)
 	}
-	if stats.successes != 2 {
-		t.Errorf("successes: got %d, want 2", stats.successes)
+	if stats.successes != 3 {
+		t.Errorf("successes: got %d, want 3", stats.successes)
 	}
 	if stats.failures != 1 {
 		t.Errorf("failures: got %d, want 1", stats.failures)
 	}
-	if stats.avgMs != 20 {
-		t.Errorf("avgMs: got %d, want 20", stats.avgMs)
+	if stats.avgMs != 15 {
+		t.Errorf("avgMs: got %d, want 15", stats.avgMs)
 	}
-	if math.Abs(stats.savingsUSD-0.006) > 0.000001 {
-		t.Errorf("savingsUSD: got %f, want 0.006", stats.savingsUSD)
+	if stats.p95Ms != 30 {
+		t.Errorf("p95Ms: got %d, want 30", stats.p95Ms)
+	}
+	if math.Abs(stats.savingsUSD-0.007) > 0.000001 {
+		t.Errorf("savingsUSD: got %f, want 0.007", stats.savingsUSD)
 	}
 	if stats.modelTasks["qwen2.5-coder:1.5b"] != 2 {
 		t.Errorf("qwen count: got %d, want 2", stats.modelTasks["qwen2.5-coder:1.5b"])
@@ -325,10 +329,16 @@ func TestSummarizeTaskLog(t *testing.T) {
 	if stats.modelTasks["llama3.2:3b"] != 1 {
 		t.Errorf("llama count: got %d, want 1", stats.modelTasks["llama3.2:3b"])
 	}
+	if stats.routes["local"] != 3 {
+		t.Errorf("local route count: got %d, want 3", stats.routes["local"])
+	}
+	if stats.routes["deterministic"] != 1 {
+		t.Errorf("deterministic route count: got %d, want 1", stats.routes["deterministic"])
+	}
 }
 
-func TestSummarizeModelUsage(t *testing.T) {
-	got := summarizeModelUsage(map[string]int{
+func TestSummarizeIntCounts(t *testing.T) {
+	got := summarizeIntCounts(map[string]int{
 		"llama3.2:3b":        1,
 		"qwen2.5-coder:1.5b": 3,
 		"fast-path":          2,
@@ -338,6 +348,26 @@ func TestSummarizeModelUsage(t *testing.T) {
 	want := "qwen2.5-coder:1.5b (3), fast-path (2), +2 more"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestPercentile95(t *testing.T) {
+	tests := []struct {
+		name   string
+		values []int
+		want   int
+	}{
+		{"empty", nil, 0},
+		{"single", []int{42}, 42},
+		{"unsorted", []int{30, 0, 20, 10}, 30},
+		{"hundred", []int{1, 50, 95, 100}, 100},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := percentile95(tt.values); got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
