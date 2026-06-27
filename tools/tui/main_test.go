@@ -295,6 +295,48 @@ func TestViewsDoNotPanic(t *testing.T) {
 	}
 }
 
+func TestSummarizeTaskLog(t *testing.T) {
+	entries := []taskLogEntry{
+		{Tool: "ollama_commit_msg", Model: "qwen2.5-coder:1.5b", Ms: 10, Ok: true},
+		{Tool: "ollama_boilerplate", Model: "qwen2.5-coder:1.5b", Ms: 20, Ok: true},
+		{Tool: "ollama_lint_fix", Model: "llama3.2:3b", Ms: 30, Ok: false},
+	}
+
+	stats := summarizeTaskLog(entries)
+	if stats.total != 3 {
+		t.Errorf("total: got %d, want 3", stats.total)
+	}
+	if stats.successes != 2 {
+		t.Errorf("successes: got %d, want 2", stats.successes)
+	}
+	if stats.failures != 1 {
+		t.Errorf("failures: got %d, want 1", stats.failures)
+	}
+	if stats.avgMs != 20 {
+		t.Errorf("avgMs: got %d, want 20", stats.avgMs)
+	}
+	if stats.modelTasks["qwen2.5-coder:1.5b"] != 2 {
+		t.Errorf("qwen count: got %d, want 2", stats.modelTasks["qwen2.5-coder:1.5b"])
+	}
+	if stats.modelTasks["llama3.2:3b"] != 1 {
+		t.Errorf("llama count: got %d, want 1", stats.modelTasks["llama3.2:3b"])
+	}
+}
+
+func TestSummarizeModelUsage(t *testing.T) {
+	got := summarizeModelUsage(map[string]int{
+		"llama3.2:3b":        1,
+		"qwen2.5-coder:1.5b": 3,
+		"fast-path":          2,
+		"qwen2.5:14b":        1,
+	}, 2)
+
+	want := "qwen2.5-coder:1.5b (3), fast-path (2), +2 more"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestBorderBoxClampsWidth(t *testing.T) {
 	m := initialModel()
 
