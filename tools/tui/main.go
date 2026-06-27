@@ -83,12 +83,16 @@ type healthMsg struct {
 // --- task log ---
 
 type taskLogEntry struct {
-	Tool  string `json:"tool"`
-	Model string `json:"model"`
-	Ms    int    `json:"ms"`
-	Ok    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
-	Ts    int64  `json:"ts"`
+	Tool                string  `json:"tool"`
+	Model               string  `json:"model"`
+	Routing             string  `json:"routing,omitempty"`
+	TokensIn            int     `json:"tokens_in,omitempty"`
+	TokensOut           int     `json:"tokens_out,omitempty"`
+	CloudCostEquivalent float64 `json:"cloud_cost_equivalent,omitempty"`
+	Ms                  int     `json:"ms"`
+	Ok                  bool    `json:"ok"`
+	Error               string  `json:"error,omitempty"`
+	Ts                  int64   `json:"ts"`
 }
 
 type taskLogMsg struct {
@@ -101,6 +105,7 @@ type taskLogStats struct {
 	failures   int
 	avgMs      int
 	modelTasks map[string]int
+	savingsUSD float64
 }
 
 // --- GPU detection ---
@@ -869,6 +874,9 @@ func taskLogView(m model) string {
 		}
 		s += fmt.Sprintf("  Tasks: %d  Success: %d%%  Failures: %d  Avg latency: %dms\n",
 			stats.total, successRate, stats.failures, stats.avgMs)
+		if stats.savingsUSD > 0 {
+			s += fmt.Sprintf("  Est. local savings: $%.4f\n", stats.savingsUSD)
+		}
 		s += fmt.Sprintf("  Models: %s\n\n", summarizeModelUsage(stats.modelTasks, 3))
 
 		// Header
@@ -907,6 +915,9 @@ func summarizeTaskLog(entries []taskLogEntry) taskLogStats {
 			stats.successes++
 		} else {
 			stats.failures++
+		}
+		if e.Routing == "local" || e.Routing == "deterministic" {
+			stats.savingsUSD += e.CloudCostEquivalent
 		}
 		model := strings.TrimSpace(e.Model)
 		if model == "" {
