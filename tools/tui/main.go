@@ -303,8 +303,13 @@ func findNexusDir() string {
 			dir = parent
 		}
 	}
-	// Default: curl installer clones here
-	home, _ := os.UserHomeDir()
+	// Default: curl installer clones here. If $HOME is unset (CI container,
+	// restricted service account) fall back to a CWD-relative path so we
+	// never resolve to a root-filesystem location like "/.config/nexus/repo".
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return filepath.Join(".config", "nexus", "repo")
+	}
 	return filepath.Join(home, ".config", "nexus", "repo")
 }
 
@@ -521,7 +526,10 @@ func runInstallStep(m model, idx int) tea.Cmd {
 			return stepDoneMsg{idx: idx, ok: true, detail: nexus}
 
 		case 1: // symlink core files
-			home, _ := os.UserHomeDir()
+			home, err := os.UserHomeDir()
+			if err != nil || home == "" {
+				return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
+			}
 			links := []struct{ src, dst string }{
 				{"core/NEXUS.md", filepath.Join(home, ".gemini", "GEMINI.md")},
 				{"core/CLAUDE.md", filepath.Join(home, ".claude", "CLAUDE.md")},
@@ -535,7 +543,10 @@ func runInstallStep(m model, idx int) tea.Cmd {
 			return stepDoneMsg{idx: idx, ok: true, detail: "3 core files linked"}
 
 		case 2: // symlink config dirs
-			home, _ := os.UserHomeDir()
+			home, err := os.UserHomeDir()
+			if err != nil || home == "" {
+				return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
+			}
 			configDir := filepath.Join(home, ".config", "nexus")
 			dirs := []string{"personas", "tools", "prompts", "mcp-configs", "agent-memory"}
 			for _, d := range dirs {
@@ -546,7 +557,10 @@ func runInstallStep(m model, idx int) tea.Cmd {
 			return stepDoneMsg{idx: idx, ok: true, detail: fmt.Sprintf("%d directories linked", len(dirs))}
 
 		case 3: // configure MCP
-			home, _ := os.UserHomeDir()
+			home, err := os.UserHomeDir()
+			if err != nil || home == "" {
+				return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
+			}
 			mcpFile := filepath.Join(home, ".kiro", "settings", "mcp.json")
 			configDir := filepath.Join(home, ".config", "nexus")
 			serverPath := filepath.Join(configDir, "tools", "mcp", "server.mjs")
@@ -768,7 +782,12 @@ func healthView(m model) string {
 
 func loadTaskLog() tea.Cmd {
 	return func() tea.Msg {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			// No $HOME means no log file to load. Return empty rather
+			// than reading from "/.config/nexus/logs/mcp-tasks.jsonl".
+			return taskLogMsg{}
+		}
 		logFile := filepath.Join(home, ".config", "nexus", "logs", "mcp-tasks.jsonl")
 		data, err := os.ReadFile(logFile)
 		if err != nil {
@@ -1183,7 +1202,11 @@ func checkHealth(nexusDir, ollamaURL string) tea.Cmd {
 
 		h.gpu = detectGPU()
 
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			h.links = append(h.links, "✗ home directory: $HOME unset")
+			return h
+		}
 		links := []struct{ label, path string }{
 			{"Gemini", filepath.Join(home, ".gemini", "GEMINI.md")},
 			{"Claude", filepath.Join(home, ".claude", "CLAUDE.md")},
