@@ -83,16 +83,29 @@ type healthMsg struct {
 // --- task log ---
 
 type taskLogEntry struct {
-	Tool  string `json:"tool"`
-	Model string `json:"model"`
-	Ms    int    `json:"ms"`
-	Ok    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
-	Ts    int64  `json:"ts"`
+	Tool                string  `json:"tool"`
+	Model               string  `json:"model"`
+	Routing             string  `json:"routing,omitempty"`
+	TokensIn            int     `json:"tokens_in,omitempty"`
+	TokensOut           int     `json:"tokens_out,omitempty"`
+	CloudCostEquivalent float64 `json:"cloud_cost_equivalent,omitempty"`
+	Ms                  int     `json:"ms"`
+	Ok                  bool    `json:"ok"`
+	Error               string  `json:"error,omitempty"`
+	Ts                  int64   `json:"ts"`
 }
 
 type taskLogMsg struct {
 	entries []taskLogEntry
+}
+
+type taskLogStats struct {
+	total      int
+	successes  int
+	failures   int
+	avgMs      int
+	modelTasks map[string]int
+	savingsUSD float64
 }
 
 // --- GPU detection ---
@@ -250,9 +263,9 @@ type model struct {
 	localAIAsked bool // true after user answered the prompt during install
 
 	// uninstall / generic operation
-	running           bool
-	output            string
-	err               error
+	running            bool
+	output             string
+	err                error
 	uninstallConfirmed bool
 
 	// health
@@ -854,6 +867,18 @@ func taskLogView(m model) string {
 		s += m.styles.subtle.Render("No MCP tasks recorded yet.") + "\n"
 		s += m.styles.subtle.Render("Tasks appear here when AI tools use the nexus-ollama MCP server.") + "\n"
 	} else {
+		stats := summarizeTaskLog(m.taskLog)
+		successRate := 0
+		if stats.total > 0 {
+			successRate = stats.successes * 100 / stats.total
+		}
+		s += fmt.Sprintf("  Tasks: %d  Success: %d%%  Failures: %d  Avg latency: %dms\n",
+			stats.total, successRate, stats.failures, stats.avgMs)
+		if stats.savingsUSD > 0 {
+			s += fmt.Sprintf("  Est. local savings: $%.4f\n", stats.savingsUSD)
+		}
+		s += fmt.Sprintf("  Models: %s\n\n", summarizeModelUsage(stats.modelTasks, 3))
+
 		// Header
 		s += fmt.Sprintf("  %-24s %-22s %8s  %s\n",
 			"Tool", "Model", "Time", "Status")
@@ -874,6 +899,69 @@ func taskLogView(m model) string {
 	}
 	s += "\n" + m.styles.subtle.Render("r: refresh • esc: back")
 	return m.borderBox(s)
+}
+
+func summarizeTaskLog(entries []taskLogEntry) taskLogStats {
+	stats := taskLogStats{modelTasks: map[string]int{}}
+	if len(entries) == 0 {
+		return stats
+	}
+
+	totalMs := 0
+	for _, e := range entries {
+		stats.total++
+		totalMs += e.Ms
+		if e.Ok {
+			stats.successes++
+		} else {
+			stats.failures++
+		}
+		if e.Routing == "local" || e.Routing == "deterministic" {
+			stats.savingsUSD += e.CloudCostEquivalent
+		}
+		model := strings.TrimSpace(e.Model)
+		if model == "" {
+			model = "unknown"
+		}
+		stats.modelTasks[model]++
+	}
+	stats.avgMs = totalMs / stats.total
+	return stats
+}
+
+func summarizeModelUsage(modelTasks map[string]int, maxModels int) string {
+	if len(modelTasks) == 0 {
+		return "none"
+	}
+
+	type modelCount struct {
+		model string
+		count int
+	}
+	counts := make([]modelCount, 0, len(modelTasks))
+	for model, count := range modelTasks {
+		counts = append(counts, modelCount{model: model, count: count})
+	}
+	for i := 0; i < len(counts); i++ {
+		for j := i + 1; j < len(counts); j++ {
+			if counts[j].count > counts[i].count ||
+				(counts[j].count == counts[i].count && counts[j].model < counts[i].model) {
+				counts[i], counts[j] = counts[j], counts[i]
+			}
+		}
+	}
+
+	if maxModels <= 0 || maxModels > len(counts) {
+		maxModels = len(counts)
+	}
+	parts := make([]string, 0, maxModels+1)
+	for i := 0; i < maxModels; i++ {
+		parts = append(parts, fmt.Sprintf("%s (%d)", counts[i].model, counts[i].count))
+	}
+	if len(counts) > maxModels {
+		parts = append(parts, fmt.Sprintf("+%d more", len(counts)-maxModels))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // --- uninstall (original) ---

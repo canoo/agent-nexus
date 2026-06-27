@@ -10,6 +10,8 @@ Make routing decisions visible. Without data, we can't improve. This milestone c
 - **TUI dashboard** — live view of model usage and routing stats (#10)
 - **Cost tracker** — monitor cloud API spend vs local compute savings; estimate "what this would have cost on cloud" for locally-routed tasks (#11)
 
+See [docs/observability-schema.md](docs/observability-schema.md) for the planned SQLite schema and JSONL migration path.
+
 ## v0.2.1 — CLI Usage Ingestion (via Tokscale)
 
 Extend observability to AI CLI tools by integrating [Tokscale](https://github.com/junhoyeo/tokscale) as an optional data provider. NEXUS shells out to `tokscale --json` and renders the data in its own TUI — Tokscale's TUI is never launched, and its social/leaderboard features are not integrated.

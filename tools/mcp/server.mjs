@@ -31,6 +31,41 @@ function logTask(entry) {
   } catch {}
 }
 
+// Early cost tracking uses a conservative cloud-equivalent estimate. Local
+// Ollama tasks cost $0 here; this value answers "what would this have cost if
+// routed to a typical cloud coding model?" until provider-specific pricing lands.
+const CLOUD_INPUT_USD_PER_1M = 3.0;
+const CLOUD_OUTPUT_USD_PER_1M = 15.0;
+
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+function estimateCloudCost(tokensIn, tokensOut) {
+  return (tokensIn / 1_000_000) * CLOUD_INPUT_USD_PER_1M +
+    (tokensOut / 1_000_000) * CLOUD_OUTPUT_USD_PER_1M;
+}
+
+function taskLogEntry({ tool, model, ms, ok, prompt = "", response = "", error }) {
+  const tokensIn = estimateTokens(prompt);
+  const tokensOut = estimateTokens(response);
+  const routing = model === "fast-path" ? "deterministic" : "local";
+  const entry = {
+    tool,
+    model,
+    routing,
+    tokens_in: tokensIn,
+    tokens_out: tokensOut,
+    cloud_cost_equivalent: estimateCloudCost(tokensIn, tokensOut),
+    ms,
+    ok,
+    ts: Date.now(),
+  };
+  if (error) entry.error = error;
+  return entry;
+}
+
 // ── Model routing table ─────────────────────────────────────────────────────
 // Matches ollama-delegate.sh: supervisor band (1.5B) for fast tasks,
 // logic band (3B) for heavier reasoning.
@@ -301,7 +336,14 @@ server.tool(
     // Fast-path: deterministic commit messages for trivial diffs
     const fastResult = fastPathCommitMsg(diff);
     if (fastResult) {
-      logTask({ tool: "ollama_commit_msg", model: "fast-path", ms: 0, ok: true, ts: Date.now() });
+      logTask(taskLogEntry({
+        tool: "ollama_commit_msg",
+        model: "fast-path",
+        ms: 0,
+        ok: true,
+        prompt: diff,
+        response: fastResult,
+      }));
       return { content: [{ type: "text", text: fastResult }] };
     }
     const model = MODEL_ROUTES["commit-msg"];
@@ -309,14 +351,28 @@ server.tool(
     try {
       const start = Date.now();
       const result = await callOllama(model, prompt, "commit-msg");
-      logTask({ tool: "ollama_commit_msg", model, ms: Date.now() - start, ok: true, ts: Date.now() });
+      logTask(taskLogEntry({
+        tool: "ollama_commit_msg",
+        model,
+        ms: Date.now() - start,
+        ok: true,
+        prompt,
+        response: result,
+      }));
       return {
         content: [
           { type: "text", text: result },
         ],
       };
     } catch (e) {
-      logTask({ tool: "ollama_commit_msg", model, ms: 0, ok: false, error: e.message, ts: Date.now() });
+      logTask(taskLogEntry({
+        tool: "ollama_commit_msg",
+        model,
+        ms: 0,
+        ok: false,
+        prompt,
+        error: e.message,
+      }));
       return {
         content: [
           { type: "text", text: `CIRCUIT_BREAKER: ${e.message}` },
@@ -338,14 +394,28 @@ server.tool(
     try {
       const start = Date.now();
       const result = await callOllama(model, prompt, "boilerplate");
-      logTask({ tool: "ollama_boilerplate", model, ms: Date.now() - start, ok: true, ts: Date.now() });
+      logTask(taskLogEntry({
+        tool: "ollama_boilerplate",
+        model,
+        ms: Date.now() - start,
+        ok: true,
+        prompt,
+        response: result,
+      }));
       return {
         content: [
           { type: "text", text: result },
         ],
       };
     } catch (e) {
-      logTask({ tool: "ollama_boilerplate", model, ms: 0, ok: false, error: e.message, ts: Date.now() });
+      logTask(taskLogEntry({
+        tool: "ollama_boilerplate",
+        model,
+        ms: 0,
+        ok: false,
+        prompt,
+        error: e.message,
+      }));
       return {
         content: [
           { type: "text", text: `CIRCUIT_BREAKER: ${e.message}` },
@@ -367,14 +437,28 @@ server.tool(
     try {
       const start = Date.now();
       const result = await callOllama(model, prompt, "test-scaffold");
-      logTask({ tool: "ollama_test_scaffold", model, ms: Date.now() - start, ok: true, ts: Date.now() });
+      logTask(taskLogEntry({
+        tool: "ollama_test_scaffold",
+        model,
+        ms: Date.now() - start,
+        ok: true,
+        prompt,
+        response: result,
+      }));
       return {
         content: [
           { type: "text", text: result },
         ],
       };
     } catch (e) {
-      logTask({ tool: "ollama_test_scaffold", model, ms: 0, ok: false, error: e.message, ts: Date.now() });
+      logTask(taskLogEntry({
+        tool: "ollama_test_scaffold",
+        model,
+        ms: 0,
+        ok: false,
+        prompt,
+        error: e.message,
+      }));
       return {
         content: [
           { type: "text", text: `CIRCUIT_BREAKER: ${e.message}` },
@@ -396,14 +480,28 @@ server.tool(
     try {
       const start = Date.now();
       const result = await callOllama(model, prompt, "lint-fix");
-      logTask({ tool: "ollama_lint_fix", model, ms: Date.now() - start, ok: true, ts: Date.now() });
+      logTask(taskLogEntry({
+        tool: "ollama_lint_fix",
+        model,
+        ms: Date.now() - start,
+        ok: true,
+        prompt,
+        response: result,
+      }));
       return {
         content: [
           { type: "text", text: result },
         ],
       };
     } catch (e) {
-      logTask({ tool: "ollama_lint_fix", model, ms: 0, ok: false, error: e.message, ts: Date.now() });
+      logTask(taskLogEntry({
+        tool: "ollama_lint_fix",
+        model,
+        ms: 0,
+        ok: false,
+        prompt,
+        error: e.message,
+      }));
       return {
         content: [
           { type: "text", text: `CIRCUIT_BREAKER: ${e.message}` },
@@ -425,14 +523,28 @@ server.tool(
     try {
       const start = Date.now();
       const result = await callOllama(model, prompt, "logic-refactor");
-      logTask({ tool: "ollama_logic_refactor", model, ms: Date.now() - start, ok: true, ts: Date.now() });
+      logTask(taskLogEntry({
+        tool: "ollama_logic_refactor",
+        model,
+        ms: Date.now() - start,
+        ok: true,
+        prompt,
+        response: result,
+      }));
       return {
         content: [
           { type: "text", text: result },
         ],
       };
     } catch (e) {
-      logTask({ tool: "ollama_logic_refactor", model, ms: 0, ok: false, error: e.message, ts: Date.now() });
+      logTask(taskLogEntry({
+        tool: "ollama_logic_refactor",
+        model,
+        ms: 0,
+        ok: false,
+        prompt,
+        error: e.message,
+      }));
       return {
         content: [
           { type: "text", text: `CIRCUIT_BREAKER: ${e.message}` },
