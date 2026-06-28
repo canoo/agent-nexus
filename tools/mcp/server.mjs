@@ -12,6 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { appendFileSync, mkdirSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -20,15 +21,170 @@ const CONNECT_TIMEOUT_MS = 5000;
 const REQUEST_TIMEOUT_MS = 120000;
 
 // ── Task log ────────────────────────────────────────────────────────────────
-// Writes JSONL entries to ~/.config/nexus/logs/mcp-tasks.jsonl for TUI display.
+// Writes SQLite entries to ~/.config/nexus/logs/observability.sqlite when the
+// runtime supports node:sqlite. JSONL remains a compatibility source for older
+// runtimes and older TUI builds.
 const LOG_DIR = join(homedir(), ".config", "nexus", "logs");
 const LOG_FILE = join(LOG_DIR, "mcp-tasks.jsonl");
+const DB_FILE = join(LOG_DIR, "observability.sqlite");
 try { mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+
+let sqlite = null;
+try {
+  const { DatabaseSync } = await import("node:sqlite");
+  sqlite = new DatabaseSync(DB_FILE);
+  sqlite.exec(`
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    start_time TEXT NOT NULL,
+    end_time TEXT,
+    status TEXT,
+    cli_tool TEXT,
+    persona TEXT,
+    nexus_mode TEXT,
+    project_path_hash TEXT,
+    nexus_version TEXT,
+    metadata_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id),
+    parent_task_id TEXT REFERENCES tasks(id),
+    timestamp TEXT NOT NULL,
+    source TEXT NOT NULL,
+    tool TEXT,
+    task_type TEXT,
+    model TEXT NOT NULL,
+    model_provider TEXT,
+    route_band TEXT,
+    routing TEXT NOT NULL,
+    routing_reason TEXT,
+    trace_id TEXT,
+    span_id TEXT,
+    parent_span_id TEXT,
+    client_request_id TEXT,
+    upstream_session_id TEXT,
+    upstream_tool TEXT,
+    idempotency_key TEXT,
+    input_bytes INTEGER,
+    output_bytes INTEGER,
+    input_hash TEXT,
+    tokens_in INTEGER,
+    tokens_out INTEGER,
+    total_tokens INTEGER,
+    latency_ms INTEGER,
+    cost_usd REAL,
+    cloud_cost_equivalent REAL,
+    quality_rating INTEGER,
+    ok INTEGER NOT NULL DEFAULT 1,
+    error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS routing_decisions (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id),
+    decided_at TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    alternatives_considered TEXT,
+    classifier_version TEXT,
+    fallback_from TEXT,
+    fallback_to TEXT,
+    circuit_breaker_triggered INTEGER NOT NULL DEFAULT 0,
+    latency_budget_ms INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_start_time
+    ON sessions(start_time);
+CREATE INDEX IF NOT EXISTS idx_tasks_session_id
+    ON tasks(session_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_timestamp
+    ON tasks(timestamp);
+CREATE INDEX IF NOT EXISTS idx_tasks_model
+    ON tasks(model);
+CREATE INDEX IF NOT EXISTS idx_tasks_status
+    ON tasks(ok);
+CREATE INDEX IF NOT EXISTS idx_tasks_routing
+    ON tasks(routing);
+CREATE INDEX IF NOT EXISTS idx_routing_decisions_task_id
+    ON routing_decisions(task_id);
+INSERT OR IGNORE INTO schema_migrations (version, applied_at)
+VALUES (1, datetime('now'));
+`);
+} catch {}
 
 function logTask(entry) {
   try {
     appendFileSync(LOG_FILE, JSON.stringify(entry) + "\n");
   } catch {}
+
+  if (!sqlite) return;
+  try {
+    writeSqliteTask(entry);
+  } catch {}
+}
+
+function writeSqliteTask(entry) {
+  const sessionId = `mcp-${entry.timestamp.slice(0, 10)}`;
+  sqlite.prepare(`
+INSERT OR IGNORE INTO sessions
+    (id, start_time, status, cli_tool, nexus_mode, metadata_json)
+VALUES
+    (?, ?, 'active', 'mcp', 'hybrid', ?)
+`).run(sessionId, `${entry.timestamp.slice(0, 10)}T00:00:00.000Z`, JSON.stringify({ source: "nexus-ollama" }));
+
+  sqlite.prepare(`
+INSERT INTO tasks
+    (id, session_id, timestamp, source, tool, task_type, model, model_provider,
+     route_band, routing, routing_reason, input_bytes, output_bytes, input_hash,
+     tokens_in, tokens_out, total_tokens, latency_ms, cost_usd,
+     cloud_cost_equivalent, ok, error)
+VALUES
+    (?, ?, ?, 'mcp-tool', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(
+    entry.id,
+    sessionId,
+    entry.timestamp,
+    entry.tool,
+    entry.task_type,
+    entry.model,
+    entry.model_provider,
+    entry.route_band,
+    entry.routing,
+    `mcp:${entry.tool}`,
+    entry.input_bytes,
+    entry.output_bytes,
+    entry.input_hash,
+    entry.tokens_in,
+    entry.tokens_out,
+    entry.tokens_in + entry.tokens_out,
+    entry.ms,
+    entry.cost_usd,
+    entry.cloud_cost_equivalent,
+    entry.ok ? 1 : 0,
+    entry.error || null,
+  );
+
+  sqlite.prepare(`
+INSERT INTO routing_decisions
+    (id, task_id, decided_at, reason, alternatives_considered,
+     classifier_version, circuit_breaker_triggered, latency_budget_ms)
+VALUES
+    (?, ?, ?, ?, ?, 'rules-v1', ?, ?)
+`).run(
+    randomUUID(),
+    entry.id,
+    entry.timestamp,
+    `Selected ${entry.route_band} route for ${entry.task_type}`,
+    JSON.stringify([]),
+    entry.ok ? 0 : 1,
+    REQUEST_TIMEOUT_MS,
+  );
 }
 
 // Early cost tracking uses a conservative cloud-equivalent estimate. Local
@@ -69,7 +225,9 @@ function taskLogEntry({ tool, model, ms, ok, prompt = "", response = "", error }
   const tokensIn = estimateTokens(prompt);
   const tokensOut = estimateTokens(response);
   const routing = model === "fast-path" ? "deterministic" : "local";
+  const timestamp = new Date();
   const entry = {
+    id: randomUUID(),
     tool,
     task_type: taskType,
     model,
@@ -78,11 +236,15 @@ function taskLogEntry({ tool, model, ms, ok, prompt = "", response = "", error }
     routing,
     tokens_in: tokensIn,
     tokens_out: tokensOut,
+    input_bytes: Buffer.byteLength(prompt, "utf8"),
+    output_bytes: Buffer.byteLength(response, "utf8"),
+    input_hash: prompt ? createHash("sha256").update(prompt).digest("hex") : "",
     cost_usd: 0,
     cloud_cost_equivalent: estimateCloudCost(tokensIn, tokensOut),
     ms,
     ok,
-    ts: Date.now(),
+    ts: timestamp.getTime(),
+    timestamp: timestamp.toISOString(),
   };
   if (error) entry.error = error;
   return entry;

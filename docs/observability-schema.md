@@ -30,8 +30,10 @@ The existing MCP JSONL log remains a compatibility source during migration:
 ~/.config/nexus/logs/mcp-tasks.jsonl
 ```
 
-Writers should prefer SQLite once implemented. Readers may fall back to JSONL
-until the migration is complete.
+The MCP writer prefers SQLite when the Node runtime exposes `node:sqlite`.
+Readers may fall back to JSONL until the migration is complete. JSONL writes
+continue during the transition so older TUI builds can still display task
+history.
 
 ## Entity Model
 
@@ -220,9 +222,9 @@ LIMIT 20;
 
 ## Migration Plan
 
-1. Add a small SQLite writer used by the MCP server for new task rows.
+1. Add a small SQLite writer used by the MCP server for new task rows. [DONE]
 2. Keep JSONL writes temporarily so older TUI builds can still display task
-   history.
+   history. [DONE]
 3. Add a one-time importer that reads `mcp-tasks.jsonl` and writes missing rows
    into SQLite using deterministic task IDs.
 4. Update the TUI Task Log and dashboard screens to prefer SQLite and fall back
