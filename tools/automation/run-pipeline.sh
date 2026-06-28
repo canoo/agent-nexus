@@ -117,7 +117,7 @@ build_prompt() {
   # Ollama availability note for the orchestrator
   local ollama_note=""
   if [ -n "${OLLAMA_HOST_URL:-}" ]; then
-    ollama_note="**L1 LOCAL MODELS AVAILABLE** — scripts/ollama-delegate.sh is configured at ${OLLAMA_HOST_URL}.
+    ollama_note="**L1 LOCAL MODELS AVAILABLE** — tools/automation/ollama-delegate.sh is configured at ${OLLAMA_HOST_URL}.
 Use it (via Bash tool) for: commit-msg, boilerplate, test-scaffold, lint-fix, logic-refactor tasks.
 Circuit breaker rules — when ollama-delegate.sh exits with code 3:
   1. Immediately echo to console: 'WARN: Local Ollama unreachable. Tripping circuit breaker.'
@@ -237,7 +237,7 @@ Commits to execute in order:
 
 Commit-type & Tag → specialist routing:
 - FIRST, check for the [L1] tag in the commit message or goal. 
-  → If [L1] is present: You MUST execute this task locally using the Bash tool to call \`scripts/ollama-delegate.sh "\$OLLAMA_HOST_URL" "<task_description>"\`. Do NOT spawn an Anthropic agent for [L1] tasks.
+  → If [L1] is present: You MUST execute this task locally using the Bash tool to write the task context to a temporary file, then call \`tools/automation/ollama-delegate.sh "<task-type>" "<context-file>"\`. Do NOT pass OLLAMA_HOST_URL as an argument; the script reads it from the environment. Do NOT spawn an Anthropic agent for [L1] tasks.
 - If NO [L1] tag, route by commit type:
   - feat:/fix: on frontend/UI files  → frontend-developer
   - feat:/fix: on backend/API files  → engineering-backend-architect
