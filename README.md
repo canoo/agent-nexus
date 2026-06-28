@@ -6,6 +6,7 @@
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![Linux](https://img.shields.io/badge/Linux-supported-FCC624?style=flat-square&logo=linux&logoColor=black)](https://github.com/canoo/agent-nexus)
 [![macOS](https://img.shields.io/badge/macOS-supported-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/canoo/agent-nexus)
+[![Discord](https://img.shields.io/badge/Discord-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/tpHCzpAwr)
 
 **Network of EXperts, Unified in Strategy**
 
@@ -284,6 +285,19 @@ bash tests/test-install-cycle.sh
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, PR guidelines, and commit conventions.
+
+### Looking for contributors
+
+NEXUS is an early open-source project and is actively looking for a few steady contributors as the next milestones come together:
+
+| Role | Good fit if you like | Current focus |
+|---|---|---|
+| **Discord/community moderator** | Welcoming new users, collecting feedback, keeping discussions organized, setting up webhooks, and working with Discord bots or the Discord Developer Platform | Help shape community norms, surface useful bug reports, automate helpful community workflows, and turn recurring questions into docs or issues |
+| **Integrator** | Connecting tools, MCP servers, CLIs, and config formats | Help test NEXUS across Claude Code, Gemini CLI, Kiro, Cursor, Windsurf, Cline, Continue.dev, and local Ollama setups |
+| **Developer** | Go, Node.js, terminal UX, automation, or local AI workflows | Help with observability, tool sync, routing, tests, cross-platform support, and release polish |
+| **Documentation/discussion contributor** | Explaining workflows clearly and asking good product questions | Help write guides, forum posts, dependency proposals, and milestone summaries |
+
+If any of that sounds useful, [join the Discord](https://discord.gg/tpHCzpAwr), open a GitHub Discussion, or pick up an issue from the current milestones. Small, focused contributions are welcome.
 
 ## Security
 
