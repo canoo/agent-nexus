@@ -16,12 +16,14 @@ The main areas where help would be useful:
 
 ## Discord/community moderator
 
-Someone who can help keep community discussion organized, welcome new users, collect common questions, and turn recurring feedback into docs, issues, or milestone notes.
+Someone who can help keep community discussion organized, welcome new users, collect common questions, and turn recurring feedback into docs, issues, or milestone notes. Discord webhook, bot, and Developer Platform experience would also be helpful as the community tooling grows.
 
 Good fit if you like:
 
 - Helping users get unstuck
 - Keeping discussions friendly and on topic
+- Setting up Discord webhooks and lightweight automations
+- Working with Discord bots or the Discord Developer Platform
 - Turning vague feedback into clear issues
 - Helping define community norms early
 

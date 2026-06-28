@@ -291,7 +291,7 @@ NEXUS is an early open-source project and is actively looking for a few steady c
 
 | Role | Good fit if you like | Current focus |
 |---|---|---|
-| **Discord/community moderator** | Welcoming new users, collecting feedback, keeping discussions organized | Help shape community norms, surface useful bug reports, and turn recurring questions into docs or issues |
+| **Discord/community moderator** | Welcoming new users, collecting feedback, keeping discussions organized, setting up webhooks, and working with Discord bots or the Discord Developer Platform | Help shape community norms, surface useful bug reports, automate helpful community workflows, and turn recurring questions into docs or issues |
 | **Integrator** | Connecting tools, MCP servers, CLIs, and config formats | Help test NEXUS across Claude Code, Gemini CLI, Kiro, Cursor, Windsurf, Cline, Continue.dev, and local Ollama setups |
 | **Developer** | Go, Node.js, terminal UX, automation, or local AI workflows | Help with observability, tool sync, routing, tests, cross-platform support, and release polish |
 | **Documentation/discussion contributor** | Explaining workflows clearly and asking good product questions | Help write guides, forum posts, dependency proposals, and milestone summaries |
