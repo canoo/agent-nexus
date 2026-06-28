@@ -286,7 +286,11 @@ log "Audit only: $AUDIT_ONLY"
 log "Skip audit: $SKIP_AUDIT"
 log "Resume:     $RESUME"
 log "Max phases: $MAX_PHASES"
-[ -n "${OLLAMA_HOST_URL:-}" ] && log "Ollama:     $OLLAMA_HOST_URL" || log "Ollama:     not configured"
+if [ -n "${OLLAMA_HOST_URL:-}" ]; then
+  log "Ollama:     $OLLAMA_HOST_URL"
+else
+  log "Ollama:     not configured"
+fi
 log "═══════════════════════════════════════════════════════"
 
 # Run Gemini audit gate as a shell-level pre-check (before the Opus session starts)

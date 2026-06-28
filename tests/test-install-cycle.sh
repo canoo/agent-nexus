@@ -204,8 +204,8 @@ done
 assert_not_exists "$FAKE_HOME/.kiro/settings/mcp.json" "kiro mcp.json removed"
 
 # Empty dirs should be cleaned up.
-assert_not_exists "$FAKE_HOME/.config/nexus" "~/.config/nexus cleaned up"
-assert_not_exists "$FAKE_HOME/.kiro"         "~/.kiro cleaned up"
+assert_not_exists "$FAKE_HOME/.config/nexus" "\$HOME/.config/nexus cleaned up"
+assert_not_exists "$FAKE_HOME/.kiro"         "\$HOME/.kiro cleaned up"
 
 # ── Test 5: Setup fails gracefully on incomplete repo ───────────────
 echo ""

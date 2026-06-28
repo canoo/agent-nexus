@@ -104,7 +104,9 @@ type taskLogStats struct {
 	successes  int
 	failures   int
 	avgMs      int
+	p95Ms      int
 	modelTasks map[string]int
+	routes     map[string]int
 	savingsUSD float64
 }
 
@@ -872,11 +874,13 @@ func taskLogView(m model) string {
 		if stats.total > 0 {
 			successRate = stats.successes * 100 / stats.total
 		}
-		s += fmt.Sprintf("  Tasks: %d  Success: %d%%  Failures: %d  Avg latency: %dms\n",
-			stats.total, successRate, stats.failures, stats.avgMs)
+		s += fmt.Sprintf("  Tasks: %d  Success: %d%%  Failures: %d\n",
+			stats.total, successRate, stats.failures)
+		s += fmt.Sprintf("  Latency: avg %dms  p95 %dms\n", stats.avgMs, stats.p95Ms)
 		if stats.savingsUSD > 0 {
 			s += fmt.Sprintf("  Est. local savings: $%.4f\n", stats.savingsUSD)
 		}
+		s += fmt.Sprintf("  Routes: %s\n", summarizeIntCounts(stats.routes, 3))
 		s += fmt.Sprintf("  Models: %s\n\n", summarizeModelUsage(stats.modelTasks, 3))
 
 		// Header
@@ -902,15 +906,20 @@ func taskLogView(m model) string {
 }
 
 func summarizeTaskLog(entries []taskLogEntry) taskLogStats {
-	stats := taskLogStats{modelTasks: map[string]int{}}
+	stats := taskLogStats{
+		modelTasks: map[string]int{},
+		routes:     map[string]int{},
+	}
 	if len(entries) == 0 {
 		return stats
 	}
 
 	totalMs := 0
+	latencies := make([]int, 0, len(entries))
 	for _, e := range entries {
 		stats.total++
 		totalMs += e.Ms
+		latencies = append(latencies, e.Ms)
 		if e.Ok {
 			stats.successes++
 		} else {
@@ -924,44 +933,73 @@ func summarizeTaskLog(entries []taskLogEntry) taskLogStats {
 			model = "unknown"
 		}
 		stats.modelTasks[model]++
+		route := strings.TrimSpace(e.Routing)
+		if route == "" {
+			route = "unknown"
+		}
+		stats.routes[route]++
 	}
 	stats.avgMs = totalMs / stats.total
+	stats.p95Ms = percentile95(latencies)
 	return stats
 }
 
 func summarizeModelUsage(modelTasks map[string]int, maxModels int) string {
-	if len(modelTasks) == 0 {
+	return summarizeIntCounts(modelTasks, maxModels)
+}
+
+func summarizeIntCounts(countsByName map[string]int, maxItems int) string {
+	if len(countsByName) == 0 {
 		return "none"
 	}
 
-	type modelCount struct {
-		model string
+	type namedCount struct {
+		name  string
 		count int
 	}
-	counts := make([]modelCount, 0, len(modelTasks))
-	for model, count := range modelTasks {
-		counts = append(counts, modelCount{model: model, count: count})
+	counts := make([]namedCount, 0, len(countsByName))
+	for name, count := range countsByName {
+		counts = append(counts, namedCount{name: name, count: count})
 	}
 	for i := 0; i < len(counts); i++ {
 		for j := i + 1; j < len(counts); j++ {
 			if counts[j].count > counts[i].count ||
-				(counts[j].count == counts[i].count && counts[j].model < counts[i].model) {
+				(counts[j].count == counts[i].count && counts[j].name < counts[i].name) {
 				counts[i], counts[j] = counts[j], counts[i]
 			}
 		}
 	}
 
-	if maxModels <= 0 || maxModels > len(counts) {
-		maxModels = len(counts)
+	if maxItems <= 0 || maxItems > len(counts) {
+		maxItems = len(counts)
 	}
-	parts := make([]string, 0, maxModels+1)
-	for i := 0; i < maxModels; i++ {
-		parts = append(parts, fmt.Sprintf("%s (%d)", counts[i].model, counts[i].count))
+	parts := make([]string, 0, maxItems+1)
+	for i := 0; i < maxItems; i++ {
+		parts = append(parts, fmt.Sprintf("%s (%d)", counts[i].name, counts[i].count))
 	}
-	if len(counts) > maxModels {
-		parts = append(parts, fmt.Sprintf("+%d more", len(counts)-maxModels))
+	if len(counts) > maxItems {
+		parts = append(parts, fmt.Sprintf("+%d more", len(counts)-maxItems))
 	}
 	return strings.Join(parts, ", ")
+}
+
+func percentile95(values []int) int {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := append([]int(nil), values...)
+	for i := 0; i < len(sorted); i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[j] < sorted[i] {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+	idx := (95*len(sorted) + 99) / 100
+	if idx < 1 {
+		idx = 1
+	}
+	return sorted[idx-1]
 }
 
 // --- uninstall (original) ---
