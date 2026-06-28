@@ -96,7 +96,7 @@ ${content}
   for dir in src app lib components pages api; do
     if [ -d "${PROJECT_ROOT}/${dir}" ]; then
       while IFS= read -r -d '' file; do
-        rel="${file#${PROJECT_ROOT}/}"
+        rel="${file#"${PROJECT_ROOT}"/}"
         append_file "$file" "$rel" || break 2
       done < <(find "${PROJECT_ROOT}/${dir}" \
         -type f \
@@ -116,7 +116,7 @@ ${content}
   for dir in tests test __tests__ spec; do
     if [ -d "${PROJECT_ROOT}/${dir}" ]; then
       while IFS= read -r -d '' file; do
-        rel="${file#${PROJECT_ROOT}/}"
+        rel="${file#"${PROJECT_ROOT}"/}"
         append_file "$file" "$rel" || break 2
       done < <(find "${PROJECT_ROOT}/${dir}" \
         -type f \( -name "*.ts" -o -name "*.js" -o -name "*.py" \) \
@@ -193,7 +193,7 @@ call_gemini() {
     --max-time 120 \
     -X POST \
     -H "Content-Type: application/json" \
-    "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}" \
+    "${API_BASE}/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}" \
     -d "$payload" 2>&1) || {
     echo "ERROR: Gemini API request failed: $response" >&2
     exit 2
