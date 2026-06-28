@@ -47,16 +47,38 @@ function estimateCloudCost(tokensIn, tokensOut) {
     (tokensOut / 1_000_000) * CLOUD_OUTPUT_USD_PER_1M;
 }
 
+function taskTypeForTool(tool) {
+  return {
+    ollama_commit_msg: "commit-msg",
+    ollama_boilerplate: "boilerplate",
+    ollama_test_scaffold: "test-scaffold",
+    ollama_lint_fix: "lint-fix",
+    ollama_logic_refactor: "logic-refactor",
+  }[tool] || "unknown";
+}
+
+function routeBandForTask(taskType, model) {
+  if (model === "fast-path") return "fast-path";
+  if (["commit-msg", "boilerplate", "test-scaffold"].includes(taskType)) return "supervisor";
+  if (["lint-fix", "logic-refactor"].includes(taskType)) return "logic";
+  return "unknown";
+}
+
 function taskLogEntry({ tool, model, ms, ok, prompt = "", response = "", error }) {
+  const taskType = taskTypeForTool(tool);
   const tokensIn = estimateTokens(prompt);
   const tokensOut = estimateTokens(response);
   const routing = model === "fast-path" ? "deterministic" : "local";
   const entry = {
     tool,
+    task_type: taskType,
     model,
+    model_provider: model === "fast-path" ? "fast-path" : "ollama",
+    route_band: routeBandForTask(taskType, model),
     routing,
     tokens_in: tokensIn,
     tokens_out: tokensOut,
+    cost_usd: 0,
     cloud_cost_equivalent: estimateCloudCost(tokensIn, tokensOut),
     ms,
     ok,
