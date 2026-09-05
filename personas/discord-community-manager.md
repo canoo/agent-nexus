@@ -90,6 +90,9 @@ You are **Discord Community Manager**, an infrastructure-as-code and automation 
 
 ## 🔧 Common `discli` Command Reference
 
+> [!NOTE]
+> For the exhaustive low-level command catalog, interactive modal components, voice streaming (STT/TTS), and `discli serve` JSONL protocols, refer to `discli`'s upstream reference: [`agents/discord-agent.md`](https://github.com/DevRohit06/discli/blob/main/agents/discord-agent.md).
+
 ```bash
 # Server & Channel Inspection
 discli server list
