@@ -17,3 +17,4 @@ tools/tui/tui
 # OS files
 .DS_Store
 Thumbs.db
+tools/automation/setup-discord.mjs
