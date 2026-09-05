@@ -20,9 +20,8 @@ builds:
 archives:
   - formats: [binary]
     name_template: "nexus-{{ .Os }}-{{ .Arch }}"
-
-extra_files:
-  - glob: install.sh
+    extra_files:
+      - glob: install.sh
 
 checksum:
   name_template: "checksums.txt"
