@@ -72,6 +72,8 @@ for dir in personas tools prompts mcp-configs agent-memory; do
     safe_link "$NEXUS_REPO/$dir" "$CONFIG_NEXUS_DIR/$dir"
 done
 
+ERRORS=0
+
 # Configure MCP server for Kiro CLI.
 # Kiro reads MCP config from ~/.kiro/settings/mcp.json (not symlinked — it's
 # a standalone JSON file that references the server script via the symlinked path).
@@ -92,18 +94,98 @@ else
       const fs = require('fs');
       const path = '$KIRO_MCP_FILE';
       let config = { mcpServers: {} };
-      try { config = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
-      if (!config.mcpServers) config.mcpServers = {};
-      config.mcpServers['nexus-ollama'] = {
-        command: 'node',
-        args: ['$MCP_SERVER_PATH']
-      };
-      fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+      let parseFailed = false;
+      if (fs.existsSync(path)) {
+        const raw = fs.readFileSync(path, 'utf8').trim();
+        if (raw.length > 0) {
+          try {
+            config = JSON.parse(raw);
+          } catch (err) {
+            parseFailed = true;
+            console.error('  ERROR: Failed to parse ' + path + ': ' + err.message);
+          }
+        }
+      }
+      if (!parseFailed) {
+        if (!config || typeof config !== 'object' || Array.isArray(config)) config = {};
+        if (!config.mcpServers || typeof config.mcpServers !== 'object' || Array.isArray(config.mcpServers)) config.mcpServers = {};
+        config.mcpServers['nexus-ollama'] = {
+          command: 'node',
+          args: ['$MCP_SERVER_PATH']
+        };
+        try {
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+        } catch (err) {
+          try {
+            fs.chmodSync(path, 0o644);
+            fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          } catch (err2) {
+            console.error('  ERROR: Failed to write ' + path + ': ' + err2.message);
+          }
+        }
+      }
     "
     if grep -q '"nexus-ollama"' "$KIRO_MCP_FILE" 2>/dev/null; then
         echo "  Configured: nexus-ollama in $KIRO_MCP_FILE"
     else
         echo "  ERROR: Failed to configure nexus-ollama in $KIRO_MCP_FILE"
+        ERRORS=$((ERRORS + 1))
+    fi
+fi
+
+# Configure MCP server for Antigravity CLI (Gemini).
+# Antigravity CLI reads MCP config from ~/.gemini/config/mcp_config.json.
+GEMINI_CONFIG_DIR="$GEMINI_DIR/config"
+GEMINI_MCP_FILE="$GEMINI_CONFIG_DIR/mcp_config.json"
+
+echo ""
+echo "Configuring Antigravity CLI (Gemini) MCP..."
+mkdir -p "$GEMINI_CONFIG_DIR"
+
+if [ -f "$GEMINI_MCP_FILE" ] && grep -q '"nexus-ollama"' "$GEMINI_MCP_FILE" 2>/dev/null; then
+    echo "  Already configured: nexus-ollama in $GEMINI_MCP_FILE (skipped)"
+else
+    # Merge nexus-ollama into existing config (or create new).
+    # Uses Node since it's already a dependency for the MCP server.
+    node -e "
+      const fs = require('fs');
+      const path = '$GEMINI_MCP_FILE';
+      let config = { mcpServers: {} };
+      let parseFailed = false;
+      if (fs.existsSync(path)) {
+        const raw = fs.readFileSync(path, 'utf8').trim();
+        if (raw.length > 0) {
+          try {
+            config = JSON.parse(raw);
+          } catch (err) {
+            parseFailed = true;
+            console.error('  ERROR: Failed to parse ' + path + ': ' + err.message);
+          }
+        }
+      }
+      if (!parseFailed) {
+        if (!config || typeof config !== 'object' || Array.isArray(config)) config = {};
+        if (!config.mcpServers || typeof config.mcpServers !== 'object' || Array.isArray(config.mcpServers)) config.mcpServers = {};
+        config.mcpServers['nexus-ollama'] = {
+          command: 'node',
+          args: ['$MCP_SERVER_PATH']
+        };
+        try {
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+        } catch (err) {
+          try {
+            fs.chmodSync(path, 0o644);
+            fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          } catch (err2) {
+            console.error('  ERROR: Failed to write ' + path + ': ' + err2.message);
+          }
+        }
+      }
+    "
+    if grep -q '"nexus-ollama"' "$GEMINI_MCP_FILE" 2>/dev/null; then
+        echo "  Configured: nexus-ollama in $GEMINI_MCP_FILE"
+    else
+        echo "  ERROR: Failed to configure nexus-ollama in $GEMINI_MCP_FILE"
         ERRORS=$((ERRORS + 1))
     fi
 fi
@@ -134,7 +216,6 @@ fi
 # Post-setup validation: make sure every symlink actually resolves.
 echo ""
 echo "Verifying all symlinks..."
-ERRORS=0
 for link in \
     "$GEMINI_DIR/GEMINI.md" \
     "$CLAUDE_DIR/CLAUDE.md" \
@@ -154,7 +235,7 @@ done
 
 echo ""
 if [ "$ERRORS" -gt 0 ]; then
-    echo "Setup completed with $ERRORS broken symlink(s). Check the paths above."
+    echo "Setup completed with $ERRORS error(s). Check the output above."
     exit 1
 fi
 echo "NEXUS setup complete. All symlinks verified."
