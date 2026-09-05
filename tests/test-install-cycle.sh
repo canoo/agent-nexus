@@ -24,7 +24,9 @@ FAIL=0
 
 pass() {
     PASS=$((PASS + 1))
-    [[ "$VERBOSE" -eq 1 ]] && echo "  PASS: $1"
+    if [[ "$VERBOSE" -eq 1 ]]; then
+        echo "  PASS: $1"
+    fi
 }
 
 fail() {
@@ -117,6 +119,14 @@ else
     fail "kiro mcp.json missing nexus-ollama entry"
 fi
 
+# Antigravity CLI (Gemini) MCP config
+assert_file_exists "$FAKE_HOME/.gemini/config/mcp_config.json" "gemini mcp_config.json"
+if grep -q '"nexus-ollama"' "$FAKE_HOME/.gemini/config/mcp_config.json" 2>/dev/null; then
+    pass "gemini mcp_config.json contains nexus-ollama"
+else
+    fail "gemini mcp_config.json missing nexus-ollama entry"
+fi
+
 # ── Test 2: Idempotency ────────────────────────────────────────────
 echo ""
 echo "=== Test 2: Idempotent re-run ==="
@@ -140,8 +150,9 @@ for dir in personas tools prompts mcp-configs agent-memory; do
     assert_link_target   "$path" "$FAKE_REPO/$dir" "idempotent config/$dir"
 done
 
-# Kiro MCP should still be there and unchanged
+# MCP configs should still be there and unchanged
 assert_file_exists "$FAKE_HOME/.kiro/settings/mcp.json" "idempotent kiro mcp.json"
+assert_file_exists "$FAKE_HOME/.gemini/config/mcp_config.json" "idempotent gemini mcp_config.json"
 
 # ── Test 3: Backup & restore of pre-existing files ──────────────────
 echo ""
@@ -150,6 +161,13 @@ echo "=== Test 3: Backup and restore ==="
 # Tear down first, then plant fake pre-existing configs.
 HOME="$FAKE_HOME" bash "$FAKE_REPO/teardown-nexus.sh" > /dev/null 2>&1
 
+mkdir -p "$FAKE_HOME/.gemini/config"
+echo '{"mcpServers":{"custom-gemini":{"command":"echo","args":["hi"]}},"customKey":true}' > "$FAKE_HOME/.gemini/config/mcp_config.json"
+chmod 444 "$FAKE_HOME/.gemini/config/mcp_config.json"
+
+mkdir -p "$FAKE_HOME/.kiro/settings"
+echo '{"mcpServers":{"custom-kiro":{"command":"echo","args":["hi"]}}}' > "$FAKE_HOME/.kiro/settings/mcp.json"
+
 mkdir -p "$FAKE_HOME/.gemini"
 echo "user gemini config" > "$FAKE_HOME/.gemini/GEMINI.md"
 mkdir -p "$FAKE_HOME/.claude"
@@ -157,12 +175,28 @@ echo "user claude config" > "$FAKE_HOME/.claude/CLAUDE.md"
 mkdir -p "$FAKE_HOME/.kiro/steering"
 echo "user kiro config" > "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md"
 
-# Setup should back these up.
+# Setup should back these up and merge MCP configs even with read-only permissions.
 HOME="$FAKE_HOME" bash "$FAKE_REPO/setup-nexus.sh"
 
 assert_file_exists "$FAKE_HOME/.gemini/GEMINI.md.bak"               "GEMINI.md backup"
 assert_file_exists "$FAKE_HOME/.claude/CLAUDE.md.bak"               "CLAUDE.md backup"
 assert_file_exists "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md.bak" "kiro backup"
+
+# MCP configs should now contain BOTH custom server and nexus-ollama
+if grep -q '"custom-gemini"' "$FAKE_HOME/.gemini/config/mcp_config.json" && grep -q '"nexus-ollama"' "$FAKE_HOME/.gemini/config/mcp_config.json"; then
+    pass "gemini mcp_config.json merged nexus-ollama and preserved custom-gemini"
+else
+    fail "gemini mcp_config.json missing custom-gemini or nexus-ollama"
+fi
+
+if grep -q '"custom-kiro"' "$FAKE_HOME/.kiro/settings/mcp.json" && grep -q '"nexus-ollama"' "$FAKE_HOME/.kiro/settings/mcp.json"; then
+    pass "kiro mcp.json merged nexus-ollama and preserved custom-kiro"
+else
+    fail "kiro mcp.json missing custom-kiro or nexus-ollama"
+fi
+
+# Make gemini mcp_config.json read-only again before teardown to test teardown permission recovery
+chmod 444 "$FAKE_HOME/.gemini/config/mcp_config.json"
 
 # Teardown should restore them.
 HOME="$FAKE_HOME" bash "$FAKE_REPO/teardown-nexus.sh"
@@ -183,6 +217,33 @@ else
     fail "CLAUDE.md content not restored"
 fi
 
+# Custom MCP servers and other keys must be preserved after teardown
+assert_file_exists "$FAKE_HOME/.gemini/config/mcp_config.json" "gemini mcp_config.json preserved after teardown"
+if grep -q '"custom-gemini"' "$FAKE_HOME/.gemini/config/mcp_config.json" && ! grep -q '"nexus-ollama"' "$FAKE_HOME/.gemini/config/mcp_config.json"; then
+    pass "gemini mcp_config.json preserved custom server and pruned nexus-ollama"
+else
+    fail "gemini mcp_config.json did not preserve custom server correctly"
+fi
+
+if grep -q '"customKey"' "$FAKE_HOME/.gemini/config/mcp_config.json"; then
+    pass "gemini mcp_config.json preserved non-mcp configuration keys"
+else
+    fail "gemini mcp_config.json lost non-mcp configuration keys"
+fi
+
+assert_file_exists "$FAKE_HOME/.kiro/settings/mcp.json" "kiro mcp.json preserved after teardown"
+if grep -q '"custom-kiro"' "$FAKE_HOME/.kiro/settings/mcp.json" && ! grep -q '"nexus-ollama"' "$FAKE_HOME/.kiro/settings/mcp.json"; then
+    pass "kiro mcp.json preserved custom server and pruned nexus-ollama"
+else
+    fail "kiro mcp.json did not preserve custom server correctly"
+fi
+
+# Verify that malformed JSON is not deleted on teardown
+echo '{ "mcpServers": { "nexus-ollama": 1 }, broken_json: ' > "$FAKE_HOME/.gemini/config/mcp_config.json"
+HOME="$FAKE_HOME" bash "$FAKE_REPO/teardown-nexus.sh" > /dev/null 2>&1 || true
+assert_file_exists "$FAKE_HOME/.gemini/config/mcp_config.json" "malformed mcp_config.json not deleted on parse failure"
+rm -f "$FAKE_HOME/.gemini/config/mcp_config.json"
+
 # ── Test 4: Clean teardown from fresh install ───────────────────────
 echo ""
 echo "=== Test 4: Clean teardown (no pre-existing config) ==="
@@ -200,12 +261,14 @@ for dir in personas tools prompts mcp-configs agent-memory; do
     assert_not_exists "$FAKE_HOME/.config/nexus/$dir" "config/$dir removed"
 done
 
-# Kiro MCP config should be removed.
+# MCP configs should be removed.
 assert_not_exists "$FAKE_HOME/.kiro/settings/mcp.json" "kiro mcp.json removed"
+assert_not_exists "$FAKE_HOME/.gemini/config/mcp_config.json" "gemini mcp_config.json removed"
 
 # Empty dirs should be cleaned up.
 assert_not_exists "$FAKE_HOME/.config/nexus" "\$HOME/.config/nexus cleaned up"
 assert_not_exists "$FAKE_HOME/.kiro"         "\$HOME/.kiro cleaned up"
+assert_not_exists "$FAKE_HOME/.gemini"       "\$HOME/.gemini cleaned up"
 
 # ── Test 5: Setup fails gracefully on incomplete repo ───────────────
 echo ""

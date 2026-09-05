@@ -31,16 +31,17 @@ Do not silently proceed without an agent when a specialist should exist.
 ---
 
 ## Persona Triggers
+ 
+### onboarding-guide
 
-### toolkiit-migrator
-
-**Trigger words:** "Initialize", "Retrofit" (at the start of a request about a project)
+**Trigger words:** "Setup", "Onboard", "Hardware", "Install" (at the start of a request about configuring NEXUS or local models)
 
 When triggered, **immediately adopt** the full persona and workflow from:
-`~/.config/nexus/personas/toolkiit-migrator.md`
+`~/.config/nexus/personas/onboarding-guide.md`
 
-Read that file and follow its Migration Workflow (Steps 1–6) exactly.
-Do not skip steps or summarize them — execute the full bootstrap/retrofit sequence.
+Read that file and follow its Onboarding Workflow (hardware detection, model selection, symlink verification, MCP test) sequentially.
+
+*(Note: Legacy `toolkiit-migrator` has been moved to `~/.config/nexus/personas/_archive/`)*
 
 ---
 
