@@ -104,7 +104,8 @@ An interactive terminal UI handles installation, configuration, health checks, a
 | Tool | Config format | MCP support | NEXUS status |
 |---|---|---|---|
 | Claude Code | `AGENTS.md`, `CLAUDE.md` | ✓ | ✅ Full |
-| Gemini CLI | `AGENTS.md` | ✓ | ✅ Full |
+| Antigravity CLI (`agy`) | `AGENTS.md`, `.agents/skills/` | ✓ | ✅ Full |
+| Gemini CLI | `AGENTS.md` | ✓ | ✅ Full (Transitioning to `agy`) |
 | Kiro | `.kiro/steering/*.md` | ✓ | ✅ Full |
 | Cursor | `.cursor/rules/*.mdc` | ✓ | 🔄 Planned — v0.2.5 |
 | Copilot | `.github/copilot-instructions.md` | GitHub-managed | 🔄 Planned — v0.2.5 |
@@ -132,11 +133,13 @@ graph TD
     U[Developer]:::user --> N(NEXUS):::nexus
 
     N -->|projects config to| CC[Claude Code]:::tool
+    N -->|projects config to| AGY[Antigravity CLI · agy]:::tool
     N -->|projects config to| GC[Gemini CLI]:::tool
     N -->|projects config to| KC[Kiro]:::tool
     N -->|projects config to| CU[Cursor · Windsurf · Cline]:::tool
 
     CC --> O(nexus-ollama MCP):::mcp
+    AGY --> O
     GC --> O
     KC --> O
     CU --> O
@@ -145,6 +148,7 @@ graph TD
     O -->|logic band 2–3B| L
 
     CC -->|deep work| CL[Cloud APIs]:::cloud
+    AGY -->|deep work| CL
     GC -->|deep work| CL
 ```
 
@@ -247,13 +251,13 @@ tests/          Integration tests
 
 | Version | Theme | Key deliverables |
 |---|---|---|
-| **v0.1.6** | Security fixes | Checksum hardening, input validation, PAT removal — [in progress] |
-| **v0.2.0** | Observability core | Session logging, cost tracker, live TUI dashboard |
+| **v0.1.6** | Security fixes | Checksum hardening, input validation, PAT removal — [Released] |
+| **v0.2.0** | Observability core | Session logging, cost tracker, live TUI dashboard — [Released] |
 | **v0.2.1** | CLI usage ingestion | Tokscale adapter, unified usage dashboard |
 | **v0.2.5** | Universal sync layer | `nexus adopt`, `nexus sync`, AGENTS.md projection, tool driver system, nexus-context MCP, Smithery MCP registry, compatibility matrix |
-| **v0.3.0** | Dynamic routing | Auto model selection by task complexity, latency fallback, chain-of-models |
+| **v0.3.0** | Dynamic routing | Command interception, Antigravity CLI (`agy`) delegation, auto model selection, latency fallback |
 | **v0.3.5** | Community benchmarks | Benchmark schema, hardware-tiered test runner, community submission pipeline, results showcase |
-| **v0.4.0** | Persona marketplace | Community persona sharing, persona composition, auto-update |
+| **v0.4.0** | Persona marketplace & registry | Dynamic package manager (`canoo/Nexus-Personas`), `nexus persona install`, persona composition, auto-update |
 | **v1.0.0** | Stable | Windows/Docker support, team features, stable public API |
 
 ---
