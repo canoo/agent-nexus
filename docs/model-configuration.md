@@ -408,3 +408,37 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 ```
 
 The health check should list your models as available. If a model isn't pulled, the generate calls will fail with an Ollama error (not a CIRCUIT_BREAKER).
+
+## Shared local settings contract (app foundation)
+
+The TUI, MCP server, and shell delegation now read the repository `.env`,
+independent of the current working directory. `NEXUS_REPO` selects a different
+repository for MCP and shell; the TUI uses its selected repository. Restart the
+MCP server after saving settings in the TUI.
+
+For each setting, an explicitly supplied process environment variable wins over
+`.env`; an empty process value suppresses the file value and uses the built-in
+fallback. Within model routing, a nonempty per-task value wins over the band
+value, then the default. The shell now honors the same model overrides as MCP.
+
+The portable file format is one `KEY=VALUE` per line, optional surrounding spaces,
+optional matching single or double quotes, and whole-line `#` comments. Last
+assignment wins. Values are literal: no shell execution, variable expansion,
+escape decoding, `export` prefix, multiline values, or inline comment syntax.
+Keep inline comments on their own lines. The shell imports only the documented
+NEXUS model settings and Ollama endpoint, so unrelated `.env` entries cannot
+replace `PATH` or shell control variables.
+
+The TUI updates its four settings while retaining unrelated lines and comments.
+Saving uses a private (0600) temporary file and atomic replacement, making an
+existing file private (0600) as well. It rejects
+symlinks and nonregular `.env` files, and values containing multiline or shell
+quoting/interpolation characters. This file is local configuration, not an
+encrypted credential vault. Concurrent editors are not locked; the last save
+wins. Keep provider credentials outside these settings.
+
+This is the compatibility phase of A02. Moving settings to a versioned XDG
+application file, adding OS credential storage, displaying active environment
+overrides in the TUI remain follow-up work. `NEXUS_LOCAL_AI=false` prevents
+Ollama HTTP requests (including health checks) in MCP and refuses shell delegation
+with exit code 3. MCP deterministic operations that need no Ollama may still run.
