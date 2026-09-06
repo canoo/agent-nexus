@@ -298,10 +298,10 @@ func TestViewsDoNotPanic(t *testing.T) {
 
 func TestSummarizeTaskLog(t *testing.T) {
 	entries := []taskLogEntry{
-		{Tool: "ollama_commit_msg", Model: "qwen2.5-coder:1.5b", Routing: "local", CloudCostEquivalent: 0.001, Ms: 10, Ok: true},
-		{Tool: "ollama_boilerplate", Model: "qwen2.5-coder:1.5b", Routing: "local", CloudCostEquivalent: 0.002, Ms: 20, Ok: true},
-		{Tool: "ollama_commit_msg", Model: "fast-path", Routing: "deterministic", CloudCostEquivalent: 0.001, Ms: 0, Ok: true},
-		{Tool: "ollama_lint_fix", Model: "llama3.2:3b", Routing: "local", CloudCostEquivalent: 0.003, Ms: 30, Ok: false},
+		{Tool: "ollama_commit_msg", Model: "qwen2.5-coder:1.5b", RouteBand: "supervisor", Routing: "local", CostUSD: 0, CloudCostEquivalent: 0.001, Ms: 10, Ok: true},
+		{Tool: "ollama_boilerplate", Model: "qwen2.5-coder:1.5b", RouteBand: "supervisor", Routing: "local", CostUSD: 0, CloudCostEquivalent: 0.002, Ms: 20, Ok: true},
+		{Tool: "ollama_commit_msg", Model: "fast-path", RouteBand: "fast-path", Routing: "deterministic", CostUSD: 0, CloudCostEquivalent: 0.001, Ms: 0, Ok: true},
+		{Tool: "ollama_lint_fix", Model: "llama3.2:3b", RouteBand: "logic", Routing: "local", CostUSD: 0.001, CloudCostEquivalent: 0.003, Ms: 30, Ok: false},
 	}
 
 	stats := summarizeTaskLog(entries)
@@ -320,8 +320,14 @@ func TestSummarizeTaskLog(t *testing.T) {
 	if stats.p95Ms != 30 {
 		t.Errorf("p95Ms: got %d, want 30", stats.p95Ms)
 	}
-	if math.Abs(stats.savingsUSD-0.007) > 0.000001 {
-		t.Errorf("savingsUSD: got %f, want 0.007", stats.savingsUSD)
+	if math.Abs(stats.savingsUSD-0.006) > 0.000001 {
+		t.Errorf("savingsUSD: got %f, want 0.006", stats.savingsUSD)
+	}
+	if math.Abs(stats.cloudUSD-0.007) > 0.000001 {
+		t.Errorf("cloudUSD: got %f, want 0.007", stats.cloudUSD)
+	}
+	if math.Abs(stats.costUSD-0.001) > 0.000001 {
+		t.Errorf("costUSD: got %f, want 0.001", stats.costUSD)
 	}
 	if stats.modelTasks["qwen2.5-coder:1.5b"] != 2 {
 		t.Errorf("qwen count: got %d, want 2", stats.modelTasks["qwen2.5-coder:1.5b"])
@@ -334,6 +340,15 @@ func TestSummarizeTaskLog(t *testing.T) {
 	}
 	if stats.routes["deterministic"] != 1 {
 		t.Errorf("deterministic route count: got %d, want 1", stats.routes["deterministic"])
+	}
+	if stats.routeBands["supervisor"] != 2 {
+		t.Errorf("supervisor route band count: got %d, want 2", stats.routeBands["supervisor"])
+	}
+	if stats.routeBands["fast-path"] != 1 {
+		t.Errorf("fast-path route band count: got %d, want 1", stats.routeBands["fast-path"])
+	}
+	if stats.routeBands["logic"] != 1 {
+		t.Errorf("logic route band count: got %d, want 1", stats.routeBands["logic"])
 	}
 }
 

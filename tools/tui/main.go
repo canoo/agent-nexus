@@ -84,10 +84,14 @@ type healthMsg struct {
 
 type taskLogEntry struct {
 	Tool                string  `json:"tool"`
+	TaskType            string  `json:"task_type,omitempty"`
 	Model               string  `json:"model"`
+	ModelProvider       string  `json:"model_provider,omitempty"`
+	RouteBand           string  `json:"route_band,omitempty"`
 	Routing             string  `json:"routing,omitempty"`
 	TokensIn            int     `json:"tokens_in,omitempty"`
 	TokensOut           int     `json:"tokens_out,omitempty"`
+	CostUSD             float64 `json:"cost_usd,omitempty"`
 	CloudCostEquivalent float64 `json:"cloud_cost_equivalent,omitempty"`
 	Ms                  int     `json:"ms"`
 	Ok                  bool    `json:"ok"`
@@ -107,6 +111,9 @@ type taskLogStats struct {
 	p95Ms      int
 	modelTasks map[string]int
 	routes     map[string]int
+	routeBands map[string]int
+	costUSD    float64
+	cloudUSD   float64
 	savingsUSD float64
 }
 
@@ -881,6 +888,10 @@ func taskLogView(m model) string {
 			s += fmt.Sprintf("  Est. local savings: $%.4f\n", stats.savingsUSD)
 		}
 		s += fmt.Sprintf("  Routes: %s\n", summarizeIntCounts(stats.routes, 3))
+		s += fmt.Sprintf("  Route bands: %s\n", summarizeIntCounts(stats.routeBands, 3))
+		if stats.cloudUSD > 0 {
+			s += fmt.Sprintf("  Cloud equivalent: $%.4f  Local cost: $%.4f\n", stats.cloudUSD, stats.costUSD)
+		}
 		s += fmt.Sprintf("  Models: %s\n\n", summarizeModelUsage(stats.modelTasks, 3))
 
 		// Header
@@ -909,6 +920,7 @@ func summarizeTaskLog(entries []taskLogEntry) taskLogStats {
 	stats := taskLogStats{
 		modelTasks: map[string]int{},
 		routes:     map[string]int{},
+		routeBands: map[string]int{},
 	}
 	if len(entries) == 0 {
 		return stats
@@ -926,8 +938,10 @@ func summarizeTaskLog(entries []taskLogEntry) taskLogStats {
 			stats.failures++
 		}
 		if e.Routing == "local" || e.Routing == "deterministic" {
-			stats.savingsUSD += e.CloudCostEquivalent
+			stats.savingsUSD += e.CloudCostEquivalent - e.CostUSD
 		}
+		stats.costUSD += e.CostUSD
+		stats.cloudUSD += e.CloudCostEquivalent
 		model := strings.TrimSpace(e.Model)
 		if model == "" {
 			model = "unknown"
@@ -938,6 +952,11 @@ func summarizeTaskLog(entries []taskLogEntry) taskLogStats {
 			route = "unknown"
 		}
 		stats.routes[route]++
+		routeBand := strings.TrimSpace(e.RouteBand)
+		if routeBand == "" {
+			routeBand = "unknown"
+		}
+		stats.routeBands[routeBand]++
 	}
 	stats.avgMs = totalMs / stats.total
 	stats.p95Ms = percentile95(latencies)
