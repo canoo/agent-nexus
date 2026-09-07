@@ -194,6 +194,17 @@ See [docs/model-configuration.md](docs/model-configuration.md) for hardware-spec
 j/k: navigate • enter: select • q: quit
 ```
 
+## Dynamic routing preview
+
+`nexus` with no arguments opens the TUI. Use `nexus --tui` to force that behavior. A prompt is routed by deterministic rules: recognized commit, boilerplate, test-scaffold, lint, and refactor requests use the local delegate; security, authentication, architecture, and ambiguous requests open an interactive Antigravity (`agy`) session.
+
+```bash
+nexus route --dry-run --goal "write a conventional commit message"
+nexus "design authentication for a private Hub"
+```
+
+`--dry-run` prints the selected route without running a model. Local failures stop with an actionable error. Add `--allow-cloud-fallback` only when you explicitly approve sending that prompt to `agy`.
+
 | Screen | What it does |
 |---|---|
 | **Install** | Step-by-step wizard: validates repo, creates symlinks, configures MCP, checks deps, pulls Ollama models |
