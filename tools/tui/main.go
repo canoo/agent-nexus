@@ -1465,8 +1465,16 @@ func truncateCol(s string, max int) string {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "status" {
-		if len(os.Args) != 3 || os.Args[2] != "--json" {
+	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "--tui" {
+		if len(args) != 1 {
+			fmt.Fprintln(os.Stderr, "Usage: nexus --tui")
+			os.Exit(2)
+		}
+		args = nil
+	}
+	if len(args) > 0 && args[0] == "status" {
+		if len(args) != 2 || args[1] != "--json" {
 			fmt.Fprintln(os.Stderr, "Usage: nexus status --json")
 			os.Exit(2)
 		}
@@ -1481,18 +1489,40 @@ func main() {
 		}
 		return
 	}
-	if len(os.Args) > 1 && os.Args[1] == "--version" {
+	if len(args) > 0 && args[0] == "--version" {
 		fmt.Println("nexus " + version)
 		return
 	}
-	if len(os.Args) > 1 && (len(os.Args) != 2 || os.Args[1] != "configure") {
-		fmt.Fprintln(os.Stderr, "Usage: nexus [configure | status --json | --version]")
-		os.Exit(2)
+	if len(args) > 0 && args[0] == "configure" {
+		if len(args) != 1 {
+			fmt.Fprintln(os.Stderr, "Usage: nexus configure")
+			os.Exit(2)
+		}
+		m := initialModel()
+		m.screen = screenConfigure
+		p := tea.NewProgram(m)
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(args) > 0 && args[0] == "route" {
+		args = args[1:]
+	}
+	if len(args) > 0 {
+		request, err := parseRouteRequest(args)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "NEXUS:", err)
+			os.Exit(2)
+		}
+		if err := routePrompt(findNexusDir(), request, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "NEXUS:", err)
+			os.Exit(1)
+		}
+		return
 	}
 	m := initialModel()
-	if len(os.Args) == 2 {
-		m.screen = screenConfigure
-	}
 	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
