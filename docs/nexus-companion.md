@@ -51,7 +51,9 @@ Each event represents a bounded activity span. The allowed envelope is:
 }
 ```
 
-`tool_id` is selected from NEXUS's allowlisted tool registry. The extension
+`tool_id` is selected from NEXUS's allowlisted tool registry. The current
+ingestion boundary recognizes only `chatgpt`, `claude`, `gemini`, `copilot`, and
+`perplexity`; adding a tool requires a source and test change. The extension
 maps a selected tab's origin to this fixed identifier locally and sends no URL
 or title to the host. The native host accepts only this schema, applies a small
 payload limit, and rejects unknown fields.
@@ -70,9 +72,11 @@ equally explicit choice. Consent is device-local and is never copied by
 `nexus sync` or `nexus adopt`.
 
 All data stays under NEXUS's local observability directory with restrictive
-permissions. The initial policy is 14 days for raw spans and 90 days for daily
-local aggregates, followed by deletion. The TUI must provide an activity-data
-preview, local export, and immediate local deletion.
+permissions. The migration-owned local settings foundation defaults to disabled
+collection, 14 days for raw spans, and 90 days for daily local aggregates.
+The retention worker, activity-data preview, local export, and immediate local
+deletion controls remain subsequent Companion work; no current app or adapter
+collects activity.
 
 "Installed/configured" and "active" are distinct states. A background process
 or an allowlisted site open in a background tab is not active use.
