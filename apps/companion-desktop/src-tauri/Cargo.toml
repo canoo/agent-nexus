@@ -1,0 +1,13 @@
+[package]
+name = "nexus-companion"
+version = "0.0.0"
+description = "Local-only NEXUS Companion desktop shell"
+authors = ["NEXUS contributors"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }

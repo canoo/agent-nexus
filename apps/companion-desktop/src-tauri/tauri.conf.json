@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NEXUS Companion",
+  "version": "0.0.0",
+  "identifier": "com.codelogiic.nexus.companion",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "NEXUS Companion",
+        "width": 520,
+        "height": 390,
+        "resizable": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline';"
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}
