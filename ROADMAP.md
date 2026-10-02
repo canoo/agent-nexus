@@ -31,7 +31,35 @@ Extend observability to AI CLI tools by integrating [Tokscale](https://github.co
 
 **Why Tokscale over custom parsers:** Rust-native core (10x faster), 1,000+ tests, 54 releases, MIT license, zero-config install (`bunx tokscale@latest`). When new CLIs emerge or change data formats, Tokscale handles it upstream.
 
-## v0.2.5 — Universal Sync Layer [Planned]
+## v0.3.0 — NEXUS Companion (Private Preview)
+
+Add opt-in, local activity signals for configured AI-tool surfaces without
+capturing conversation content. This is deliberately sequenced after the v0.2.1
+observability-store work: Companion must write through the same migration-owned
+storage boundary rather than create a second telemetry pipeline.
+
+- **Privacy and data contract** — activity spans with fixed `tool_id`, surface,
+  time range, detector, and consent-policy version; never prompts, responses,
+  URLs, titles, source code, account IDs, or arbitrary metadata
+- **Shared activity store** — SQLite migration, `tool_activity` schema,
+  device-local consent, retention, local export, and deletion controls
+- **Chrome/Edge Companion** — Manifest V3 extension with optional per-tool host
+  permissions and a strict native-messaging host; no content scripts or
+  `<all_urls>` permission
+- **Linux/macOS desktop shell** — Tauri-based Companion with a visible tray or
+  menu-bar status interface, dashboard launch, pause, and quit controls;
+  Linux includes a launcher fallback and a separately verified Flatpak track
+- **Tool Activity dashboard** — separate TUI view for Companion activity, never
+  conflated with NEXUS routing tasks or Tokscale token/cost data
+- **Privacy regression suite** — contract tests prove prompts, page titles, and
+  full URLs cannot be persisted or exported
+
+See [docs/nexus-companion.md](docs/nexus-companion.md) for the design,
+platform boundaries, and acceptance criteria. See
+[docs/release-process.md](docs/release-process.md) for version, website, and
+community-release gates.
+
+## v0.3.1 — Universal Sync Layer [Planned]
 
 One config, every tool: adopt existing tool setups, keep them in sync, and
 project NEXUS state into each tool's native format.
@@ -44,7 +72,8 @@ project NEXUS state into each tool's native format.
 - **Smithery MCP registry** — discover/install community MCP servers (TBD)
 - **Compatibility matrix** — per-tool feature support table (TBD)
 
-## v0.3.0 — Dynamic Routing & Antigravity CLI Integration
+
+## v0.3.0 supporting foundation — Dynamic Routing & Antigravity CLI Integration
 
 Transform NEXUS from a config manager into an intelligent execution runtime.
 
