@@ -1,0 +1,6 @@
+# Tauri/Rust build output
+src-tauri/target/
+
+# Dependencies are installed locally by the developer; lockfiles are committed
+# only when this app is ready to take a dependency snapshot.
+node_modules/
