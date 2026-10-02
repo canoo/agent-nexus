@@ -165,6 +165,16 @@ CREATE INDEX IF NOT EXISTS idx_tool_activity_tool_id
     ON tool_activity(tool_id);
 ```
 
+The same migration also creates device-local Companion configuration tables:
+
+- `companion_settings` has one disabled-by-default row with the initial
+  14-day raw-span and 90-day aggregate-retention defaults.
+- `companion_tool_consents` reserves explicit per-adapter, per-tool consent;
+  it has no writer until the Companion native host and consent UI arrive.
+
+These tables are local configuration only and are never inputs to `nexus sync`
+or `nexus adopt`.
+
 ## Field Mapping From MCP JSONL
 
 Legacy `mcp-tasks.jsonl` entries looked like:
@@ -306,9 +316,9 @@ for the fixed event envelope, retention policy, and native-host boundary.
 `input_hash` can be used to correlate repeated tasks without retaining the input
 itself. Hashes should be treated as metadata, not as a security boundary.
 
-SQLite retention should mirror the current JSONL rotation behavior at first:
-keep recent local history bounded, document the default, and make longer
-retention an explicit setting later.
+The migration stores initial Companion retention defaults (14 raw-span days and
+90 aggregate days) locally. A deletion job and activity export/deletion controls
+are not implemented yet, so no consumer may claim active retention enforcement.
 
 ## Compatibility Notes
 

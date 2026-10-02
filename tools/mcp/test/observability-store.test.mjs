@@ -34,6 +34,22 @@ function event(overrides = {}) {
   };
 }
 
+function activity(overrides = {}) {
+  return {
+    tool_id: "chatgpt",
+    surface: "browser",
+    started_at: "2026-10-02T18:00:00Z",
+    ended_at: "2026-10-02T18:04:12Z",
+    detector: "selected-browser-tab",
+    confidence: "surface-active",
+    browser_family: "chrome",
+    platform: "linux",
+    schema_version: 1,
+    consent_policy_version: 1,
+    ...overrides,
+  };
+}
+
 function readDatabase(path, callback) {
   const database = new DatabaseSync(path);
   try { return callback(database); } finally { database.close(); }
@@ -51,11 +67,69 @@ test("migrations are owned, transactional, and idempotent", (t) => {
   assert.equal(existsSync(databasePath), true);
   assert.equal(existsSync(jsonlPath), false);
   readDatabase(databasePath, (database) => {
-    assert.deepEqual(database.prepare("SELECT version FROM schema_migrations").all().map(plain), [{ version: 1 }, { version: 2 }, { version: 3 }]);
+    assert.deepEqual(database.prepare("SELECT version FROM schema_migrations").all().map(plain), [{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
     const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all()
       .map(({ name }) => name);
-    assert.deepEqual(tables, ["legacy_import_receipts", "routing_decisions", "schema_migrations", "sessions", "store_meta", "tasks"]);
+    assert.deepEqual(tables, [
+      "companion_settings", "companion_tool_consents", "legacy_import_receipts",
+      "routing_decisions", "schema_migrations", "sessions", "store_meta", "tasks", "tool_activity",
+    ]);
+    assert.deepEqual(plain(database.prepare(`SELECT collection_enabled, raw_span_retention_days,
+      daily_aggregate_retention_days FROM companion_settings WHERE id = 1`).get()), {
+      collection_enabled: 0,
+      raw_span_retention_days: 14,
+      daily_aggregate_retention_days: 90,
+    });
   });
+});
+
+test("a valid Companion activity span is persisted only in the shared SQLite store", (t) => {
+  const { store, databasePath, jsonlPath } = temporaryStore(t);
+  const result = store.recordToolActivity(activity());
+  assert.equal(result.sqlite.ok, true);
+  assert.equal(existsSync(jsonlPath), false);
+
+  readDatabase(databasePath, (database) => {
+    assert.deepEqual(plain(database.prepare(`SELECT id, session_id, tool_id, surface, started_at,
+      ended_at, detector, confidence, browser_family, platform, schema_version,
+      consent_policy_version FROM tool_activity`).get()), {
+      id: result.id,
+      session_id: null,
+      tool_id: "chatgpt",
+      surface: "browser",
+      started_at: "2026-10-02T18:00:00.000Z",
+      ended_at: "2026-10-02T18:04:12.000Z",
+      detector: "selected-browser-tab",
+      confidence: "surface-active",
+      browser_family: "chrome",
+      platform: "linux",
+      schema_version: 1,
+      consent_policy_version: 1,
+    });
+  });
+});
+
+test("Companion rejects unknown and sensitive activity data before storage", (t) => {
+  const { store, databasePath, jsonlPath } = temporaryStore(t);
+  for (const field of [
+    "prompt", "response", "url", "title", "page_title", "source_code",
+    "account_id", "project_path", "metadata", "extension_payload",
+  ]) {
+    assert.throws(
+      () => store.recordToolActivity(activity({ [field]: `private ${field} content` })),
+      /unsupported field/,
+    );
+  }
+  assert.equal(existsSync(databasePath), false);
+  assert.equal(existsSync(jsonlPath), false);
+});
+
+test("Companion rejects arbitrary identifiers and invalid activity states before storage", (t) => {
+  const { store, databasePath } = temporaryStore(t);
+  assert.throws(() => store.recordToolActivity(activity({ tool_id: "https://chat.example/private" })), /allowlisted/);
+  assert.throws(() => store.recordToolActivity(activity({ confidence: "request-sent" })), /surface-active/);
+  assert.throws(() => store.recordToolActivity(activity({ ended_at: "2026-10-02T18:00:00Z" })), /after started_at/);
+  assert.equal(existsSync(databasePath), false);
 });
 
 test("one safe event creates only its SQLite task, session, and routing decision", (t) => {
