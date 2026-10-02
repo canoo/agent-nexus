@@ -55,6 +55,24 @@ function readDatabase(path, callback) {
   try { return callback(database); } finally { database.close(); }
 }
 
+function setCompanionCollection(databasePath, { enabled, adapterId, toolId, consentEnabled, policyVersion = 1 }) {
+  readDatabase(databasePath, (database) => {
+    database.prepare(`UPDATE companion_settings
+      SET collection_enabled = ?, updated_at = ? WHERE id = 1`)
+      .run(enabled ? 1 : 0, "2026-10-02T18:00:00.000Z");
+    if (adapterId && toolId && consentEnabled !== undefined) {
+      database.prepare(`INSERT INTO companion_tool_consents (
+        adapter_id, tool_id, enabled, consent_policy_version, updated_at
+      ) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(adapter_id, tool_id) DO UPDATE SET
+        enabled = excluded.enabled,
+        consent_policy_version = excluded.consent_policy_version,
+        updated_at = excluded.updated_at`)
+        .run(adapterId, toolId, consentEnabled ? 1 : 0, policyVersion, "2026-10-02T18:00:00.000Z");
+    }
+  });
+}
+
 function plain(row) {
   return Object.assign({}, row);
 }
@@ -83,8 +101,48 @@ test("migrations are owned, transactional, and idempotent", (t) => {
   });
 });
 
-test("a valid Companion activity span is persisted only in the shared SQLite store", (t) => {
+test("Companion collection is disabled by default and cannot persist a valid activity envelope", (t) => {
   const { store, databasePath, jsonlPath } = temporaryStore(t);
+  const result = store.recordToolActivity(activity());
+  assert.deepEqual(result.sqlite, { ok: false, error: "companion_collection_disabled" });
+  assert.equal(existsSync(jsonlPath), false);
+  readDatabase(databasePath, (database) => {
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM tool_activity").get().count, 0);
+  });
+});
+
+test("Companion requires a current matching adapter/tool consent before persisting activity", (t) => {
+  const { store, databasePath, jsonlPath } = temporaryStore(t);
+  store.migrate();
+  setCompanionCollection(databasePath, { enabled: true });
+
+  const missing = store.recordToolActivity(activity());
+  assert.deepEqual(missing.sqlite, { ok: false, error: "companion_tool_consent_missing" });
+
+  setCompanionCollection(databasePath, {
+    enabled: true, adapterId: "browser-chrome", toolId: "chatgpt", consentEnabled: false,
+  });
+  const revoked = store.recordToolActivity(activity());
+  assert.deepEqual(revoked.sqlite, { ok: false, error: "companion_tool_consent_missing" });
+
+  setCompanionCollection(databasePath, {
+    enabled: true, adapterId: "browser-edge", toolId: "chatgpt", consentEnabled: true,
+  });
+  const wrongAdapter = store.recordToolActivity(activity());
+  assert.deepEqual(wrongAdapter.sqlite, { ok: false, error: "companion_tool_consent_missing" });
+
+  readDatabase(databasePath, (database) => {
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM tool_activity").get().count, 0);
+  });
+  assert.equal(existsSync(jsonlPath), false);
+});
+
+test("a valid Companion activity span with enabled matching consent is persisted only in shared SQLite", (t) => {
+  const { store, databasePath, jsonlPath } = temporaryStore(t);
+  store.migrate();
+  setCompanionCollection(databasePath, {
+    enabled: true, adapterId: "browser-chrome", toolId: "chatgpt", consentEnabled: true,
+  });
   const result = store.recordToolActivity(activity());
   assert.equal(result.sqlite.ok, true);
   assert.equal(existsSync(jsonlPath), false);

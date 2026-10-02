@@ -78,6 +78,12 @@ The retention worker, activity-data preview, local export, and immediate local
 deletion controls remain subsequent Companion work; no current app or adapter
 collects activity.
 
+The shared local ingestion boundary fails closed even for a schema-valid
+envelope: it writes only when `companion_settings.collection_enabled` is on and
+the derived local adapter/tool pair has a current enabled row in
+`companion_tool_consents`. Missing, disabled, mismatched, or policy-version
+mismatched consent produces no activity row.
+
 "Installed/configured" and "active" are distinct states. A background process
 or an allowlisted site open in a background tab is not active use.
 
