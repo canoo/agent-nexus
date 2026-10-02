@@ -19,6 +19,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	_ "modernc.org/sqlite"
 )
 
 var version = "dev"
@@ -40,6 +41,7 @@ const (
 	screenUpdate
 	screenTaskLog
 	screenUsageDashboard
+	screenCompanionActivity
 )
 
 // --- install step types ---
@@ -170,6 +172,35 @@ type tokscaleUsageStats struct {
 	reasoningTokens  int64
 	messages         int64
 	costUSD          float64
+}
+
+// companionActivityEntry contains only the fixed, privacy-preserving fields
+// that the Companion migration permits the TUI to read. It deliberately has
+// no generic metadata, session, browser, provider, or task fields.
+type companionActivityEntry struct {
+	toolID    string
+	surface   string
+	startedAt time.Time
+	endedAt   time.Time
+}
+
+type companionActivityLoadState int
+
+const (
+	companionActivityLoading companionActivityLoadState = iota
+	companionActivityReady
+	companionActivityDisabled
+	companionActivityNoConsent
+	companionActivityUnavailable
+	companionActivityDegraded
+)
+
+// companionActivityMsg is an intentionally error-free result. Database
+// diagnostics can contain local paths or other details that do not belong in
+// the TUI, so a failed read is represented by a fixed state only.
+type companionActivityMsg struct {
+	entries []companionActivityEntry
+	state   companionActivityLoadState
 }
 
 // --- GPU detection ---
@@ -347,6 +378,14 @@ type model struct {
 	usageTokscaleState   tokscaleLoadState
 	usageTokscaleReport  TokscaleReport
 
+	// Companion activity is an independent privacy-preserving source. It is
+	// never joined with task routing or Tokscale usage, even when timestamps
+	// overlap.
+	companionDatabasePath    string
+	companionActivityLoading bool
+	companionActivityState   companionActivityLoadState
+	companionActivity        []companionActivityEntry
+
 	// configure
 	configCursor  int
 	configEditing bool
@@ -367,6 +406,7 @@ var menuItems = []string{
 	"Health Check",
 	"Task Log",
 	"Usage & Cost Dashboard",
+	"Companion Tool Activity",
 	"Update NEXUS",
 	"Uninstall NEXUS",
 }
@@ -400,15 +440,24 @@ func findNexusDir() string {
 	return filepath.Join(home, ".config", "nexus", "repo")
 }
 
+func defaultObservabilityDatabasePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".config", "nexus", "logs", "observability.sqlite")
+}
+
 func initialModel() model {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot))
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#f7b538"))
 
 	m := model{
-		styles:   newStyles(),
-		nexusDir: findNexusDir(),
-		spinner:  s,
-		localAI:  true, // default on
+		styles:                newStyles(),
+		nexusDir:              findNexusDir(),
+		spinner:               s,
+		localAI:               true, // default on
+		companionDatabasePath: defaultObservabilityDatabasePath(),
 		configKeys: []string{
 			"NEXUS_LOCAL_AI",
 			"OLLAMA_HOST_URL",
@@ -484,6 +533,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return updateTaskLog(msg, m)
 	case screenUsageDashboard:
 		return updateUsageDashboard(msg, m)
+	case screenCompanionActivity:
+		return updateCompanionActivity(msg, m)
 	}
 	return m, nil
 }
@@ -507,6 +558,8 @@ func (m model) View() tea.View {
 		s = taskLogView(m)
 	case screenUsageDashboard:
 		s = usageDashboardView(m)
+	case screenCompanionActivity:
+		s = companionActivityView(m)
 	}
 	v := tea.NewView(s)
 	v.AltScreen = true
@@ -552,6 +605,9 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				m.screen = screenUsageDashboard
 				return startUsageDashboardLoad(m)
 			case 5:
+				m.screen = screenCompanionActivity
+				return startCompanionActivityLoad(m)
+			case 6:
 				m.screen = screenUpdate
 				m.running = false
 				m.output = ""
@@ -561,7 +617,7 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 					return m, tea.Batch(m.spinner.Tick, checkLatestVersion())
 				}
 				return m, nil
-			case 6:
+			case 7:
 				m.screen = screenUninstall
 				m.running = false
 				m.output = ""
