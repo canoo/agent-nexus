@@ -166,7 +166,9 @@ The same migration also creates device-local Companion configuration tables:
 - `companion_settings` has one disabled-by-default row with the initial
   14-day raw-span and 90-day aggregate-retention defaults.
 - `companion_tool_consents` reserves explicit per-adapter, per-tool consent;
-  it has no writer until the Companion native host and consent UI arrive.
+  the strict native host can write only after the existing collection and
+  matching device-local consent gates are explicitly enabled; a consent UI and
+  lifecycle integration remain future work.
 
 These tables are local configuration only and are never inputs to `nexus sync`
 or `nexus adopt`.

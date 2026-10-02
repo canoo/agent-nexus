@@ -138,12 +138,17 @@ cross-platform work in v1.0.0.
    consent configuration.
 3. Build the Chrome/Edge extension and strict native host; add contract tests
    that prove fake prompts, titles, and URLs cannot reach storage or exports.
-   The extension-only private-preview scaffold now lives in
+   The extension private-preview scaffold now lives in
    [`apps/companion-browser-extension/`](../apps/companion-browser-extension/):
    it is disabled by default, has no content scripts or `<all_urls>`
-   permission, and emits only the fixed envelope through native messaging. The
-   native host, delivery-to-store path, retention controls, and exports remain
-   unimplemented.
+   permission, and emits only the fixed envelope through native messaging. Its
+   local-only host foundation is in
+   [`apps/companion-native-host/`](../apps/companion-native-host/): each
+   Chrome/Edge launcher fixes the adapter before input, validates bounded
+   native-message frames, and writes only through the shared store after its
+   existing collection and consent gates pass. It is unregistered by default;
+   explicit per-browser manifest installation with published extension IDs is
+   still required. Retention controls and exports remain unimplemented.
 4. Add the Linux/macOS Companion desktop shell and a separate TUI Tool Activity
    screen. The shell supplies the native-messaging boundary and visible privacy
    controls; Flatpak packaging is validated separately on Linux.

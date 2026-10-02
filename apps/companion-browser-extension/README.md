@@ -40,10 +40,13 @@ native host is installed and collection is enabled.
    it and approve that tool's small optional-origin request.
 
 The extension attempts native messaging only when a selected enabled surface
-ends. Until the separately installed NEXUS native host exists, delivery fails
-closed: it does not log, queue, retry, or send the envelope elsewhere. This
-directory deliberately does not implement that native host, desktop
-collection, arbitrary capture, publishing, or store writes.
+ends. Until the separately installed and explicitly browser-registered NEXUS
+native host exists, delivery fails closed: it does not log, queue, retry, or
+send the envelope elsewhere. The strict host foundation lives in
+[`apps/companion-native-host/`](../companion-native-host/), but it has no
+automatic registration and accepts only a manifest's supplied published
+extension IDs. This directory still does not implement desktop collection,
+arbitrary capture, publishing, or store writes.
 
 Run the pure policy/envelope tests with:
 
