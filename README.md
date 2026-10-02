@@ -97,6 +97,14 @@ Available tools: `ollama_commit_msg`, `ollama_boilerplate`, `ollama_test_scaffol
 
 An interactive terminal UI handles installation, configuration, health checks, and updates. No config file editing required to get started.
 
+### Usage data attribution
+
+NEXUS's optional CLI usage integration is powered by
+[Tokscale](https://github.com/junhoyeo/tokscale). Tokscale provides local
+usage and pricing aggregates across supported AI CLIs; NEXUS presents those
+aggregates separately from the routing, latency, and local-savings data it owns.
+Thank you to the Tokscale maintainers and contributors for their upstream work.
+
 ---
 
 ## Tool Compatibility
