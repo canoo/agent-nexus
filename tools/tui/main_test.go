@@ -1,22 +1,46 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 )
+
+type tokscaleProbeResult struct {
+	output []byte
+	err    error
+}
+
+type sequenceTokscaleRunner struct {
+	results []tokscaleProbeResult
+	calls   []string
+}
+
+func (r *sequenceTokscaleRunner) Output(_ context.Context, name string, args ...string) ([]byte, error) {
+	r.calls = append(r.calls, name+" "+strings.Join(args, " "))
+	if len(r.results) == 0 {
+		return nil, errors.New("unexpected Tokscale command")
+	}
+	result := r.results[0]
+	r.results = r.results[1:]
+	return result.output, result.err
+}
 
 func TestInitialModel(t *testing.T) {
 	m := initialModel()
 	if m.screen != screenMenu {
 		t.Errorf("expected screenMenu, got %d", m.screen)
 	}
-	if len(m.configKeys) != 4 {
-		t.Errorf("expected 4 config keys, got %d", len(m.configKeys))
+	if len(m.configKeys) != 5 {
+		t.Errorf("expected 5 config keys, got %d", len(m.configKeys))
 	}
 	if len(m.configLabels) != len(m.configKeys) {
 		t.Errorf("configLabels length %d != configKeys length %d", len(m.configLabels), len(m.configKeys))
@@ -136,7 +160,7 @@ func TestSaveAndLoadEnv(t *testing.T) {
 	dir := t.TempDir()
 	m := initialModel()
 	m.nexusDir = dir
-	m.configVals = []string{"false", "http://gpu:11434", "qwen2.5-coder:7b", "llama3.2:3b"}
+	m.configVals = []string{"false", "http://gpu:11434", "qwen2.5-coder:7b", "llama3.2:3b", "30"}
 
 	if err := saveEnv(m); err != nil {
 		t.Fatalf("saveEnv failed: %v", err)
@@ -153,6 +177,126 @@ func TestSaveAndLoadEnv(t *testing.T) {
 	}
 	if m2.localAI != false {
 		t.Error("expected localAI=false after loading env with NEXUS_LOCAL_AI=false")
+	}
+}
+
+func TestParseClaudeSessionRetentionDays(t *testing.T) {
+	tests := []struct {
+		name  string
+		raw   string
+		want  int
+		valid bool
+	}{
+		{name: "default recommendation", raw: "30", want: 30, valid: true},
+		{name: "unknown or disabled", raw: "0", want: 0, valid: true},
+		{name: "trimmed integer", raw: " 45 ", want: 45, valid: true},
+		{name: "negative falls back", raw: "-1", want: defaultClaudeSessionRetention, valid: false},
+		{name: "text falls back", raw: "thirty", want: defaultClaudeSessionRetention, valid: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, valid := parseClaudeSessionRetentionDays(tt.raw)
+			if got != tt.want || valid != tt.valid {
+				t.Fatalf("parseClaudeSessionRetentionDays(%q) = (%d, %t), want (%d, %t)", tt.raw, got, valid, tt.want, tt.valid)
+			}
+		})
+	}
+}
+
+func TestClaudeSessionRetentionConfigFallsBackSafely(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(claudeSessionRetentionKey+"=\"not-a-number\"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := initialModel()
+	m.nexusDir = dir
+	loadEnv(&m)
+	if got := configuredClaudeSessionRetentionDays(m); got != defaultClaudeSessionRetention {
+		t.Fatalf("loaded retention = %d, want safe default %d", got, defaultClaudeSessionRetention)
+	}
+
+	for i, key := range m.configKeys {
+		if key == claudeSessionRetentionKey {
+			m.configVals[i] = "-2"
+		}
+	}
+	if err := saveEnv(m); err != nil {
+		t.Fatalf("saveEnv failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), claudeSessionRetentionKey+"=\"30\"") {
+		t.Fatalf("saved invalid retention without safe fallback: %q", data)
+	}
+}
+
+func TestConfigureClaudeSessionRetentionValidatesOnEdit(t *testing.T) {
+	m := initialModel()
+	m.screen = screenConfigure
+	for i, key := range m.configKeys {
+		if key == claudeSessionRetentionKey {
+			m.configCursor = i
+		}
+	}
+
+	m.configEditing = true
+	m.editBuf = "29"
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
+	got := updated.(model)
+	if got.configEditing || configuredClaudeSessionRetentionDays(got) != 29 {
+		t.Fatalf("valid edit retained unexpected state: editing=%t retention=%d", got.configEditing, configuredClaudeSessionRetentionDays(got))
+	}
+
+	got.configEditing = true
+	got.editBuf = "invalid"
+	updated, _ = got.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
+	got = updated.(model)
+	if got.configEditing || configuredClaudeSessionRetentionDays(got) != defaultClaudeSessionRetention {
+		t.Fatalf("invalid edit did not use safe default: editing=%t retention=%d", got.configEditing, configuredClaudeSessionRetentionDays(got))
+	}
+	if !strings.Contains(got.output, "using default 30 days") {
+		t.Fatalf("invalid edit did not explain fallback: %q", got.output)
+	}
+}
+
+func TestHealthViewClaudeSessionRetentionGuidance(t *testing.T) {
+	tests := []struct {
+		name     string
+		days     int
+		want     string
+		unwanted string
+	}{
+		{
+			name:     "29 days warns",
+			days:     29,
+			want:     "NEXUS guidance is 29 days; 30+ days is recommended",
+			unwanted: "✓ NEXUS guidance is 29 days",
+		},
+		{
+			name:     "30 days meets guidance",
+			days:     30,
+			want:     "✓ NEXUS guidance is 30 days",
+			unwanted: "30+ days is recommended",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := initialModel()
+			m.screen = screenHealth
+			m.health.claudeSessionRetentionDays = tt.days
+			view := m.View().Content
+			if !strings.Contains(view, tt.want) || strings.Contains(view, tt.unwanted) {
+				t.Fatalf("health view for %d days = %q", tt.days, view)
+			}
+			if !strings.Contains(view, "it does not modify Claude's own retention") {
+				t.Fatalf("health view did not explain NEXUS-only guidance: %q", view)
+			}
+		})
 	}
 }
 
@@ -244,6 +388,76 @@ func TestMenuSelectConfigure(t *testing.T) {
 	}
 }
 
+func TestMenuSelectUsageDashboardStartsIndependentLoads(t *testing.T) {
+	m := initialModel()
+	m.cursor = 4
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
+	got := updated.(model)
+	if got.screen != screenUsageDashboard {
+		t.Fatalf("screen = %d, want usage dashboard", got.screen)
+	}
+	if !got.usageNativeLoading || !got.usageTokscaleLoading || got.usageTokscaleState != tokscaleLoading {
+		t.Fatalf("dashboard loading state = native:%t tokscale:%t state:%d", got.usageNativeLoading, got.usageTokscaleLoading, got.usageTokscaleState)
+	}
+	if cmd == nil {
+		t.Fatal("opening dashboard should start non-blocking load commands")
+	}
+}
+
+func TestDetectTokscaleHealthUsesFixedCommandsAndSafeClientLabels(t *testing.T) {
+	runner := &sequenceTokscaleRunner{results: []tokscaleProbeResult{
+		{output: []byte("tokscale 1.2.3\n")},
+		{output: []byte(`{"groupBy":"model","entries":[
+			{"client":"codex","provider":"openai","model":"gpt-5","input":0,"output":0,"cacheRead":0,"cacheWrite":0,"reasoning":0,"messageCount":0,"cost":0},
+			{"client":"third-party-private-client","provider":"unknown","model":"unknown","input":0,"output":0,"cacheRead":0,"cacheWrite":0,"reasoning":0,"messageCount":0,"cost":0},
+			{"client":"claude-code","provider":"anthropic","model":"claude","input":0,"output":0,"cacheRead":0,"cacheWrite":0,"reasoning":0,"messageCount":0,"cost":0}
+		]}`)},
+	}}
+
+	got := detectTokscaleHealth(context.Background(), TokscaleAdapter{Runner: runner})
+	if got.state != tokscaleHealthReady || got.version != "v1.2.3" {
+		t.Fatalf("health = %#v, want ready v1.2.3", got)
+	}
+	if strings.Join(got.clients, ", ") != "Claude Code, Codex" {
+		t.Fatalf("clients = %q", got.clients)
+	}
+	if strings.Join(runner.calls, " | ") != "tokscale --version | tokscale models --json" {
+		t.Fatalf("commands = %q", runner.calls)
+	}
+
+	m := initialModel()
+	m.screen = screenHealth
+	m.health.tokscale = got
+	view := m.View().Content
+	if strings.Contains(view, "third-party-private-client") {
+		t.Fatalf("health view leaked a CLI client identifier: %q", view)
+	}
+}
+
+func TestDetectTokscaleHealthMakesAbsenceOptionalAndFailureSafe(t *testing.T) {
+	missing := detectTokscaleHealth(context.Background(), TokscaleAdapter{Runner: &sequenceTokscaleRunner{results: []tokscaleProbeResult{{err: exec.ErrNotFound}}}})
+	if missing.state != tokscaleHealthUnavailable || missing.version != "" || len(missing.clients) != 0 {
+		t.Fatalf("missing health = %#v", missing)
+	}
+
+	privateMarker := "private Tokscale output"
+	broken := detectTokscaleHealth(context.Background(), TokscaleAdapter{Runner: &sequenceTokscaleRunner{results: []tokscaleProbeResult{
+		{output: []byte("tokscale 1.2.3")},
+		{err: errors.New(privateMarker)},
+	}}})
+	if broken.state != tokscaleHealthDegraded || broken.version != "v1.2.3" {
+		t.Fatalf("broken health = %#v", broken)
+	}
+	m := initialModel()
+	m.screen = screenHealth
+	m.health.tokscale = broken
+	view := m.View().Content
+	if !strings.Contains(view, "Tokscale v1.2.3 installed") || !strings.Contains(view, "local usage aggregates are unavailable") || strings.Contains(view, privateMarker) {
+		t.Fatalf("degraded health view is unsafe: %q", view)
+	}
+}
+
 func TestEscReturnsToMenu(t *testing.T) {
 	m := initialModel()
 	m.screen = screenConfigure
@@ -287,12 +501,78 @@ func TestConfigureToggleLocalAI(t *testing.T) {
 func TestViewsDoNotPanic(t *testing.T) {
 	m := initialModel()
 
-	screens := []screen{screenMenu, screenInstall, screenConfigure, screenHealth, screenUninstall, screenUpdate, screenTaskLog}
+	screens := []screen{screenMenu, screenInstall, screenConfigure, screenHealth, screenUninstall, screenUpdate, screenTaskLog, screenUsageDashboard}
 	for _, s := range screens {
 		m.screen = s
 		m.steps = buildInstallSteps()
 		// Should not panic
 		_ = m.View()
+	}
+}
+
+func TestUsageDashboardUpdatesSourcesIndependently(t *testing.T) {
+	m := initialModel()
+	m.screen = screenUsageDashboard
+	m.usageNativeLoading = true
+	m.usageTokscaleLoading = true
+	m.usageTokscaleState = tokscaleLoading
+
+	updated, _ := m.Update(taskLogMsg{entries: []taskLogEntry{{Tool: "ollama_commit_msg", Ok: true, Ms: 12}}})
+	got := updated.(model)
+	if got.usageNativeLoading || !got.usageTokscaleLoading {
+		t.Fatalf("native and Tokscale loading must complete independently: native=%t tokscale=%t", got.usageNativeLoading, got.usageTokscaleLoading)
+	}
+	if len(got.usageTaskLog) != 1 {
+		t.Fatalf("native task entries = %d, want 1", len(got.usageTaskLog))
+	}
+
+	updated, _ = got.Update(usageDashboardMsg{
+		state:  tokscaleReady,
+		report: TokscaleReport{GroupBy: "model", Entries: []TokscaleUsage{{InputTokens: 4, OutputTokens: 5, MessageCount: 1, CostUSD: 0.25}}},
+	})
+	got = updated.(model)
+	if got.usageTokscaleLoading || got.usageTokscaleState != tokscaleReady {
+		t.Fatalf("Tokscale state = loading:%t state:%d", got.usageTokscaleLoading, got.usageTokscaleState)
+	}
+	if got.usageTaskLog[0].Tool != "ollama_commit_msg" || got.usageTokscaleReport.Entries[0].InputTokens != 4 {
+		t.Fatal("dashboard did not retain the sources separately")
+	}
+}
+
+func TestUsageDashboardUnavailableAndDegradedViewsAreSafe(t *testing.T) {
+	m := initialModel()
+	m.screen = screenUsageDashboard
+	m.usageTokscaleState = tokscaleUnavailable
+	unavailable := m.View().Content
+	if !strings.Contains(unavailable, "Tokscale is not installed") || !strings.Contains(unavailable, "bunx tokscale@latest") {
+		t.Fatalf("unavailable view should provide install hint: %q", unavailable)
+	}
+
+	msg := loadTokscaleUsage(TokscaleAdapter{Runner: &fakeTokscaleRunner{err: errors.New("private tokscale output")}})()
+	updated, _ := m.Update(msg)
+	got := updated.(model)
+	if got.usageTokscaleState != tokscaleDegraded {
+		t.Fatalf("Tokscale failure state = %d, want degraded", got.usageTokscaleState)
+	}
+	degraded := got.View().Content
+	if !strings.Contains(degraded, "Tokscale data is unavailable") || strings.Contains(degraded, "private tokscale output") {
+		t.Fatalf("degraded view must be safe: %q", degraded)
+	}
+}
+
+func TestSummarizeTokscaleUsage(t *testing.T) {
+	stats := summarizeTokscaleUsage([]TokscaleUsage{
+		{InputTokens: 10, OutputTokens: 20, CacheReadTokens: 30, CacheWriteTokens: 40, ReasoningTokens: 50, MessageCount: 2, CostUSD: 0.25},
+		{InputTokens: 1, OutputTokens: 2, CacheReadTokens: 3, CacheWriteTokens: 4, ReasoningTokens: 5, MessageCount: 1, CostUSD: 0.75},
+	})
+	if stats.aggregates != 2 || stats.inputTokens != 11 || stats.outputTokens != 22 ||
+		stats.cacheReadTokens != 33 || stats.cacheWriteTokens != 44 || stats.reasoningTokens != 55 ||
+		stats.messages != 3 || math.Abs(stats.costUSD-1) > 0.000001 {
+		t.Fatalf("unexpected Tokscale stats: %#v", stats)
+	}
+
+	if got := saturatingAddInt64(math.MaxInt64-1, 2); got != math.MaxInt64 {
+		t.Errorf("int64 saturation = %d, want %d", got, int64(math.MaxInt64))
 	}
 }
 
