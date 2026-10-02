@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="ui.css"><title>NEXUS Companion privacy settings</title></head>
+  <body>
+    <h1>NEXUS Companion privacy settings</h1>
+    <p>Each toggle requests access only to that tool's documented origin. Turning a tool off revokes that origin permission. This extension has no content scripts and does not read page text.</p>
+    <h2>Enabled tools</h2>
+    <div id="tool-list" class="tool-list" aria-label="Supported AI tools"></div>
+    <h2>Exactly what may leave the browser</h2>
+    <pre class="preview" aria-label="Activity envelope preview">{
+  "tool_id": "chatgpt",
+  "surface": "browser",
+  "started_at": "RFC3339 UTC",
+  "ended_at": "RFC3339 UTC",
+  "detector": "selected-browser-tab",
+  "confidence": "surface-active",
+  "browser_family": "chrome | edge",
+  "platform": "linux | macos (when known)",
+  "schema_version": 1,
+  "consent_policy_version": 1
+}</pre>
+    <p>Never included: URLs, titles, DOM or page text, prompts, responses, account identifiers, query strings, source code, or arbitrary metadata.</p>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
