@@ -262,6 +262,7 @@ tests/          Integration tests
 | **v0.1.6** | Security fixes | Checksum hardening, input validation, PAT removal — [Released] |
 | **v0.2.0** | Observability core | Session logging, cost tracker, live TUI dashboard — [Released] |
 | **v0.2.1** | CLI usage ingestion | Tokscale adapter, unified usage dashboard |
+| **v0.2.2** | NEXUS Companion (private preview) | Opt-in local browser activity signals with privacy-first metadata only |
 | **v0.2.5** | Universal sync layer | `nexus adopt`, `nexus sync`, AGENTS.md projection, tool driver system, nexus-context MCP, Smithery MCP registry, compatibility matrix |
 | **v0.3.0** | Dynamic routing | Command interception, Antigravity CLI (`agy`) delegation, auto model selection, latency fallback |
 | **v0.3.5** | Community benchmarks | Benchmark schema, hardware-tiered test runner, community submission pipeline, results showcase |
