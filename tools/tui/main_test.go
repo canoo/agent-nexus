@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -478,6 +480,23 @@ func TestMenuSelectUsageDashboardStartsIndependentLoads(t *testing.T) {
 	}
 }
 
+func TestMenuSelectCompanionActivityStartsIndependentLoad(t *testing.T) {
+	m := initialModel()
+	m.cursor = 5
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
+	got := updated.(model)
+	if got.screen != screenCompanionActivity {
+		t.Fatalf("screen = %d, want companion activity", got.screen)
+	}
+	if !got.companionActivityLoading || got.companionActivityState != companionActivityLoading {
+		t.Fatalf("companion loading state = loading:%t state:%d", got.companionActivityLoading, got.companionActivityState)
+	}
+	if cmd == nil {
+		t.Fatal("opening Companion activity should start a non-blocking load")
+	}
+}
+
 func TestDetectTokscaleHealthUsesFixedCommandsAndSafeClientLabels(t *testing.T) {
 	runner := &sequenceTokscaleRunner{results: []tokscaleProbeResult{
 		{output: []byte("tokscale 1.2.3\n")},
@@ -574,7 +593,7 @@ func TestConfigureToggleLocalAI(t *testing.T) {
 func TestViewsDoNotPanic(t *testing.T) {
 	m := initialModel()
 
-	screens := []screen{screenMenu, screenInstall, screenConfigure, screenHealth, screenUninstall, screenUpdate, screenTaskLog, screenUsageDashboard}
+	screens := []screen{screenMenu, screenInstall, screenConfigure, screenHealth, screenUninstall, screenUpdate, screenTaskLog, screenUsageDashboard, screenCompanionActivity}
 	for _, s := range screens {
 		m.screen = s
 		m.steps = buildInstallSteps()
@@ -646,6 +665,151 @@ func TestSummarizeTokscaleUsage(t *testing.T) {
 
 	if got := saturatingAddInt64(math.MaxInt64-1, 2); got != math.MaxInt64 {
 		t.Errorf("int64 saturation = %d, want %d", got, int64(math.MaxInt64))
+	}
+}
+
+type companionTestActivity struct {
+	toolID     string
+	surface    string
+	startedAt  string
+	endedAt    string
+	detector   string
+	confidence string
+}
+
+func writeCompanionTestDatabase(t *testing.T, collectionEnabled, consentEnabled bool, activities []companionTestActivity) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "observability.sqlite")
+	database, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	migration, err := os.ReadFile(filepath.Join("..", "mcp", "migrations", "003_companion-activity.sql"))
+	if err != nil {
+		t.Fatalf("read Companion migration: %v", err)
+	}
+	_, err = database.Exec(string(migration))
+	if err != nil {
+		t.Fatalf("apply Companion migration: %v", err)
+	}
+	collection := 0
+	if collectionEnabled {
+		collection = 1
+	}
+	if _, err := database.Exec(`UPDATE companion_settings SET collection_enabled = ? WHERE id = 1`, collection); err != nil {
+		t.Fatalf("insert settings: %v", err)
+	}
+	if consentEnabled {
+		if _, err := database.Exec(`INSERT INTO companion_tool_consents
+			(adapter_id, tool_id, enabled, consent_policy_version, updated_at)
+            VALUES ('chrome', 'chatgpt', 1, 1, '2026-10-02T18:00:00.000Z')`); err != nil {
+			t.Fatalf("insert consent: %v", err)
+		}
+	}
+	for index, activity := range activities {
+		if _, err := database.Exec(`INSERT INTO tool_activity
+			(id, tool_id, surface, started_at, ended_at, detector, confidence, schema_version, consent_policy_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+			fmt.Sprintf("test-activity-%d", index), activity.toolID, activity.surface,
+			activity.startedAt, activity.endedAt, activity.detector, activity.confidence); err != nil {
+			t.Fatalf("insert activity: %v", err)
+		}
+	}
+	return path
+}
+
+func TestCompanionActivityReadsOnlySafeSQLiteActivityRows(t *testing.T) {
+	path := writeCompanionTestDatabase(t, true, true, []companionTestActivity{
+		{
+			toolID: "chatgpt", surface: "browser",
+			startedAt: "2026-10-02T18:00:00.000Z", endedAt: "2026-10-02T18:04:12.000Z",
+			detector: "selected-browser-tab", confidence: "surface-active",
+		},
+		// This represents an invalid/corrupt row. It must never enter the view.
+		{
+			toolID: "private prompt: do not show", surface: "browser",
+			startedAt: "2026-10-02T18:00:00.000Z", endedAt: "2026-10-02T18:04:12.000Z",
+			detector: "selected-browser-tab", confidence: "surface-active",
+		},
+	})
+
+	entries, state := readCompanionActivity(path)
+	if state != companionActivityReady {
+		t.Fatalf("state = %d, want ready", state)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %#v, want one safe activity", entries)
+	}
+	entry := entries[0]
+	if entry.toolID != "chatgpt" || entry.surface != "browser" || entry.endedAt.Sub(entry.startedAt) != 4*time.Minute+12*time.Second {
+		t.Fatalf("entry = %#v, want mapped fixed activity fields", entry)
+	}
+}
+
+func TestCompanionActivityStatesAccuratelyRepresentDisabledNoConsentAndUnavailable(t *testing.T) {
+	if _, state := readCompanionActivity(filepath.Join(t.TempDir(), "missing.sqlite")); state != companionActivityUnavailable {
+		t.Fatalf("missing database state = %d, want unavailable", state)
+	}
+
+	disabledPath := writeCompanionTestDatabase(t, false, true, nil)
+	if _, state := readCompanionActivity(disabledPath); state != companionActivityDisabled {
+		t.Fatalf("disabled collection state = %d, want disabled", state)
+	}
+
+	noConsentPath := writeCompanionTestDatabase(t, true, false, nil)
+	if _, state := readCompanionActivity(noConsentPath); state != companionActivityNoConsent {
+		t.Fatalf("no-consent state = %d, want no consent", state)
+	}
+}
+
+func TestCompanionActivityViewUsesFixedLabelsAndStaysSeparate(t *testing.T) {
+	m := initialModel()
+	m.screen = screenCompanionActivity
+	m.companionActivityState = companionActivityReady
+	m.companionActivity = []companionActivityEntry{
+		{
+			toolID: "chatgpt", surface: "browser",
+			startedAt: time.Date(2026, 10, 2, 18, 0, 0, 0, time.UTC),
+			endedAt:   time.Date(2026, 10, 2, 18, 4, 12, 0, time.UTC),
+		},
+		// Views defensively refuse unmapped values even if an in-memory caller
+		// bypasses the SQLite mapper.
+		{toolID: "https://private.example/prompt", surface: "browser", startedAt: time.Now(), endedAt: time.Now().Add(time.Minute)},
+	}
+	m.usageTaskLog = []taskLogEntry{{Tool: "private source code", Model: "private model"}}
+	m.usageTokscaleReport = TokscaleReport{GroupBy: "private provider metadata"}
+
+	view := m.View().Content
+	for _, forbidden := range []string{"private.example", "prompt", "private source code", "private model", "private provider metadata"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("Companion view leaked %q: %q", forbidden, view)
+		}
+	}
+	if !strings.Contains(view, "ChatGPT") || !strings.Contains(view, "Browser") || !strings.Contains(view, "separate from NEXUS task routing and Tokscale") {
+		t.Fatalf("Companion view is missing safe labels or separation notice: %q", view)
+	}
+}
+
+func TestMapCompanionActivityEntryRejectsInvalidOrSensitiveValues(t *testing.T) {
+	cases := []struct {
+		name     string
+		toolID   string
+		surface  string
+		detector string
+	}{
+		{name: "prompt", toolID: "private prompt", surface: "browser", detector: "selected-browser-tab"},
+		{name: "url", toolID: "https://chatgpt.example/private", surface: "browser", detector: "selected-browser-tab"},
+		{name: "title", toolID: "window title", surface: "browser", detector: "selected-browser-tab"},
+		{name: "wrong detector", toolID: "chatgpt", surface: "browser", detector: "foreground-app"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, ok := mapCompanionActivityEntry(tc.toolID, tc.surface,
+				"2026-10-02T18:00:00Z", "2026-10-02T18:00:01Z", tc.detector, "surface-active"); ok {
+				t.Fatal("unsafe activity value was accepted")
+			}
+		})
 	}
 }
 

@@ -74,10 +74,14 @@ equally explicit choice. Consent is device-local and is never copied by
 All data stays under NEXUS's local observability directory with restrictive
 permissions. The migration-owned local settings foundation defaults to disabled
 collection, 14 days for raw spans, and 90 days for daily local aggregates.
-The retention worker, activity-history preview, local export, and immediate
-local deletion controls remain subsequent Companion work; no current app or
-adapter collects activity. The extension's current UI shows only a fixed-field
-envelope preview, never collected activity data.
+The retention worker, local export, and immediate local deletion controls remain
+subsequent Companion work. The TUI now has a read-only activity-history preview
+that reads only the fixed `tool_activity` fields from the migration-owned SQLite
+database; it has no JSONL fallback, export path, or task correlation. The
+TUI uses the pure-Go `modernc.org/sqlite` driver for portable Linux/macOS
+read-only access without requiring a system SQLite binary or cgo. The
+extension's current UI shows only a fixed-field envelope preview, never
+collected activity data.
 
 The shared local ingestion boundary fails closed even for a schema-valid
 envelope: it writes only when `companion_settings.collection_enabled` is on and
@@ -150,8 +154,11 @@ cross-platform work in v1.0.0.
    explicit per-browser manifest installation with published extension IDs is
    still required. Retention controls and exports remain unimplemented.
 4. Add the Linux/macOS Companion desktop shell and a separate TUI Tool Activity
-   screen. The shell supplies the native-messaging boundary and visible privacy
-   controls; Flatpak packaging is validated separately on Linux.
+   screen. The TUI screen is now a read-only SQLite view that labels Companion
+   surface activity separately from NEXUS routing and Tokscale usage; it does
+   not infer task relationships from timestamps. The shell supplies the
+   native-messaging boundary and visible privacy controls; Flatpak packaging is
+   validated separately on Linux.
 5. Integrate installation with the v0.2.5 tool registry while retaining
    device-local consent; then consider Firefox and supported desktop adapters.
 
