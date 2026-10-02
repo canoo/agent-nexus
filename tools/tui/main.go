@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +22,11 @@ import (
 )
 
 var version = "dev"
+
+const (
+	claudeSessionRetentionKey     = "NEXUS_CLAUDE_SESSION_RETENTION_DAYS"
+	defaultClaudeSessionRetention = 30
+)
 
 // screens
 type screen int
@@ -29,6 +39,7 @@ const (
 	screenUninstall
 	screenUpdate
 	screenTaskLog
+	screenUsageDashboard
 )
 
 // --- install step types ---
@@ -75,9 +86,29 @@ type updateDoneMsg struct {
 }
 
 type healthMsg struct {
-	ollamaUp bool
-	links    []string
-	gpu      gpuInfo
+	ollamaUp                   bool
+	links                      []string
+	gpu                        gpuInfo
+	tokscale                   tokscaleHealth
+	claudeSessionRetentionDays int
+}
+
+// tokscaleHealthState is deliberately separate from the health of NEXUS.
+// Tokscale is optional, so its absence can never make the NEXUS health check
+// fail.
+type tokscaleHealthState int
+
+const (
+	tokscaleHealthUnknown tokscaleHealthState = iota
+	tokscaleHealthReady
+	tokscaleHealthUnavailable
+	tokscaleHealthDegraded
+)
+
+type tokscaleHealth struct {
+	state   tokscaleHealthState
+	version string
+	clients []string
 }
 
 // --- task log ---
@@ -108,6 +139,37 @@ type taskLogStats struct {
 	modelTasks map[string]int
 	routes     map[string]int
 	savingsUSD float64
+}
+
+// usageDashboardMsg contains a privacy-safe classification of a Tokscale load.
+// The adapter error itself is deliberately not retained: third-party CLI errors
+// can contain data that does not belong in the TUI.
+type usageDashboardMsg struct {
+	report TokscaleReport
+	state  tokscaleLoadState
+}
+
+type tokscaleLoadState int
+
+const (
+	tokscaleLoading tokscaleLoadState = iota
+	tokscaleReady
+	tokscaleUnavailable
+	tokscaleDegraded
+)
+
+// tokscaleUsageStats is intentionally separate from taskLogStats. NEXUS task
+// routing data and Tokscale's provider usage aggregates can overlap, so they
+// must never be summed or used to infer each other.
+type tokscaleUsageStats struct {
+	aggregates       int
+	inputTokens      int64
+	outputTokens     int64
+	cacheReadTokens  int64
+	cacheWriteTokens int64
+	reasoningTokens  int64
+	messages         int64
+	costUSD          float64
 }
 
 // --- GPU detection ---
@@ -271,10 +333,19 @@ type model struct {
 	uninstallConfirmed bool
 
 	// health
-	health healthMsg
+	health          healthMsg
+	tokscaleAdapter TokscaleAdapter
 
 	// task log
 	taskLog []taskLogEntry
+
+	// usage dashboard: each source loads independently so a missing or slow
+	// optional provider never blocks NEXUS-native task data.
+	usageTaskLog         []taskLogEntry
+	usageNativeLoading   bool
+	usageTokscaleLoading bool
+	usageTokscaleState   tokscaleLoadState
+	usageTokscaleReport  TokscaleReport
 
 	// configure
 	configCursor  int
@@ -295,6 +366,7 @@ var menuItems = []string{
 	"Configure",
 	"Health Check",
 	"Task Log",
+	"Usage & Cost Dashboard",
 	"Update NEXUS",
 	"Uninstall NEXUS",
 }
@@ -342,18 +414,21 @@ func initialModel() model {
 			"OLLAMA_HOST_URL",
 			"NEXUS_SUPERVISOR_MODEL",
 			"NEXUS_LOGIC_MODEL",
+			claudeSessionRetentionKey,
 		},
 		configLabels: []string{
 			"Local AI",
 			"Ollama Host URL",
 			"Supervisor Model",
 			"Logic Model",
+			"Claude History Guidance (days)",
 		},
 		configVals: []string{
 			"true",
 			"http://localhost:11434",
 			"qwen2.5-coder:1.5b",
 			"llama3.2:3b",
+			strconv.Itoa(defaultClaudeSessionRetention),
 		},
 	}
 	loadEnv(&m)
@@ -407,6 +482,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return updateUpdateScreen(msg, m)
 	case screenTaskLog:
 		return updateTaskLog(msg, m)
+	case screenUsageDashboard:
+		return updateUsageDashboard(msg, m)
 	}
 	return m, nil
 }
@@ -428,6 +505,8 @@ func (m model) View() tea.View {
 		s = updateScreenView(m)
 	case screenTaskLog:
 		s = taskLogView(m)
+	case screenUsageDashboard:
+		s = usageDashboardView(m)
 	}
 	v := tea.NewView(s)
 	v.AltScreen = true
@@ -464,12 +543,15 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 			case 2:
 				m.screen = screenHealth
 				m.running = true
-				return m, tea.Batch(m.spinner.Tick, checkHealth(m.nexusDir, m.configVals[1]))
+				return m, tea.Batch(m.spinner.Tick, checkHealth(m.nexusDir, m.configVals[1], configuredClaudeSessionRetentionDays(m), m.tokscaleAdapter))
 			case 3:
 				m.screen = screenTaskLog
 				m.running = true
 				return m, tea.Batch(m.spinner.Tick, loadTaskLog())
 			case 4:
+				m.screen = screenUsageDashboard
+				return startUsageDashboardLoad(m)
+			case 5:
 				m.screen = screenUpdate
 				m.running = false
 				m.output = ""
@@ -479,7 +561,7 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 					return m, tea.Batch(m.spinner.Tick, checkLatestVersion())
 				}
 				return m, nil
-			case 5:
+			case 6:
 				m.screen = screenUninstall
 				m.running = false
 				m.output = ""
@@ -784,6 +866,34 @@ func healthView(m model) string {
 			s += m.styles.subtle.Render(fmt.Sprintf("    Recommended: supervisor=%s  logic=%s", sup, logic)) + "\n"
 		}
 
+		s += "\nTokscale (optional):\n"
+		switch m.health.tokscale.state {
+		case tokscaleHealthReady:
+			s += "  " + m.styles.success.Render("✓ Tokscale "+m.health.tokscale.version+" installed") + "\n"
+			s += m.styles.subtle.Render("    Model usage aggregates available; clients: "+strings.Join(m.health.tokscale.clients, ", ")) + "\n"
+		case tokscaleHealthUnavailable:
+			s += "  " + m.styles.subtle.Render("○ Not installed — optional; NEXUS health is unaffected") + "\n"
+		case tokscaleHealthDegraded:
+			label := "⚠ Tokscale"
+			if m.health.tokscale.version != "" {
+				label += " " + m.health.tokscale.version
+			}
+			s += "  " + m.styles.warn.Render(label+" installed, but local usage aggregates are unavailable") + "\n"
+		default:
+			s += "  " + m.styles.subtle.Render("○ Status not checked") + "\n"
+		}
+
+		s += "\nClaude session retention (NEXUS guidance):\n"
+		s += m.styles.subtle.Render("  Guidance for usage-history completeness; it does not modify Claude's own retention.") + "\n"
+		switch {
+		case m.health.claudeSessionRetentionDays == 0:
+			s += "  " + m.styles.subtle.Render("○ Unknown or disabled — set NEXUS_CLAUDE_SESSION_RETENTION_DAYS=30 for more complete usage history.") + "\n"
+		case m.health.claudeSessionRetentionDays < defaultClaudeSessionRetention:
+			s += "  " + m.styles.warn.Render(fmt.Sprintf("⚠ NEXUS guidance is %d days; 30+ days is recommended for more complete usage history.", m.health.claudeSessionRetentionDays)) + "\n"
+		default:
+			s += "  " + m.styles.success.Render(fmt.Sprintf("✓ NEXUS guidance is %d days", m.health.claudeSessionRetentionDays)) + "\n"
+		}
+
 		s += "\nSymlinks:\n"
 		for _, l := range m.health.links {
 			s += "  " + l + "\n"
@@ -903,6 +1013,135 @@ func taskLogView(m model) string {
 	}
 	s += "\n" + m.styles.subtle.Render("r: refresh • esc: back")
 	return m.borderBox(s)
+}
+
+// --- usage and cost dashboard ---
+
+// startUsageDashboardLoad loads the two independent sources concurrently. The
+// NEXUS task log remains usable even if the optional Tokscale command is absent
+// or fails.
+func startUsageDashboardLoad(m model) (tea.Model, tea.Cmd) {
+	m.usageNativeLoading = true
+	m.usageTokscaleLoading = true
+	m.usageTokscaleState = tokscaleLoading
+	return m, tea.Batch(m.spinner.Tick, loadTaskLog(), loadTokscaleUsage(m.tokscaleAdapter))
+}
+
+func loadTokscaleUsage(adapter TokscaleAdapter) tea.Cmd {
+	return func() tea.Msg {
+		// A local report should be fast. The timeout prevents an optional CLI
+		// dependency from leaving the dashboard in a loading state indefinitely.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		report, err := adapter.Load(ctx)
+		switch {
+		case err == nil:
+			return usageDashboardMsg{report: report, state: tokscaleReady}
+		case errors.Is(err, ErrTokscaleUnavailable):
+			return usageDashboardMsg{state: tokscaleUnavailable}
+		default:
+			// Do not attach err. Tokscale output or diagnostics must not enter
+			// the model, View, or any later TUI diagnostics.
+			return usageDashboardMsg{state: tokscaleDegraded}
+		}
+	}
+}
+
+func updateUsageDashboard(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case taskLogMsg:
+		m.usageNativeLoading = false
+		m.usageTaskLog = msg.entries
+	case usageDashboardMsg:
+		m.usageTokscaleLoading = false
+		m.usageTokscaleState = msg.state
+		m.usageTokscaleReport = msg.report
+	case spinner.TickMsg:
+		if m.usageNativeLoading || m.usageTokscaleLoading {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
+	case tea.KeyPressMsg:
+		if msg.String() == "r" {
+			return startUsageDashboardLoad(m)
+		}
+	}
+	return m, nil
+}
+
+func usageDashboardView(m model) string {
+	s := m.styles.title.Render("⚡ Usage & Cost Dashboard") + "\n"
+	s += m.styles.subtle.Render("NEXUS task routing and Tokscale CLI usage are separate; they are never combined.") + "\n\n"
+
+	s += m.styles.selected.Render("NEXUS-native task routing") + "\n"
+	if m.usageNativeLoading {
+		s += "  " + m.spinner.View() + " Loading local task history...\n"
+	} else if len(m.usageTaskLog) == 0 {
+		s += m.styles.subtle.Render("  No MCP tasks recorded yet.") + "\n"
+	} else {
+		stats := summarizeTaskLog(m.usageTaskLog)
+		successRate := 0
+		if stats.total > 0 {
+			successRate = stats.successes * 100 / stats.total
+		}
+		s += fmt.Sprintf("  Tasks: %d  Success: %d%%  Failures: %d\n", stats.total, successRate, stats.failures)
+		s += fmt.Sprintf("  Latency: avg %dms  p95 %dms\n", stats.avgMs, stats.p95Ms)
+		if stats.savingsUSD > 0 {
+			s += fmt.Sprintf("  Est. local savings: $%.4f\n", stats.savingsUSD)
+		}
+		s += fmt.Sprintf("  Routes: %s\n", summarizeIntCounts(stats.routes, 3))
+	}
+
+	s += "\n" + m.styles.selected.Render("Tokscale CLI provider aggregates") + "\n"
+	switch {
+	case m.usageTokscaleLoading:
+		s += "  " + m.spinner.View() + " Loading local Tokscale aggregates...\n"
+	case m.usageTokscaleState == tokscaleUnavailable:
+		s += m.styles.subtle.Render("  Tokscale is not installed. Run `bunx tokscale@latest` (or add it to PATH), then press r.") + "\n"
+	case m.usageTokscaleState == tokscaleDegraded:
+		s += m.styles.warn.Render("  Tokscale data is unavailable. Check its local configuration, then press r.") + "\n"
+	default:
+		stats := summarizeTokscaleUsage(m.usageTokscaleReport.Entries)
+		s += fmt.Sprintf("  Aggregates: %d  Messages: %d  Cost: $%.4f\n", stats.aggregates, stats.messages, stats.costUSD)
+		s += fmt.Sprintf("  Tokens: input %d  output %d  cache read %d  cache write %d  reasoning %d\n",
+			stats.inputTokens, stats.outputTokens, stats.cacheReadTokens, stats.cacheWriteTokens, stats.reasoningTokens)
+		if m.usageTokscaleReport.GroupBy != "" {
+			s += m.styles.subtle.Render("  Report grouping: "+m.usageTokscaleReport.GroupBy) + "\n"
+		}
+	}
+
+	s += "\n" + m.styles.subtle.Render("r: refresh both sources • esc: back")
+	return m.borderBox(s)
+}
+
+func summarizeTokscaleUsage(entries []TokscaleUsage) tokscaleUsageStats {
+	stats := tokscaleUsageStats{aggregates: len(entries)}
+	for _, entry := range entries {
+		stats.inputTokens = saturatingAddInt64(stats.inputTokens, entry.InputTokens)
+		stats.outputTokens = saturatingAddInt64(stats.outputTokens, entry.OutputTokens)
+		stats.cacheReadTokens = saturatingAddInt64(stats.cacheReadTokens, entry.CacheReadTokens)
+		stats.cacheWriteTokens = saturatingAddInt64(stats.cacheWriteTokens, entry.CacheWriteTokens)
+		stats.reasoningTokens = saturatingAddInt64(stats.reasoningTokens, entry.ReasoningTokens)
+		stats.messages = saturatingAddInt64(stats.messages, entry.MessageCount)
+		stats.costUSD = saturatingAddFloat64(stats.costUSD, entry.CostUSD)
+	}
+	return stats
+}
+
+func saturatingAddInt64(current, value int64) int64 {
+	if value > math.MaxInt64-current {
+		return math.MaxInt64
+	}
+	return current + value
+}
+
+func saturatingAddFloat64(current, value float64) float64 {
+	if value > math.MaxFloat64-current {
+		return math.MaxFloat64
+	}
+	return current + value
 }
 
 func summarizeTaskLog(entries []taskLogEntry) taskLogStats {
@@ -1067,7 +1306,16 @@ func updateConfigure(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 		if m.configEditing {
 			switch msg.String() {
 			case "enter":
-				m.configVals[m.configCursor] = m.editBuf
+				if m.configKeys[m.configCursor] == claudeSessionRetentionKey {
+					days, valid := parseClaudeSessionRetentionDays(m.editBuf)
+					m.configVals[m.configCursor] = strconv.Itoa(days)
+					if !valid {
+						m.output = fmt.Sprintf("Invalid %s; using default %d days", claudeSessionRetentionKey, defaultClaudeSessionRetention)
+						m.err = nil
+					}
+				} else {
+					m.configVals[m.configCursor] = m.editBuf
+				}
 				m.configEditing = false
 			case "backspace":
 				if len(m.editBuf) > 0 {
@@ -1314,9 +1562,9 @@ func runScript(nexusDir, script string) tea.Cmd {
 	}
 }
 
-func checkHealth(nexusDir, ollamaURL string) tea.Cmd {
+func checkHealth(nexusDir, ollamaURL string, claudeSessionRetentionDays int, tokscale TokscaleAdapter) tea.Cmd {
 	return func() tea.Msg {
-		h := healthMsg{}
+		h := healthMsg{claudeSessionRetentionDays: claudeSessionRetentionDays}
 		if ollamaURL == "" {
 			ollamaURL = "http://localhost:11434"
 		}
@@ -1327,6 +1575,12 @@ func checkHealth(nexusDir, ollamaURL string) tea.Cmd {
 		}
 
 		h.gpu = detectGPU()
+		// The optional CLI has one bounded context for both fixed, non-interactive
+		// commands. A timeout or a malformed response only degrades Tokscale's
+		// own status; it must never fail the NEXUS health check.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		h.tokscale = detectTokscaleHealth(ctx, tokscale)
+		cancel()
 
 		home, err := os.UserHomeDir()
 		if err != nil || home == "" {
@@ -1355,6 +1609,61 @@ func checkHealth(nexusDir, ollamaURL string) tea.Cmd {
 		}
 		return h
 	}
+}
+
+func detectTokscaleHealth(ctx context.Context, adapter TokscaleAdapter) tokscaleHealth {
+	version, err := adapter.Version(ctx)
+	if err != nil {
+		if errors.Is(err, ErrTokscaleUnavailable) {
+			return tokscaleHealth{state: tokscaleHealthUnavailable}
+		}
+		return tokscaleHealth{state: tokscaleHealthDegraded}
+	}
+
+	report, err := adapter.Load(ctx)
+	if err != nil {
+		// version is trusted only after strict semantic-version parsing. It is
+		// safe to retain even when the optional aggregate command is unavailable.
+		return tokscaleHealth{state: tokscaleHealthDegraded, version: version}
+	}
+	return tokscaleHealth{
+		state:   tokscaleHealthReady,
+		version: version,
+		clients: recognizedTokscaleClients(report.Entries),
+	}
+}
+
+// recognizedTokscaleClients maps only known adapter client identifiers to
+// fixed product labels. A third-party CLI's arbitrary client field can never
+// be rendered in the health screen.
+func recognizedTokscaleClients(entries []TokscaleUsage) []string {
+	labels := map[string]string{
+		"amp":         "Amp",
+		"claude":      "Claude Code",
+		"claude-code": "Claude Code",
+		"codex":       "Codex",
+		"copilot":     "Copilot",
+		"cursor":      "Cursor",
+		"gemini":      "Gemini CLI",
+		"gemini-cli":  "Gemini CLI",
+		"antigravity": "Antigravity CLI",
+		"openclaw":    "OpenClaw",
+	}
+	seen := make(map[string]bool)
+	clients := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		label, ok := labels[strings.ToLower(entry.Client)]
+		if !ok || seen[label] {
+			continue
+		}
+		seen[label] = true
+		clients = append(clients, label)
+	}
+	if len(clients) == 0 {
+		return []string{"none recorded"}
+	}
+	sort.Strings(clients)
+	return clients
 }
 
 // --- filesystem helpers ---
@@ -1434,7 +1743,12 @@ func loadEnv(m *model) {
 		val := strings.Trim(strings.TrimSpace(parts[1]), "\"")
 		for i, k := range m.configKeys {
 			if k == key {
-				m.configVals[i] = val
+				if k == claudeSessionRetentionKey {
+					days, _ := parseClaudeSessionRetentionDays(val)
+					m.configVals[i] = strconv.Itoa(days)
+				} else {
+					m.configVals[i] = val
+				}
 			}
 		}
 	}
@@ -1444,9 +1758,36 @@ func loadEnv(m *model) {
 func saveEnv(m model) error {
 	var lines []string
 	for i, key := range m.configKeys {
-		lines = append(lines, fmt.Sprintf("%s=%q", key, m.configVals[i]))
+		value := m.configVals[i]
+		if key == claudeSessionRetentionKey {
+			days, _ := parseClaudeSessionRetentionDays(value)
+			value = strconv.Itoa(days)
+		}
+		lines = append(lines, fmt.Sprintf("%s=%q", key, value))
 	}
 	return os.WriteFile(filepath.Join(m.nexusDir, ".env"), []byte(strings.Join(lines, "\n")+"\n"), 0644)
+}
+
+// parseClaudeSessionRetentionDays reads a NEXUS-owned setting only. It does
+// not inspect or change any Claude configuration. Zero is intentionally valid
+// and represents unknown or disabled guidance; malformed and negative values
+// fall back to the conservative default.
+func parseClaudeSessionRetentionDays(raw string) (days int, valid bool) {
+	days, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || days < 0 {
+		return defaultClaudeSessionRetention, false
+	}
+	return days, true
+}
+
+func configuredClaudeSessionRetentionDays(m model) int {
+	for i, key := range m.configKeys {
+		if key == claudeSessionRetentionKey && i < len(m.configVals) {
+			days, _ := parseClaudeSessionRetentionDays(m.configVals[i])
+			return days
+		}
+	}
+	return defaultClaudeSessionRetention
 }
 
 func truncate(s string, max int) string {

@@ -1,0 +1,3 @@
+{"tool":"ollama_commit_msg","model":"qwen2.5-coder:1.5b","ms":42,"ok":true,"ts":1790961825678}
+{"tool":"ollama_commit_msg","model":"qwen2.5-coder:1.5b","ms":42,"ok":true,"ts":1790961825678}
+{"tool":"ollama_commit_msg","model":"fast-path","routing":"deterministic","tokens_in":0,"tokens_out":0,"cloud_cost_equivalent":0,"ms":0,"ok":true,"ts":1790985600000}

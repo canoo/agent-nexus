@@ -1,0 +1,3 @@
+
+{"tool":
+{"tool":"ollama_commit_msg","model":"qwen2.5-coder:1.5b","ms":1,"ok":true,"ts":1790961825678,"prompt":"must not persist"}
