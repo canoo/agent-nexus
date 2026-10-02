@@ -1,0 +1,15 @@
+{
+  "name": "@nexus/companion-desktop",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Local-only Linux and macOS NEXUS Companion desktop shell",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
