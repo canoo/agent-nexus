@@ -1,4 +1,5 @@
-import { TOOL_DEFINITIONS, definitionForTool, sanitizeConsents } from "./lib/policy.js";
+import { TOOL_DEFINITIONS, sanitizeConsents } from "./lib/policy.js";
+import { changeToolConsent } from "./lib/consent.js";
 
 const CONSENTS_KEY = "toolConsents";
 
@@ -8,16 +9,15 @@ async function readConsents() {
 }
 
 async function writeConsent(toolId, enabled) {
-  const tool = definitionForTool(toolId);
-  if (!tool) return false;
-  const permitted = enabled
-    ? await chrome.permissions.request({ origins: [...tool.origins] })
-    : await chrome.permissions.remove({ origins: [...tool.origins] });
-  if (enabled && !permitted) return false;
-
-  const next = { ...(await readConsents()), [toolId]: enabled };
-  await chrome.storage.local.set({ [CONSENTS_KEY]: next });
-  return true;
+  const result = await changeToolConsent({
+    toolId,
+    enabled,
+    rawConsents: await readConsents(),
+    requestOrigins: (origins) => chrome.permissions.request({ origins }),
+    removeOrigins: (origins) => chrome.permissions.remove({ origins }),
+  });
+  if (result.applied) await chrome.storage.local.set({ [CONSENTS_KEY]: result.consents });
+  return result;
 }
 
 export async function renderToolToggles(container) {
@@ -33,8 +33,21 @@ export async function renderToolToggles(container) {
     text.textContent = tool.label;
     checkbox.addEventListener("change", async () => {
       checkbox.disabled = true;
-      const applied = await writeConsent(tool.id, checkbox.checked).catch(() => false);
-      if (!applied) checkbox.checked = false;
+      const requestedEnabled = checkbox.checked;
+      const result = await writeConsent(tool.id, requestedEnabled).catch(() => ({
+        applied: false,
+        consents,
+      }));
+      checkbox.checked = result.consents[tool.id];
+      if (!result.applied) {
+        const status = document.createElement("p");
+        status.className = "permission-status";
+        status.setAttribute("role", "status");
+        status.textContent = requestedEnabled
+          ? `Could not enable ${tool.label}; browser permission was not granted.`
+          : `Could not disable ${tool.label}; its browser permission is still active.`;
+        row.append(status);
+      }
       checkbox.disabled = false;
     });
     row.append(checkbox, text);
