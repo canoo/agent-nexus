@@ -74,9 +74,10 @@ equally explicit choice. Consent is device-local and is never copied by
 All data stays under NEXUS's local observability directory with restrictive
 permissions. The migration-owned local settings foundation defaults to disabled
 collection, 14 days for raw spans, and 90 days for daily local aggregates.
-The retention worker, activity-data preview, local export, and immediate local
-deletion controls remain subsequent Companion work; no current app or adapter
-collects activity.
+The retention worker, activity-history preview, local export, and immediate
+local deletion controls remain subsequent Companion work; no current app or
+adapter collects activity. The extension's current UI shows only a fixed-field
+envelope preview, never collected activity data.
 
 The shared local ingestion boundary fails closed even for a schema-valid
 envelope: it writes only when `companion_settings.collection_enabled` is on and
@@ -101,8 +102,8 @@ host on Linux and macOS.
 - The native host accepts messages only from NEXUS's published extension IDs,
   validates the fixed envelope, and writes through the shared NEXUS
   observability ingestion boundary.
-- The browser UI includes visible per-tool toggles and a data preview before
-  collection begins.
+- The browser UI includes visible per-tool toggles and a fixed-field envelope
+  preview before collection begins; it does not show captured activity data.
 
 Firefox follows only after a separate native-messaging and MV3 compatibility
 test pass. Safari needs a packaged macOS extension/application and is a

@@ -1,4 +1,12 @@
-import { dispatchToNativeHost, sanitizeActiveSpans, transitionSelectedTab } from "./lib/activity.js";
+import {
+  discardUnconsentedSpans,
+  dispatchToNativeHost,
+  isFocusedSelectedTab,
+  sanitizeActiveSpans,
+  transitionAllSpansInactive,
+  transitionSelectedTab,
+} from "./lib/activity.js";
+import { consentsEqual, reconcileConsentsAfterPermissionRemoval } from "./lib/consent.js";
 import { originForUrl, sanitizeConsents } from "./lib/policy.js";
 
 const ACTIVE_SPANS_KEY = "activeSpans";
@@ -45,11 +53,41 @@ async function applyTransition(windowId, origin) {
 
 async function observeSelectedTab(windowId, tabId) {
   try {
-    const tab = await chrome.tabs.get(tabId);
-    await applyTransition(windowId, tab.active ? originForUrl(tab.url) : null);
+    const [tab, browserWindow] = await Promise.all([chrome.tabs.get(tabId), chrome.windows.get(windowId)]);
+    // An activation may arrive for a background window. Never start a span
+    // until the browser confirms that exact window still has application focus.
+    await applyTransition(
+      windowId,
+      isFocusedSelectedTab({ tabActive: tab.active, windowFocused: browserWindow.focused }) ? originForUrl(tab.url) : null,
+    );
   } catch {
     // Browser APIs can race a closed tab. There is no event and no payload log.
   }
+}
+
+async function endAllSpansForLostFocus() {
+  const { activeSpans, consents } = await readState();
+  const result = transitionAllSpansInactive({
+    activeSpans,
+    consents,
+    now: new Date().toISOString(),
+    browserFamily: browserFamily(),
+    platform: platform(),
+  });
+  await chrome.storage.session.set({ [ACTIVE_SPANS_KEY]: result.activeSpans });
+  await Promise.all(result.events.map((event) => (
+    dispatchToNativeHost(event, (payload) => chrome.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload))
+  )));
+}
+
+async function reconcileRemovedPermissions(removedOrigins) {
+  const { activeSpans, consents } = await readState();
+  const nextConsents = reconcileConsentsAfterPermissionRemoval(consents, removedOrigins);
+  if (consentsEqual(consents, nextConsents)) return;
+  await Promise.all([
+    chrome.storage.local.set({ [CONSENTS_KEY]: nextConsents }),
+    chrome.storage.session.set({ [ACTIVE_SPANS_KEY]: discardUnconsentedSpans(activeSpans, nextConsents) }),
+  ]);
 }
 
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => { void observeSelectedTab(windowId, tabId); });
@@ -59,7 +97,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 chrome.windows.onFocusChanged.addListener((windowId) => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    void endAllSpansForLostFocus().catch(() => undefined);
+    return;
+  }
   void chrome.tabs.query({ active: true, windowId }).then((tabs) => {
     if (tabs[0]) return observeSelectedTab(windowId, tabs[0].id);
     return undefined;
@@ -67,3 +108,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 });
 
 chrome.windows.onRemoved.addListener((windowId) => { void applyTransition(windowId, null).catch(() => undefined); });
+
+chrome.permissions.onRemoved.addListener((permissions) => {
+  void reconcileRemovedPermissions(permissions.origins).catch(() => undefined);
+});

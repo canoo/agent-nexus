@@ -18,6 +18,11 @@ function normalizedActiveSpan(value) {
   return startedAt ? Object.freeze({ tool_id: value.tool_id, started_at: startedAt }) : null;
 }
 
+/** A tab activation is activity only while its browser window has focus. */
+export function isFocusedSelectedTab({ tabActive, windowFocused }) {
+  return tabActive === true && windowFocused === true;
+}
+
 /** Only fixed fields may survive a service-worker restart in storage.session. */
 export function sanitizeActiveSpans(rawSpans) {
   const spans = {};
@@ -92,6 +97,36 @@ export function transitionSelectedTab({ activeSpans, windowId, origin, consents,
   if (selectedTool) next[key] = Object.freeze({ tool_id: selectedTool, started_at: endedAt });
   else delete next[key];
   return Object.freeze({ activeSpans: next, event });
+}
+
+/** Ends every active browser span when the browser loses application focus. */
+export function transitionAllSpansInactive({ activeSpans, consents, now, browserFamily, platform }) {
+  let next = sanitizeActiveSpans(activeSpans);
+  const events = [];
+  for (const windowId of Object.keys(next)) {
+    const result = transitionSelectedTab({
+      activeSpans: next,
+      windowId: Number(windowId),
+      origin: null,
+      consents,
+      now,
+      browserFamily,
+      platform,
+    });
+    next = result.activeSpans;
+    if (result.event) events.push(result.event);
+  }
+  return Object.freeze({ activeSpans: next, events: Object.freeze(events) });
+}
+
+/** Discards active spans as soon as the supporting local consent is disabled. */
+export function discardUnconsentedSpans(activeSpans, consents) {
+  const next = sanitizeActiveSpans(activeSpans);
+  const normalizedConsents = consents ?? {};
+  for (const [windowId, span] of Object.entries(next)) {
+    if (normalizedConsents[span.tool_id] !== true) delete next[windowId];
+  }
+  return next;
 }
 
 /**

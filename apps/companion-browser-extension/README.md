@@ -28,6 +28,10 @@ DOM/page text, prompts, responses, account identifiers, query strings, source
 code, and arbitrary metadata are never copied into the event or active-span
 state.
 
+The options page shows a fixed-field schema preview, not captured activity
+data. It lists the only fields that could leave the browser if the separate
+native host is installed and collection is enabled.
+
 ## Load for local development
 
 1. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.

@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dispatchToNativeHost, sanitizeActiveSpans, transitionSelectedTab } from "../lib/activity.js";
+import {
+  discardUnconsentedSpans,
+  dispatchToNativeHost,
+  isFocusedSelectedTab,
+  sanitizeActiveSpans,
+  transitionAllSpansInactive,
+  transitionSelectedTab,
+} from "../lib/activity.js";
+import { changeToolConsent, reconcileConsentsAfterPermissionRemoval } from "../lib/consent.js";
 import { originForUrl, selectedToolId, toolIdForOrigin } from "../lib/policy.js";
 
 const now = "2026-10-02T18:00:00Z";
@@ -29,6 +37,12 @@ test("disabled and unmatched selected surfaces produce no activity event", () =>
   assert.deepEqual(unmatched.activeSpans, {});
   assert.equal(unmatched.event, null);
   assert.equal(selectedToolId("https://chatgpt.com", {}), null);
+});
+
+test("an activation cannot begin activity until its browser window is focused", () => {
+  assert.equal(isFocusedSelectedTab({ tabActive: true, windowFocused: true }), true);
+  assert.equal(isFocusedSelectedTab({ tabActive: true, windowFocused: false }), false);
+  assert.equal(isFocusedSelectedTab({ tabActive: false, windowFocused: true }), false);
 });
 
 test("a selected enabled tool emits only the fixed envelope when it becomes inactive", () => {
@@ -81,6 +95,71 @@ test("revoking consent discards an in-progress span", () => {
   });
   assert.equal(revoked.event, null);
   assert.deepEqual(revoked.activeSpans, {});
+});
+
+test("browser app focus loss ends every active span with fixed envelopes", () => {
+  const activeSpans = {
+    "1": { tool_id: "chatgpt", started_at: now },
+    "3": { tool_id: "claude", started_at: now },
+  };
+  const ended = transitionAllSpansInactive({
+    activeSpans,
+    consents: { chatgpt: true, claude: true },
+    now: later,
+    browserFamily: "edge",
+    platform: "macos",
+  });
+  assert.deepEqual(ended.activeSpans, {});
+  assert.equal(ended.events.length, 2);
+  assert.deepEqual(ended.events.map((event) => event.tool_id).sort(), ["chatgpt", "claude"]);
+  assert.ok(ended.events.every((event) => event.browser_family === "edge" && event.platform === "macos"));
+});
+
+test("permission removal clears stale consent and discards only its active span", () => {
+  const consents = { chatgpt: true, claude: true };
+  const next = reconcileConsentsAfterPermissionRemoval(consents, ["https://chatgpt.com/*"]);
+  assert.equal(next.chatgpt, false);
+  assert.equal(next.claude, true);
+  assert.deepEqual(discardUnconsentedSpans({
+    "1": { tool_id: "chatgpt", started_at: now },
+    "2": { tool_id: "claude", started_at: now },
+  }, next), {
+    "2": { tool_id: "claude", started_at: "2026-10-02T18:00:00.000Z" },
+  });
+});
+
+test("consent changes only persist after the browser allows the matching permission change", async () => {
+  let requestedOrigins;
+  const allowed = await changeToolConsent({
+    toolId: "chatgpt",
+    enabled: true,
+    rawConsents: {},
+    requestOrigins: async (origins) => { requestedOrigins = origins; return true; },
+    removeOrigins: async () => { throw new Error("must not remove while enabling"); },
+  });
+  assert.equal(allowed.applied, true);
+  assert.equal(allowed.consents.chatgpt, true);
+  assert.deepEqual(requestedOrigins, ["https://chatgpt.com/*", "https://chat.openai.com/*"]);
+
+  const denied = await changeToolConsent({
+    toolId: "claude",
+    enabled: true,
+    rawConsents: {},
+    requestOrigins: async () => false,
+    removeOrigins: async () => { throw new Error("must not remove while enabling"); },
+  });
+  assert.equal(denied.applied, false);
+  assert.equal(denied.consents.claude, false);
+
+  const removalFailed = await changeToolConsent({
+    toolId: "chatgpt",
+    enabled: false,
+    rawConsents: { chatgpt: true },
+    requestOrigins: async () => { throw new Error("must not request while disabling"); },
+    removeOrigins: async () => false,
+  });
+  assert.equal(removalFailed.applied, false);
+  assert.equal(removalFailed.consents.chatgpt, true);
 });
 
 test("native dispatch fails closed when unavailable and never uses a fallback", async () => {
