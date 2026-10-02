@@ -2,31 +2,48 @@
 
 This is the deliberately small Linux/macOS desktop shell for NEXUS Companion.
 It starts with collection disabled and makes that state visible in its tray or
-menu-bar menu and in the local dashboard placeholder.
+menu-bar surface and in a local dashboard.
 
-It does **not** collect browser or desktop activity. It contains no native
-messaging host, browser integration, content script, desktop/process detector,
-analytics, activity storage, consent persistence, or observability writer.
-Those features require the later schema, consent, retention, and strict-host
-milestones in [`docs/nexus-companion.md`](../../docs/nexus-companion.md).
+It does **not** collect browser or desktop activity. It contains no browser
+integration, content script, desktop/process detector, analytics, activity
+store, or observability writer. It reads and can explicitly revoke the existing
+migration-owned consent/settings rows in
+`~/.config/nexus/logs/observability.sqlite`; it never creates, migrates, or
+replaces that database. The native host remains the only activity writer via
+the shared Node observability store.
 
 ## Current behavior
 
-- Creates a Tauri v2 tray/menu-bar item with `Collection: Disabled`.
-- Offers `Open Dashboard` (a local placeholder window) and `Quit`.
+- Creates a Tauri v2 tray/menu-bar item. Its tooltip reflects the current local
+  collection state where platform support permits it.
+- Provides a dashboard/no-tray fallback that shows only the fixed allowlisted
+  adapter/tool consent states and native-host registration states. It never
+  renders activity history, titles, URLs, prompts, responses, account/project
+  identifiers, source code, or arbitrary metadata.
+- Offers an explicit **Disable collection and revoke all consents** action. It
+  updates `companion_settings` and `companion_tool_consents` in one SQLite
+  transaction. There is intentionally no enable action in this app.
+- Offers `Open Dashboard`, explicit disable, and `Quit` in the tray/menu-bar
+  menu. Opening the app or dashboard never changes a collection setting.
+- Can invoke the existing browser-specific native-host registration helper only
+  after a user submits a published Chrome-format extension ID and an existing
+  absolute host path. The installer must deliberately configure
+  `NEXUS_COMPANION_NATIVE_HOST_REGISTRATION_HELPER` to the helper script; when
+  it is absent, the control is visibly unavailable. Registration does not
+  enable collection or request browser access.
 - Uses a generated in-memory status icon, so no downloaded or packaged icon
   asset is needed for this foundation.
-- Never enables collection through the UI. There is intentionally no hidden or
-  automatic collection mode.
+- Never enables collection through the UI. There is no hidden or automatic
+  collection mode.
 
-The dashboard is a status placeholder, not a task, token, cost, or activity
-view. The existing CLI and Go TUI remain independent of this app.
+The dashboard is a privacy-status/control surface, not a task, token, cost, or
+activity view. The existing CLI and Go TUI remain independent of this app.
 
 ## Bootstrap and local development
 
-This project deliberately ships without installed dependencies or a lockfile.
-After reviewing the dependency versions, install the JavaScript and Rust build
-requirements locally:
+This project ships an audited Rust lockfile, but does not vendor JavaScript or
+Rust dependencies. After reviewing the dependency versions, install the
+JavaScript and Rust build requirements locally:
 
 ```sh
 cd apps/companion-desktop
@@ -45,26 +62,30 @@ Required toolchains:
 - The platform prerequisites documented by the [Tauri v2 prerequisites guide](https://v2.tauri.app/start/prerequisites/), including a supported WebKitGTK
   development stack on Linux and Xcode command-line tools on macOS.
 
-Use `npm run check` for the Rust formatting check. Full compilation has not
-been run in this repository because dependencies have intentionally not been
-installed by this change.
+Use `npm run check` for the Rust formatting check. `cargo test` additionally
+covers fixed extension-ID validation and the unavailable-store fail-closed
+state. Full compilation requires the Tauri and bundled SQLite crates to be
+available locally.
 
 ## Linux behavior
 
 Linux tray visibility depends on the desktop environment. The app uses Tauri's
 tray/status-notifier path where available, but does not promise a top-bar icon
-on every GNOME or Wayland setup. The application launcher and its dashboard
-window remain the no-tray fallback. This foundation does not yet provide the
-planned CLI status command.
+or working tray tooltip on every GNOME or Wayland setup. The application
+launcher and dashboard window remain the no-tray fallback. This foundation
+does not yet provide the planned CLI status command or a desktop activity
+adapter.
 
 Do not use tray presence, absence, clicks, or tooltips as activity signals.
 Linux tray events are not consistently supported by Tauri desktop backends.
 
 ## macOS packaging
 
-The `tauri.macos.conf.json` overlay reserves the macOS application/DMG target,
-but signed distribution is future work. Do not publish an unsigned build.
-Release packaging requires Developer ID signing, hardened runtime, notarization,
+The `tauri.macos.conf.json` overlay reserves the macOS application/DMG target.
+The shell can report browser-specific native-host manifest state using the
+standard per-user Chrome/Edge locations, but does not detect desktop apps.
+Signed distribution is future work. Do not publish an unsigned build. Release
+packaging requires Developer ID signing, hardened runtime, notarization,
 stapling, and real menu-bar launch testing before it can be released.
 
 ## Flatpak status

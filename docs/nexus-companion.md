@@ -117,9 +117,14 @@ separate milestone.
 
 The initial Companion desktop application targets Linux and macOS. It provides
 a visible top-bar/menu-bar status icon with privacy state, dashboard access,
-pause, and quit controls; it is not a hidden collector. Tauri v2 is the chosen
-cross-platform shell because it supports macOS menu-bar and Linux tray surfaces,
-platform-specific configuration, native messaging, and Flatpak packaging.
+an explicit disable-and-revoke action, and quit controls; it is not a hidden
+collector. The dashboard reads only the migration-owned SQLite setting and
+fixed allowlisted adapter/tool consent states. Its disable action atomically
+sets `collection_enabled` off and revokes the current consent rows through the
+same database boundary used by the host/store. Opening the app cannot enable
+collection. Tauri v2 is the chosen cross-platform shell because it supports
+macOS menu-bar and Linux tray surfaces, platform-specific configuration, native
+messaging, and Flatpak packaging.
 
 Linux tray support is desktop-environment dependent. The Companion therefore
 also provides a launcher/CLI fallback, always creates a tray menu where one is
@@ -132,6 +137,14 @@ may use a disclosed foreground application/bundle-ID adapter. Browser detection
 is the reliable Linux baseline; on Wayland, a desktop adapter is supported only
 where an official compositor IPC API exists. Windows belongs after the planned
 cross-platform work in v1.0.0.
+
+The desktop app can show whether the Chrome or Edge native-host manifest is
+registered, unregistered, unavailable, or malformed without exposing its path
+or extension IDs. It can run the existing registration helper only after a
+person deliberately submits a published Chrome-format extension ID and a
+stable host path. The packaged installer must explicitly provide that helper;
+otherwise the registration control remains unavailable. Registration remains
+browser-specific and does not change collection or browser permissions.
 
 ## Delivery sequence
 
