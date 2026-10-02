@@ -11,24 +11,28 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { appendFileSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { createObservabilityStore } from "./lib/observability-store.mjs";
 
 const OLLAMA_HOST_URL = process.env.OLLAMA_HOST_URL || "http://localhost:11434";
 const CONNECT_TIMEOUT_MS = 5000;
 const REQUEST_TIMEOUT_MS = 120000;
 
 // ── Task log ────────────────────────────────────────────────────────────────
-// Writes JSONL entries to ~/.config/nexus/logs/mcp-tasks.jsonl for TUI display.
-const LOG_DIR = join(homedir(), ".config", "nexus", "logs");
-const LOG_FILE = join(LOG_DIR, "mcp-tasks.jsonl");
-try { mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+// The store owns both SQLite and the temporary JSONL compatibility write.  Its
+// failure result is intentionally ignored here: logging can never change an
+// MCP response or prevent the other persistence target from being attempted.
+const observabilityStore = createObservabilityStore();
 
-function logTask(entry) {
+function recordMcpTask(entry) {
   try {
-    appendFileSync(LOG_FILE, JSON.stringify(entry) + "\n");
-  } catch {}
+    return observabilityStore.recordMcpTask(entry);
+  } catch (error) {
+    // A malformed telemetry event is still telemetry degradation, never an
+    // MCP-tool failure. Avoid logging the event itself because it may contain
+    // data rejected by the store's privacy allowlist.
+    console.error(`NEXUS observability event rejected: ${error.message}`);
+    return undefined;
+  }
 }
 
 // Early cost tracking uses a conservative cloud-equivalent estimate. Local
@@ -64,6 +68,17 @@ function taskLogEntry({ tool, model, ms, ok, prompt = "", response = "", error }
   };
   if (error) entry.error = error;
   return entry;
+}
+
+// Never persist a provider Error.message: it can contain a response body, URL,
+// or source content. MCP callers still receive the original message below;
+// observability receives only a bounded operational category.
+function safeErrorCode(error) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.startsWith("Ollama unreachable")) return "ollama_unreachable";
+  if (message.startsWith("Ollama returned HTTP")) return "ollama_http_error";
+  if (message === "Ollama returned empty response") return "ollama_empty_response";
+  return "ollama_request_failed";
 }
 
 // ── Model routing table ─────────────────────────────────────────────────────
@@ -336,7 +351,7 @@ server.tool(
     // Fast-path: deterministic commit messages for trivial diffs
     const fastResult = fastPathCommitMsg(diff);
     if (fastResult) {
-      logTask(taskLogEntry({
+      recordMcpTask(taskLogEntry({
         tool: "ollama_commit_msg",
         model: "fast-path",
         ms: 0,
@@ -351,7 +366,7 @@ server.tool(
     try {
       const start = Date.now();
       const result = await callOllama(model, prompt, "commit-msg");
-      logTask(taskLogEntry({
+      recordMcpTask(taskLogEntry({
         tool: "ollama_commit_msg",
         model,
         ms: Date.now() - start,
@@ -365,13 +380,13 @@ server.tool(
         ],
       };
     } catch (e) {
-      logTask(taskLogEntry({
+      recordMcpTask(taskLogEntry({
         tool: "ollama_commit_msg",
         model,
         ms: 0,
         ok: false,
         prompt,
-        error: e.message,
+        error: safeErrorCode(e),
       }));
       return {
         content: [
@@ -394,7 +409,7 @@ server.tool(
     try {
       const start = Date.now();
       const result = await callOllama(model, prompt, "boilerplate");
-      logTask(taskLogEntry({
+      recordMcpTask(taskLogEntry({
         tool: "ollama_boilerplate",
         model,
         ms: Date.now() - start,
@@ -408,13 +423,13 @@ server.tool(
         ],
       };
     } catch (e) {
-      logTask(taskLogEntry({
+      recordMcpTask(taskLogEntry({
         tool: "ollama_boilerplate",
         model,
         ms: 0,
         ok: false,
         prompt,
-        error: e.message,
+        error: safeErrorCode(e),
       }));
       return {
         content: [
@@ -437,7 +452,7 @@ server.tool(
     try {
       const start = Date.now();
       const result = await callOllama(model, prompt, "test-scaffold");
-      logTask(taskLogEntry({
+      recordMcpTask(taskLogEntry({
         tool: "ollama_test_scaffold",
         model,
         ms: Date.now() - start,
@@ -451,13 +466,13 @@ server.tool(
         ],
       };
     } catch (e) {
-      logTask(taskLogEntry({
+      recordMcpTask(taskLogEntry({
         tool: "ollama_test_scaffold",
         model,
         ms: 0,
         ok: false,
         prompt,
-        error: e.message,
+        error: safeErrorCode(e),
       }));
       return {
         content: [
@@ -480,7 +495,7 @@ server.tool(
     try {
       const start = Date.now();
       const result = await callOllama(model, prompt, "lint-fix");
-      logTask(taskLogEntry({
+      recordMcpTask(taskLogEntry({
         tool: "ollama_lint_fix",
         model,
         ms: Date.now() - start,
@@ -494,13 +509,13 @@ server.tool(
         ],
       };
     } catch (e) {
-      logTask(taskLogEntry({
+      recordMcpTask(taskLogEntry({
         tool: "ollama_lint_fix",
         model,
         ms: 0,
         ok: false,
         prompt,
-        error: e.message,
+        error: safeErrorCode(e),
       }));
       return {
         content: [
@@ -523,7 +538,7 @@ server.tool(
     try {
       const start = Date.now();
       const result = await callOllama(model, prompt, "logic-refactor");
-      logTask(taskLogEntry({
+      recordMcpTask(taskLogEntry({
         tool: "ollama_logic_refactor",
         model,
         ms: Date.now() - start,
@@ -537,13 +552,13 @@ server.tool(
         ],
       };
     } catch (e) {
-      logTask(taskLogEntry({
+      recordMcpTask(taskLogEntry({
         tool: "ollama_logic_refactor",
         model,
         ms: 0,
         ok: false,
         prompt,
-        error: e.message,
+        error: safeErrorCode(e),
       }));
       return {
         content: [

@@ -266,7 +266,7 @@ tests/          Integration tests
 
 **Required:** Bash, one or more supported AI tools (see [compatibility table](#tool-compatibility))
 
-**Optional:** [Node.js](https://nodejs.org/) ≥18 (for MCP server), [Ollama](https://ollama.com/) (for local model delegation)
+**Optional:** [Node.js](https://nodejs.org/) ≥22.13.0 (for MCP server), [Ollama](https://ollama.com/) (for local model delegation)
 
 > **Platform support:** Linux and macOS. Windows support is tracked in [#18](https://github.com/canoo/agent-nexus/issues/18).
 
