@@ -1,0 +1,9 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111827; color: #f9fafb; }
+body { box-sizing: border-box; margin: 0; min-width: 310px; padding: 18px; }
+h1 { font-size: 18px; margin: 0 0 8px; }
+h2 { font-size: 14px; margin: 20px 0 8px; }
+p, li { color: #d1d5db; font-size: 13px; line-height: 1.45; }
+.tool-list { display: grid; gap: 8px; }
+.tool-row { align-items: center; display: flex; gap: 9px; padding: 7px 0; }
+.preview { border: 1px solid #374151; border-radius: 8px; color: #bfdbfe; font: 11px ui-monospace, monospace; overflow-wrap: anywhere; padding: 10px; white-space: pre-wrap; }
+a { color: #93c5fd; }
