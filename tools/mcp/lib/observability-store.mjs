@@ -62,6 +62,11 @@ const COMPANION_DETECTORS = new Set(["selected-browser-tab", "foreground-app"]);
 const COMPANION_CONFIDENCE = new Set(["surface-active"]);
 const COMPANION_BROWSER_FAMILIES = new Set(["chrome", "edge"]);
 const COMPANION_PLATFORMS = new Set(["linux", "macos"]);
+const COMPANION_BROWSER_ADAPTERS = Object.freeze({
+  chrome: "browser-chrome",
+  edge: "browser-edge",
+});
+const COMPANION_DESKTOP_ADAPTER = "desktop-foreground-app";
 const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 
 /**
@@ -271,6 +276,16 @@ export function normalizeToolActivityEvent(rawEvent) {
   });
 }
 
+/**
+ * Consent is checked against an adapter selected from the already-validated
+ * fixed envelope. The ingestion caller cannot name an arbitrary adapter or
+ * smuggle an identifier through the content-free activity contract.
+ */
+function adapterIdForToolActivity(event) {
+  if (event.surface === "browser") return COMPANION_BROWSER_ADAPTERS[event.browserFamily];
+  return COMPANION_DESKTOP_ADAPTER;
+}
+
 function migrationsFrom(directory) {
   const migrations = readdirSync(directory)
     .map((name) => {
@@ -436,8 +451,8 @@ export class ObservabilityStore {
    * Persist a validated Companion span in the existing local SQLite store.
    * Companion activity is intentionally not serialized into mcp-tasks.jsonl:
    * that append-only compatibility log remains exclusively MCP task history.
-   * Consent enforcement will be performed by the future local native-host/UI
-   * writer; this boundary only accepts the fixed, content-free envelope.
+   * The shared store itself fails closed unless global collection and the
+   * envelope-derived adapter/tool consent are both currently enabled.
    */
   recordToolActivity(rawEvent) {
     const event = normalizeToolActivityEvent(rawEvent);
@@ -571,15 +586,39 @@ export class ObservabilityStore {
     const database = this.#openDatabase();
     try {
       applyMigrations(database, migrationsFrom(this.migrationsDir));
-      database.prepare(`INSERT INTO tool_activity (
-        id, session_id, tool_id, surface, started_at, ended_at, detector,
-        confidence, browser_family, platform, schema_version, consent_policy_version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(
-          event.id, null, event.toolId, event.surface, event.startedAt, event.endedAt,
-          event.detector, event.confidence, event.browserFamily ?? null, event.platform ?? null,
-          event.schemaVersion, event.consentPolicyVersion,
+      const adapterId = adapterIdForToolActivity(event);
+
+      // A single immediate transaction prevents a concurrently revoked local
+      // consent from being observed between the checks and the insert.
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const collection = database.prepare(`SELECT collection_enabled
+          FROM companion_settings WHERE id = 1`).get();
+        if (collection?.collection_enabled !== 1) {
+          throw new Error("companion_collection_disabled");
+        }
+
+        const consent = database.prepare(`SELECT 1 FROM companion_tool_consents
+          WHERE adapter_id = ? AND tool_id = ? AND enabled = 1
+            AND consent_policy_version = ?`).get(
+          adapterId, event.toolId, event.consentPolicyVersion,
         );
+        if (!consent) throw new Error("companion_tool_consent_missing");
+
+        database.prepare(`INSERT INTO tool_activity (
+          id, session_id, tool_id, surface, started_at, ended_at, detector,
+          confidence, browser_family, platform, schema_version, consent_policy_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(
+            event.id, null, event.toolId, event.surface, event.startedAt, event.endedAt,
+            event.detector, event.confidence, event.browserFamily ?? null, event.platform ?? null,
+            event.schemaVersion, event.consentPolicyVersion,
+          );
+        database.exec("COMMIT");
+      } catch (error) {
+        try { database.exec("ROLLBACK"); } catch {}
+        throw error;
+      }
     } finally {
       database.close();
     }
