@@ -1,0 +1,55 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  align-items: center;
+  background: Canvas;
+  color: CanvasText;
+  display: flex;
+  margin: 0;
+  min-height: 100vh;
+}
+
+main {
+  margin: 0 auto;
+  max-width: 34rem;
+  padding: 2rem;
+}
+
+.eyebrow {
+  color: #5c6ac4;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+h1 {
+  font-size: 2rem;
+  margin: 0.25rem 0 1rem;
+}
+
+.status {
+  border-left: 0.25rem solid #5c6ac4;
+  font-weight: 600;
+  padding-left: 0.75rem;
+}
+
+section {
+  border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+  border-radius: 0.5rem;
+  margin-top: 1.5rem;
+  padding: 1rem;
+}
+
+h2 {
+  font-size: 1rem;
+  margin-top: 0;
+}
+
+.hint {
+  color: color-mix(in srgb, CanvasText 70%, transparent);
+  font-size: 0.9rem;
+  margin-top: 1.5rem;
+}
