@@ -14,7 +14,10 @@ import { z } from "zod";
 import { createObservabilityStore } from "./lib/observability-store.mjs";
 import { taskLogEntry } from "./lib/task-event.mjs";
 
-const OLLAMA_HOST_URL = process.env.OLLAMA_HOST_URL || "http://localhost:11434";
+import { loadSettings, ollamaFetch } from "./settings.mjs";
+
+const settings = loadSettings();
+const OLLAMA_HOST_URL = settings.OLLAMA_HOST_URL || "http://localhost:11434";
 const CONNECT_TIMEOUT_MS = 5000;
 const REQUEST_TIMEOUT_MS = 120000;
 
@@ -60,15 +63,15 @@ function safeErrorCode(error) {
 const DEFAULT_SUPERVISOR = "qwen2.5-coder:1.5b";
 const DEFAULT_LOGIC = "llama3.2:3b";
 
-const supervisorModel = process.env.NEXUS_SUPERVISOR_MODEL || DEFAULT_SUPERVISOR;
-const logicModel = process.env.NEXUS_LOGIC_MODEL || DEFAULT_LOGIC;
+const supervisorModel = settings.NEXUS_SUPERVISOR_MODEL || DEFAULT_SUPERVISOR;
+const logicModel = settings.NEXUS_LOGIC_MODEL || DEFAULT_LOGIC;
 
 const MODEL_ROUTES = {
-  "commit-msg": process.env.NEXUS_MODEL_COMMIT_MSG || supervisorModel,
-  boilerplate: process.env.NEXUS_MODEL_BOILERPLATE || supervisorModel,
-  "test-scaffold": process.env.NEXUS_MODEL_TEST_SCAFFOLD || supervisorModel,
-  "lint-fix": process.env.NEXUS_MODEL_LINT_FIX || logicModel,
-  "logic-refactor": process.env.NEXUS_MODEL_LOGIC_REFACTOR || logicModel,
+  "commit-msg": settings.NEXUS_MODEL_COMMIT_MSG || supervisorModel,
+  boilerplate: settings.NEXUS_MODEL_BOILERPLATE || supervisorModel,
+  "test-scaffold": settings.NEXUS_MODEL_TEST_SCAFFOLD || supervisorModel,
+  "lint-fix": settings.NEXUS_MODEL_LINT_FIX || logicModel,
+  "logic-refactor": settings.NEXUS_MODEL_LOGIC_REFACTOR || logicModel,
 };
 
 // ── Prompt templates ────────────────────────────────────────────────────────
@@ -142,7 +145,7 @@ ${context}`,
 
 async function checkOllama() {
   try {
-    const res = await fetch(`${OLLAMA_HOST_URL}/api/tags`, {
+    const res = await ollamaFetch(settings, `${OLLAMA_HOST_URL}/api/tags`, {
       signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS),
     });
     if (!res.ok) {
@@ -182,7 +185,7 @@ async function callOllama(model, prompt, task) {
     body.format = STRUCTURED_SCHEMAS[task];
   }
 
-  const res = await fetch(`${OLLAMA_HOST_URL}/api/generate`, {
+  const res = await ollamaFetch(settings, `${OLLAMA_HOST_URL}/api/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

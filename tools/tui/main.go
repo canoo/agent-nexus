@@ -1838,7 +1838,7 @@ func configureMCP(mcpFile, serverPath string) error {
 	if bytes.Equal(merged, data) {
 		return nil // unchanged
 	}
-	return os.WriteFile(mcpFile, merged, 0644)
+	return atomicWriteFile(mcpFile, merged, 0600)
 }
 
 // configureClaudeMCP registers nexus-ollama at Claude Code's user scope via its
@@ -1882,44 +1882,39 @@ func installMCPDeps(mcpDir string) (string, error) {
 // --- .env helpers ---
 
 func loadEnv(m *model) {
-	data, err := os.ReadFile(filepath.Join(m.nexusDir, ".env"))
-	if err != nil {
-		return
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
+	data, _ := os.ReadFile(filepath.Join(m.nexusDir, ".env"))
+	values := parseSettings(string(data))
+	for i, key := range m.configKeys {
+		if value, ok := settingDefaults[key]; ok {
+			m.configVals[i] = value
 		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
+		if value, ok := values[key]; ok && value != "" {
+			m.configVals[i] = value
 		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.Trim(strings.TrimSpace(parts[1]), "\"")
-		for i, k := range m.configKeys {
-			if k == key {
-				if k == claudeSessionRetentionKey {
-					m.configVals[i], _ = normalizeClaudeSessionRetention(val)
-				} else {
-					m.configVals[i] = val
+		if value, ok := os.LookupEnv(key); ok {
+			if value != "" {
+				m.configVals[i] = value
+			} else {
+				if fallback, ok := settingDefaults[key]; ok {
+					m.configVals[i] = fallback
 				}
 			}
+		}
+		if key == claudeSessionRetentionKey {
+			m.configVals[i], _ = normalizeClaudeSessionRetention(m.configVals[i])
 		}
 	}
 	m.localAI = m.configVals[0] != "false"
 }
 
 func saveEnv(m model) error {
-	var lines []string
+	values := append([]string(nil), m.configVals...)
 	for i, key := range m.configKeys {
-		value := m.configVals[i]
 		if key == claudeSessionRetentionKey {
-			value, _ = normalizeClaudeSessionRetention(value)
+			values[i], _ = normalizeClaudeSessionRetention(values[i])
 		}
-		lines = append(lines, fmt.Sprintf("%s=%q", key, value))
 	}
-	return os.WriteFile(filepath.Join(m.nexusDir, ".env"), []byte(strings.Join(lines, "\n")+"\n"), 0644)
+	return writeSettings(filepath.Join(m.nexusDir, ".env"), m.configKeys, values)
 }
 
 // parseClaudeSessionRetentionDays reads a NEXUS-owned setting only. It does
@@ -1972,11 +1967,35 @@ func truncateCol(s string, max int) string {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "status" {
+		if len(os.Args) != 3 || os.Args[2] != "--json" {
+			fmt.Fprintln(os.Stderr, "Usage: nexus status --json")
+			os.Exit(2)
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Cannot locate user home directory")
+			os.Exit(1)
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(localStatus(home)); err != nil {
+			fmt.Fprintln(os.Stderr, "Cannot write status")
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
 		fmt.Println("nexus " + version)
 		return
 	}
-	p := tea.NewProgram(initialModel())
+	if len(os.Args) > 1 && (len(os.Args) != 2 || os.Args[1] != "configure") {
+		fmt.Fprintln(os.Stderr, "Usage: nexus [configure | status --json | --version]")
+		os.Exit(2)
+	}
+	m := initialModel()
+	if len(os.Args) == 2 {
+		m.screen = screenConfigure
+	}
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
