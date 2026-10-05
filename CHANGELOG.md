@@ -19,6 +19,21 @@ All notable changes to NEXUS are documented here. Releases use
 
 - MCP runtime now requires Node.js 22.13 or newer for the built-in SQLite API.
 
+### Fixed
+
+- Claude Code now loads the NEXUS orchestrator: setup links `core/` into
+  `~/.config/nexus`, so the `@~/.config/nexus/core/NEXUS.md` import in
+  `CLAUDE.md` resolves.
+- Setup installs the `nexus-ollama` MCP server's npm dependencies, so the
+  server starts on a fresh install.
+- The TUI installer and `setup-nexus.sh` register `nexus-ollama` with the same
+  tools: Kiro, Gemini/Antigravity CLI, and Claude Code (user scope, through
+  `claude mcp`). Teardown removes the Claude Code entry.
+- The TUI no longer drops other MCP servers' settings or overwrites an
+  unparseable MCP config file when adding `nexus-ollama`.
+- Health Check reports dangling symlinks as broken instead of linked.
+- `zod` is declared as a direct dependency of the MCP server.
+
 ### Security
 
 - Observability rejects prompt, response, URL, source, and arbitrary metadata

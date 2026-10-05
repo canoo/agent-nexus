@@ -37,9 +37,24 @@ safe_unlink "$KIRO_STEERING_DIR/nexus-orchestrator.md"
 
 echo ""
 echo "Unlinking config directories..."
-for dir in personas tools prompts mcp-configs agent-memory; do
+for dir in core personas tools prompts mcp-configs agent-memory; do
     safe_unlink "$CONFIG_NEXUS_DIR/$dir"
 done
+
+# Remove nexus-ollama from Claude Code (user scope).
+echo ""
+echo "Cleaning up Claude Code MCP config..."
+if ! command -v claude &>/dev/null; then
+    echo "  SKIPPED: claude CLI not found."
+elif claude mcp get nexus-ollama &>/dev/null; then
+    if claude mcp remove --scope user nexus-ollama >/dev/null; then
+        echo "  Removed nexus-ollama from Claude Code"
+    else
+        echo "  ERROR: Failed to remove nexus-ollama from Claude Code"
+    fi
+else
+    echo "  No nexus-ollama entry found (skipped)"
+fi
 
 # Remove nexus-ollama from Kiro MCP config.
 KIRO_MCP_FILE="$HOME/.kiro/settings/mcp.json"

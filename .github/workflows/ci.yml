@@ -50,6 +50,24 @@ jobs:
       - name: Install cycle test
         run: bash tests/test-install-cycle.sh --verbose
 
+  mcp-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install and test MCP server
+        working-directory: tools/mcp
+        run: |
+          npm ci --no-audit --no-fund
+          node --check server.mjs
+          npm test
+
   shellcheck:
     runs-on: ubuntu-latest
     steps:

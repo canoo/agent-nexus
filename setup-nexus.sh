@@ -68,11 +68,29 @@ safe_link "$NEXUS_REPO/core/kiro-nexus-steering.md"  "$KIRO_STEERING_DIR/nexus-o
 
 echo ""
 echo "Linking config directories..."
-for dir in personas tools prompts mcp-configs agent-memory; do
+# core is linked because core/CLAUDE.md imports ~/.config/nexus/core/NEXUS.md.
+for dir in core personas tools prompts mcp-configs agent-memory; do
     safe_link "$NEXUS_REPO/$dir" "$CONFIG_NEXUS_DIR/$dir"
 done
 
 ERRORS=0
+
+# Install the MCP server's npm dependencies. node_modules is not committed, so
+# without this step server.mjs fails to import @modelcontextprotocol/sdk.
+# Skip when node_modules is already in sync with the lockfile.
+MCP_DIR="$NEXUS_REPO/tools/mcp"
+echo ""
+echo "Installing MCP server dependencies..."
+if ! command -v npm &>/dev/null; then
+    echo "  SKIPPED: npm not found. Install Node.js 22.13+ to use the nexus-ollama MCP server."
+elif [ -f "$MCP_DIR/node_modules/.package-lock.json" ] && \
+     [ ! "$MCP_DIR/package-lock.json" -nt "$MCP_DIR/node_modules/.package-lock.json" ]; then
+    echo "  Already installed: $MCP_DIR/node_modules (skipped)"
+elif (cd "$MCP_DIR" && npm ci --omit=dev --no-audit --no-fund --loglevel=error); then
+    echo "  Installed: $MCP_DIR/node_modules"
+else
+    echo "  WARNING: npm ci failed in $MCP_DIR. The nexus-ollama MCP server will not start until it succeeds."
+fi
 
 # Configure MCP server for Kiro CLI.
 # Kiro reads MCP config from ~/.kiro/settings/mcp.json (not symlinked — it's
@@ -190,6 +208,22 @@ else
     fi
 fi
 
+# Configure MCP server for Claude Code (user scope, stored in ~/.claude.json).
+# Use the claude CLI rather than editing ~/.claude.json: that file holds Claude's
+# own state and a running session may rewrite it concurrently.
+echo ""
+echo "Configuring Claude Code MCP..."
+if ! command -v claude &>/dev/null; then
+    echo "  SKIPPED: claude CLI not found."
+elif claude mcp get nexus-ollama &>/dev/null; then
+    echo "  Already configured: nexus-ollama in Claude Code (skipped)"
+elif claude mcp add --scope user nexus-ollama -- node "$MCP_SERVER_PATH" >/dev/null; then
+    echo "  Configured: nexus-ollama in Claude Code (user scope)"
+else
+    echo "  ERROR: Failed to configure nexus-ollama in Claude Code"
+    ERRORS=$((ERRORS + 1))
+fi
+
 # Build and install the TUI binary.
 NEXUS_BIN_DIR="$HOME/.local/bin"
 NEXUS_BIN="$NEXUS_BIN_DIR/nexus"
@@ -220,6 +254,7 @@ for link in \
     "$GEMINI_DIR/GEMINI.md" \
     "$CLAUDE_DIR/CLAUDE.md" \
     "$KIRO_STEERING_DIR/nexus-orchestrator.md" \
+    "$CONFIG_NEXUS_DIR/core" \
     "$CONFIG_NEXUS_DIR/personas" \
     "$CONFIG_NEXUS_DIR/tools" \
     "$CONFIG_NEXUS_DIR/prompts" \
