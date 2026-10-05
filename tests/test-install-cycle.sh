@@ -81,6 +81,29 @@ trap 'chmod -R u+w "$FAKE_HOME" 2>/dev/null; rm -rf "$FAKE_HOME"' EXIT
 FAKE_REPO="$FAKE_HOME/my-stuff/nexus"
 mkdir -p "$(dirname "$FAKE_REPO")"
 cp -r "$REPO_ROOT" "$FAKE_REPO"
+# Prove setup installs the MCP server's dependencies itself.
+rm -rf "$FAKE_REPO/tools/mcp/node_modules"
+
+# Stub the claude CLI so the test is hermetic: it keeps a registered-server
+# list in a file instead of touching a real ~/.claude.json.
+FAKE_BIN="$FAKE_HOME/fake-bin"
+CLAUDE_STATE="$FAKE_HOME/claude-mcp-servers"
+mkdir -p "$FAKE_BIN"
+cat > "$FAKE_BIN/claude" <<'STUB'
+#!/usr/bin/env bash
+state="$CLAUDE_STUB_STATE"
+touch "$state"
+[ "$1" = "mcp" ] || exit 2
+case "$2" in
+    get)    grep -qx "$3" "$state" ;;
+    add)    name="$5"; grep -qx "$name" "$state" || echo "$name" >> "$state" ;;
+    remove) name="$5"; grep -vx "$name" "$state" > "$state.tmp" || true; mv "$state.tmp" "$state" ;;
+    *)      exit 2 ;;
+esac
+STUB
+chmod +x "$FAKE_BIN/claude"
+export PATH="$FAKE_BIN:$PATH"
+export CLAUDE_STUB_STATE="$CLAUDE_STATE"
 
 # ── Test 1: Fresh install ───────────────────────────────────────────
 echo ""
@@ -104,12 +127,28 @@ for pair in \
 done
 
 # Config directories
-for dir in personas tools prompts mcp-configs agent-memory; do
+for dir in core personas tools prompts mcp-configs agent-memory; do
     path="$FAKE_HOME/.config/nexus/$dir"
     assert_link_exists   "$path"              "config/$dir"
     assert_link_target   "$path" "$FAKE_REPO/$dir" "config/$dir"
     assert_link_resolves "$path"              "config/$dir"
 done
+
+# core/CLAUDE.md imports this path; it must resolve for Claude Code to load NEXUS.
+claude_import="$(sed -n 's/^@//p' "$FAKE_REPO/core/CLAUDE.md" | head -1)"
+claude_import="${claude_import/#\~/$FAKE_HOME}"
+assert_file_exists "$claude_import" "CLAUDE.md import ($claude_import)"
+
+# MCP server dependencies
+assert_dir_exists "$FAKE_REPO/tools/mcp/node_modules/@modelcontextprotocol/sdk" "mcp node_modules SDK"
+assert_dir_exists "$FAKE_REPO/tools/mcp/node_modules/zod" "mcp node_modules zod"
+
+# Claude Code MCP registration (via stubbed claude CLI)
+if grep -qx 'nexus-ollama' "$CLAUDE_STATE" 2>/dev/null; then
+    pass "claude mcp registered nexus-ollama"
+else
+    fail "claude mcp did not register nexus-ollama"
+fi
 
 # Kiro MCP config
 assert_file_exists "$FAKE_HOME/.kiro/settings/mcp.json" "kiro mcp.json"
@@ -144,7 +183,7 @@ for pair in \
     assert_link_target   "$path"   "$target" "$label"
 done
 
-for dir in personas tools prompts mcp-configs agent-memory; do
+for dir in core personas tools prompts mcp-configs agent-memory; do
     path="$FAKE_HOME/.config/nexus/$dir"
     assert_link_exists   "$path"              "idempotent config/$dir"
     assert_link_target   "$path" "$FAKE_REPO/$dir" "idempotent config/$dir"
@@ -257,11 +296,16 @@ assert_not_exists "$FAKE_HOME/.gemini/GEMINI.md"                       "GEMINI.m
 assert_not_exists "$FAKE_HOME/.claude/CLAUDE.md"                       "CLAUDE.md removed"
 assert_not_exists "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md"    "kiro steering removed"
 
-for dir in personas tools prompts mcp-configs agent-memory; do
+for dir in core personas tools prompts mcp-configs agent-memory; do
     assert_not_exists "$FAKE_HOME/.config/nexus/$dir" "config/$dir removed"
 done
 
 # MCP configs should be removed.
+if ! grep -qx 'nexus-ollama' "$CLAUDE_STATE" 2>/dev/null; then
+    pass "claude mcp nexus-ollama removed"
+else
+    fail "claude mcp nexus-ollama still registered"
+fi
 assert_not_exists "$FAKE_HOME/.kiro/settings/mcp.json" "kiro mcp.json removed"
 assert_not_exists "$FAKE_HOME/.gemini/config/mcp_config.json" "gemini mcp_config.json removed"
 

@@ -156,6 +156,62 @@ func TestConfigureMCP_PreservesExisting(t *testing.T) {
 	}
 }
 
+func TestConfigureMCP_PreservesUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	mcpFile := filepath.Join(dir, "mcp.json")
+	existing := `{"customKey":true,"mcpServers":{"other":{"command":"x","env":{"K":"v"},"disabled":true}}}`
+	os.WriteFile(mcpFile, []byte(existing), 0644)
+
+	if err := configureMCP(mcpFile, "/s.mjs"); err != nil {
+		t.Fatalf("configureMCP failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(mcpFile)
+	var cfg struct {
+		CustomKey  bool `json:"customKey"`
+		MCPServers map[string]struct {
+			Env      map[string]string `json:"env"`
+			Disabled bool              `json:"disabled"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !cfg.CustomKey {
+		t.Error("top-level customKey was dropped")
+	}
+	other := cfg.MCPServers["other"]
+	if other.Env["K"] != "v" || !other.Disabled {
+		t.Errorf("other server fields were dropped: %+v", other)
+	}
+}
+
+func TestConfigureMCP_RefusesMalformedFile(t *testing.T) {
+	dir := t.TempDir()
+	mcpFile := filepath.Join(dir, "mcp.json")
+	broken := `{"mcpServers": {broken`
+	os.WriteFile(mcpFile, []byte(broken), 0644)
+
+	if err := configureMCP(mcpFile, "/s.mjs"); err == nil {
+		t.Fatal("expected an error for malformed JSON")
+	}
+	if data, _ := os.ReadFile(mcpFile); string(data) != broken {
+		t.Error("malformed file was overwritten")
+	}
+}
+
+func TestInstallMCPDepsSkipsWhenInSync(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte("{}"), 0644)
+	os.MkdirAll(filepath.Join(dir, "node_modules"), 0755)
+	os.WriteFile(filepath.Join(dir, "node_modules", ".package-lock.json"), []byte("{}"), 0644)
+
+	got, err := installMCPDeps(dir)
+	if err != nil || got != "already installed" {
+		t.Fatalf("installMCPDeps = %q, %v; want already installed", got, err)
+	}
+}
+
 func TestSaveAndLoadEnv(t *testing.T) {
 	dir := t.TempDir()
 	m := initialModel()

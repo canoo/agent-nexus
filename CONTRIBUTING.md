@@ -86,6 +86,7 @@ The CI pipeline runs on every PR:
 
 - `go build` and `go vet` for the TUI
 - `go test ./...` for Go unit tests
+- `npm test` for the MCP server (`tools/mcp`)
 - `shellcheck` for all shell scripts
 - `test-install-cycle.sh` for end-to-end install/teardown validation
 
@@ -93,6 +94,7 @@ Run locally before pushing:
 
 ```bash
 cd tools/tui && go test ./... && go vet ./...
+(cd tools/mcp && npm ci && npm test)
 shellcheck setup-nexus.sh teardown-nexus.sh install.sh
 bash tests/test-install-cycle.sh
 ```

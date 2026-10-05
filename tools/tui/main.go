@@ -645,7 +645,7 @@ func runInstallStep(m model, idx int) tea.Cmd {
 				return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
 			}
 			configDir := filepath.Join(home, ".config", "nexus")
-			dirs := []string{"personas", "tools", "prompts", "mcp-configs", "agent-memory"}
+			dirs := []string{"core", "personas", "tools", "prompts", "mcp-configs", "agent-memory"}
 			for _, d := range dirs {
 				if err := safeLink(filepath.Join(nexus, d), filepath.Join(configDir, d)); err != nil {
 					return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
@@ -658,13 +658,31 @@ func runInstallStep(m model, idx int) tea.Cmd {
 			if err != nil || home == "" {
 				return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
 			}
-			mcpFile := filepath.Join(home, ".kiro", "settings", "mcp.json")
 			configDir := filepath.Join(home, ".config", "nexus")
 			serverPath := filepath.Join(configDir, "tools", "mcp", "server.mjs")
-			if err := configureMCP(mcpFile, serverPath); err != nil {
+
+			deps, err := installMCPDeps(filepath.Join(nexus, "tools", "mcp"))
+			if err != nil {
 				return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
 			}
-			return stepDoneMsg{idx: idx, ok: true, detail: "nexus-ollama configured"}
+			configured := []string{}
+			for _, t := range []struct{ name, file string }{
+				{"Kiro", filepath.Join(home, ".kiro", "settings", "mcp.json")},
+				{"Gemini", filepath.Join(home, ".gemini", "config", "mcp_config.json")},
+			} {
+				if err := configureMCP(t.file, serverPath); err != nil {
+					return stepDoneMsg{idx: idx, ok: false, detail: t.name + ": " + err.Error()}
+				}
+				configured = append(configured, t.name)
+			}
+			skipped, err := configureClaudeMCP(serverPath)
+			if err != nil {
+				return stepDoneMsg{idx: idx, ok: false, detail: "Claude: " + err.Error()}
+			}
+			if !skipped {
+				configured = append(configured, "Claude")
+			}
+			return stepDoneMsg{idx: idx, ok: true, detail: fmt.Sprintf("nexus-ollama → %s | deps %s", strings.Join(configured, ", "), deps)}
 
 		case 4: // check dependencies
 			var found, missing []string
@@ -1591,6 +1609,7 @@ func checkHealth(nexusDir, ollamaURL string, claudeSessionRetentionDays int, tok
 			{"Gemini", filepath.Join(home, ".gemini", "GEMINI.md")},
 			{"Claude", filepath.Join(home, ".claude", "CLAUDE.md")},
 			{"Kiro", filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")},
+			{"Core", filepath.Join(home, ".config", "nexus", "core")},
 			{"Personas", filepath.Join(home, ".config", "nexus", "personas")},
 			{"Tools", filepath.Join(home, ".config", "nexus", "tools")},
 			{"Prompts", filepath.Join(home, ".config", "nexus", "prompts")},
@@ -1602,7 +1621,11 @@ func checkHealth(nexusDir, ollamaURL string, claudeSessionRetentionDays int, tok
 			if err != nil {
 				h.links = append(h.links, "✗ "+l.label+": missing")
 			} else if fi.Mode()&os.ModeSymlink != 0 {
-				h.links = append(h.links, "✓ "+l.label+": linked")
+				if _, err := os.Stat(l.path); err != nil {
+					h.links = append(h.links, "✗ "+l.label+": broken symlink")
+				} else {
+					h.links = append(h.links, "✓ "+l.label+": linked")
+				}
 			} else {
 				h.links = append(h.links, "⚠ "+l.label+": exists (not a symlink)")
 			}
@@ -1695,32 +1718,83 @@ func configureMCP(mcpFile, serverPath string) error {
 		return err
 	}
 
-	type serverEntry struct {
-		Command string   `json:"command"`
-		Args    []string `json:"args"`
+	// Decode into raw maps so top-level keys and other servers' fields (env,
+	// disabled, autoApprove, ...) survive the rewrite untouched.
+	cfg := map[string]json.RawMessage{}
+	servers := map[string]json.RawMessage{}
+	data, err := os.ReadFile(mcpFile)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
-	type mcpConfig struct {
-		MCPServers map[string]serverEntry `json:"mcpServers"`
-	}
-
-	cfg := mcpConfig{MCPServers: map[string]serverEntry{}}
-	if data, err := os.ReadFile(mcpFile); err == nil {
-		_ = json.Unmarshal(data, &cfg)
-		if cfg.MCPServers == nil {
-			cfg.MCPServers = map[string]serverEntry{}
+	if len(strings.TrimSpace(string(data))) > 0 {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return fmt.Errorf("refusing to overwrite unparseable %s: %w", mcpFile, err)
+		}
+		if raw, ok := cfg["mcpServers"]; ok {
+			if err := json.Unmarshal(raw, &servers); err != nil {
+				return fmt.Errorf("%s: mcpServers is not an object: %w", mcpFile, err)
+			}
 		}
 	}
 
-	if _, exists := cfg.MCPServers["nexus-ollama"]; exists {
+	if _, exists := servers["nexus-ollama"]; exists {
 		return nil
 	}
 
-	cfg.MCPServers["nexus-ollama"] = serverEntry{Command: "node", Args: []string{serverPath}}
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	entry, err := json.Marshal(struct {
+		Command string   `json:"command"`
+		Args    []string `json:"args"`
+	}{Command: "node", Args: []string{serverPath}})
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(mcpFile, data, 0644)
+	servers["nexus-ollama"] = entry
+	if cfg["mcpServers"], err = json.Marshal(servers); err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(mcpFile, append(out, '\n'), 0644)
+}
+
+// configureClaudeMCP registers nexus-ollama at Claude Code's user scope via its
+// CLI. ~/.claude.json holds Claude's own state, so it is never edited directly.
+// Returns skipped=true when the claude CLI is not installed.
+func configureClaudeMCP(serverPath string) (skipped bool, err error) {
+	if _, err := exec.LookPath("claude"); err != nil {
+		return true, nil
+	}
+	if exec.Command("claude", "mcp", "get", "nexus-ollama").Run() == nil {
+		return false, nil
+	}
+	if out, err := exec.Command("claude", "mcp", "add", "--scope", "user", "nexus-ollama", "--", "node", serverPath).CombinedOutput(); err != nil {
+		return false, fmt.Errorf("claude mcp add: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return false, nil
+}
+
+// installMCPDeps runs npm ci for the MCP server unless node_modules already
+// matches the lockfile. node_modules is not committed, so server.mjs cannot
+// load its SDK import without this.
+func installMCPDeps(mcpDir string) (string, error) {
+	lock, err := os.Stat(filepath.Join(mcpDir, "package-lock.json"))
+	if err != nil {
+		return "", err
+	}
+	if installed, err := os.Stat(filepath.Join(mcpDir, "node_modules", ".package-lock.json")); err == nil && !lock.ModTime().After(installed.ModTime()) {
+		return "already installed", nil
+	}
+	if _, err := exec.LookPath("npm"); err != nil {
+		return "skipped (npm not installed)", nil
+	}
+	cmd := exec.Command("npm", "ci", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error")
+	cmd.Dir = mcpDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("npm ci: %v: %s", err, truncateCol(strings.TrimSpace(string(out)), 200))
+	}
+	return "installed", nil
 }
 
 // --- .env helpers ---
