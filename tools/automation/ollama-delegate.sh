@@ -23,36 +23,15 @@
 
 set -euo pipefail
 
-# Load local .env overrides if present (relative to repo root).
-# Parses only KEY=VALUE lines — does not execute shell code.
-_load_env() {
-    local env_file="$1"
-    [ -f "$env_file" ] || return 0
-    local lineno=0
-    while IFS= read -r line || [ -n "$line" ]; do
-        lineno=$((lineno + 1))
-        # Skip blank lines and comments
-        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue
-        # Reject lines containing command substitution or backticks
-        if [[ "$line" =~ \$\( ]] || [[ "$line" =~ \` ]]; then
-            echo "WARN: Skipping unsafe .env line at ${lineno}" >&2
-            continue
-        fi
-        # Accept only KEY=VALUE (KEY may contain letters, digits, underscores)
-        if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
-            local key="${line%%=*}"
-            local value="${line#*=}"
-            # Strip surrounding quotes only if they match as a pair (Bash 3.2 portable)
-            case "$value" in
-                \"*\") value="${value#\"}"; value="${value%\"}" ;;
-                \'*\') value="${value#\'}"; value="${value%\'}" ;;
-            esac
-            export "$key=$value"
-        fi
-    done < "$env_file"
-}
-_load_env "$(dirname "$0")/../../.env"
+# Resolve settings independently of the caller's working directory.
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$SCRIPT_DIR/settings.sh"
+_nexus_load_settings "${NEXUS_REPO:-$SCRIPT_DIR/../..}/.env"
+
+if [[ "${NEXUS_LOCAL_AI:-true}" == "false" ]]; then
+    echo "LOCAL_AI_DISABLED: Enable NEXUS_LOCAL_AI to use Ollama delegation." >&2
+    exit 3
+fi
 
 TASK_TYPE="${1:-}"
 CONTEXT_FILE="${2:-}"
@@ -84,11 +63,11 @@ fi
 
 get_model() {
   case "$TASK_TYPE" in
-    commit-msg)      echo "qwen2.5-coder:1.5b" ;;
-    boilerplate)     echo "qwen2.5-coder:1.5b" ;;
-    test-scaffold)   echo "qwen2.5-coder:1.5b" ;;
-    lint-fix)        echo "llama3.2:3b" ;;
-    logic-refactor)  echo "llama3.2:3b" ;;
+    commit-msg)      echo "${NEXUS_MODEL_COMMIT_MSG:-${NEXUS_SUPERVISOR_MODEL:-qwen2.5-coder:1.5b}}" ;;
+    boilerplate)     echo "${NEXUS_MODEL_BOILERPLATE:-${NEXUS_SUPERVISOR_MODEL:-qwen2.5-coder:1.5b}}" ;;
+    test-scaffold)   echo "${NEXUS_MODEL_TEST_SCAFFOLD:-${NEXUS_SUPERVISOR_MODEL:-qwen2.5-coder:1.5b}}" ;;
+    lint-fix)        echo "${NEXUS_MODEL_LINT_FIX:-${NEXUS_LOGIC_MODEL:-llama3.2:3b}}" ;;
+    logic-refactor)  echo "${NEXUS_MODEL_LOGIC_REFACTOR:-${NEXUS_LOGIC_MODEL:-llama3.2:3b}}" ;;
     *)
       echo "ERROR: Unknown task type: $TASK_TYPE" >&2
       echo "Valid types: commit-msg, boilerplate, test-scaffold, lint-fix, logic-refactor" >&2

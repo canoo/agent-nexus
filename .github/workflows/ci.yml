@@ -47,6 +47,11 @@ jobs:
         with:
           node-version: 22
 
+      - name: Shared settings contract
+        run: |
+          node --test tools/mcp/settings.test.mjs
+          bash -n tools/automation/settings.sh tools/automation/ollama-delegate.sh
+
       - name: Install cycle test
         run: bash tests/test-install-cycle.sh --verbose
 
