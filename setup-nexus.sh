@@ -49,6 +49,31 @@ safe_link() {
     echo "  Linked: $target -> $source"
 }
 
+# node >= 22.13 is required: the MCP config merges below run `node -e`, and the
+# nexus-ollama MCP server itself uses node:sqlite. Fail early with a clear
+# message instead of dying mid-script on a missing node.
+require_node() {
+    command -v node &>/dev/null || {
+        echo "ERROR: Node.js 22.13+ is required (the nexus-ollama MCP server uses node:sqlite)."
+        echo "Install it from https://nodejs.org and re-run setup."
+        exit 1
+    }
+    local ver have want
+    ver="$(node --version | sed 's/^v//')"
+    want="22.13.0"
+    have="$(printf '%s\n%s\n' "$want" "$ver" | sort -V | head -n1)"
+    if [ "$have" != "$want" ]; then
+        echo "ERROR: Node.js 22.13+ is required, found v$ver."
+        echo "Upgrade from https://nodejs.org and re-run setup."
+        exit 1
+    fi
+    command -v npm &>/dev/null || {
+        echo "ERROR: npm is required but was not found alongside node."
+        echo "Reinstall Node.js from https://nodejs.org and re-run setup."
+        exit 1
+    }
+}
+
 # Verify a symlink actually resolves after creation.
 verify_link() {
     local target="$1"
@@ -59,6 +84,8 @@ verify_link() {
         exit 1
     fi
 }
+
+require_node
 
 echo ""
 echo "Linking core files..."
