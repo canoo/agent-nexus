@@ -3,7 +3,7 @@
  * and response content is used by the MCP server to calculate estimates, but
  * must never be handed to this module or written to either persistence target.
  */
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -186,7 +186,9 @@ export function normalizeMcpTaskEvent(rawEvent) {
 function migrationsFrom(directory) {
   const migrations = readdirSync(directory)
     .map((name) => {
-      const match = /^(\d+)_[-A-Za-z0-9]+\.sql$/.exec(name);
+      // Migration names allow letters, digits, hyphens, and underscores
+      // (e.g. 003_store_meta.sql).
+      const match = /^(\d+)_[-A-Za-z0-9_]+\.sql$/.exec(name);
       if (!match) return null;
       return { version: Number(match[1]), name, sql: readFileSync(join(directory, name), "utf8") };
     })
@@ -426,12 +428,63 @@ export class ObservabilityStore {
     return Object.freeze(result);
   }
 
+  /**
+   * Run-once absorption of the legacy compatibility JSONL log into SQLite.
+   * Safe to call at every server startup: a store_meta marker records the
+   * first successful run, and the legacy_import_receipts table makes the
+   * import itself exactly-once, so two concurrently starting servers cannot
+   * duplicate rows (both may do the work; only new rows commit).
+   * Never throws for a missing or empty legacy log; that simply means there
+   * is nothing to absorb and the marker is set directly.
+   */
+  ensureLegacyJsonlImported() {
+    this.migrate();
+    const marker = this.#readStoreMeta("legacy_jsonl_imported");
+    if (marker !== null) {
+      return { ran: false, reason: "already-imported" };
+    }
+    let hasLegacyRows = false;
+    try {
+      const stats = statSync(this.jsonlPath);
+      hasLegacyRows = stats.isFile() && stats.size > 0;
+    } catch {
+      hasLegacyRows = false;
+    }
+    if (!hasLegacyRows) {
+      this.#writeStoreMeta("legacy_jsonl_imported", new Date().toISOString());
+      return { ran: false, reason: "no-legacy-jsonl" };
+    }
+    const result = this.importLegacyMcpJsonl({ inputPath: this.jsonlPath });
+    this.#writeStoreMeta("legacy_jsonl_imported", new Date().toISOString());
+    return { ran: true, result };
+  }
+
   #openDatabase() {
     ensurePrivateDirectory(dirname(this.databasePath));
     const isNew = !existsSync(this.databasePath);
     const database = this.databaseFactory(this.databasePath);
     if (isNew) tryMakePrivate(this.databasePath, 0o600);
     return database;
+  }
+
+  #readStoreMeta(key) {
+    const database = this.#openDatabase();
+    try {
+      const row = database.prepare("SELECT value FROM store_meta WHERE key = ?").get(key);
+      return row ? row.value : null;
+    } finally {
+      database.close();
+    }
+  }
+
+  #writeStoreMeta(key, value) {
+    const database = this.#openDatabase();
+    try {
+      database.prepare(`INSERT INTO store_meta (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value);
+    } finally {
+      database.close();
+    }
   }
 
   #writeSqlite(event) {
@@ -506,17 +559,24 @@ export class ObservabilityStore {
         ) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(id) DO NOTHING`).run(sessionId, sessionStart, "active", "mcp", "hybrid");
 
+        // Legacy rows predate the extended metadata columns; those stay NULL
+        // rather than guessed. cost_usd is computed like live rows (0 for
+        // local routes via the prices table) so cost queries stay uniform.
         database.prepare(`INSERT INTO tasks (
           id, session_id, timestamp, source, tool, task_type, model,
           model_provider, route_band, routing, routing_reason, tokens_in,
-          tokens_out, total_tokens, latency_ms, cloud_cost_equivalent, ok, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          tokens_out, total_tokens, latency_ms, cloud_cost_equivalent, ok, error,
+          cost_usd, input_bytes, output_bytes, input_hash, trace_id, span_id,
+          idempotency_key, quality_rating
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(
             taskId, sessionId, event.timestamp, "mcp-tool", event.tool, event.tool,
             event.model, provider, routeBandFor(event.tool, event.model), event.routing,
             reason, event.tokensIn, event.tokensOut,
             event.tokensIn === null || event.tokensOut === null ? null : event.tokensIn + event.tokensOut,
             event.ms, event.cloudCostEquivalent, event.ok ? 1 : 0, event.error,
+            actualCostUsd(provider, event.tokensIn ?? 0, event.tokensOut ?? 0),
+            null, null, null, null, null, null, null,
           );
         database.prepare(`INSERT INTO routing_decisions (
           id, task_id, decided_at, reason, classifier_version, circuit_breaker_triggered

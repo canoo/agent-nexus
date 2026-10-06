@@ -538,5 +538,22 @@ server.tool(
 );
 
 // ── Start ───────────────────────────────────────────────────────────────────
+// One-shot absorption of the legacy JSONL compatibility log into SQLite.  It
+// must run before the server starts recording new tasks, and it must never
+// prevent startup: an import failure only means legacy rows stay in the
+// frozen JSONL file, which is safe to import later with the manual importer.
+try {
+  const legacyImport = observabilityStore.ensureLegacyJsonlImported();
+  if (legacyImport.ran) {
+    const { imported, alreadyImported } = legacyImport.result;
+    console.error(
+      `NEXUS observability: legacy JSONL import complete — ${imported} imported, ${alreadyImported} already present`,
+    );
+  }
+} catch (error) {
+  console.error(
+    `NEXUS observability: legacy JSONL import skipped (${error instanceof Error ? error.message : String(error)})`,
+  );
+}
 const transport = new StdioServerTransport();
 await server.connect(transport);

@@ -51,10 +51,10 @@ test("migrations are owned, transactional, and idempotent", (t) => {
   assert.equal(existsSync(databasePath), true);
   assert.equal(existsSync(jsonlPath), false);
   readDatabase(databasePath, (database) => {
-    assert.deepEqual(database.prepare("SELECT version FROM schema_migrations").all().map(plain), [{ version: 1 }, { version: 2 }]);
+    assert.deepEqual(database.prepare("SELECT version FROM schema_migrations").all().map(plain), [{ version: 1 }, { version: 2 }, { version: 3 }]);
     const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all()
       .map(({ name }) => name);
-    assert.deepEqual(tables, ["legacy_import_receipts", "routing_decisions", "schema_migrations", "sessions", "tasks"]);
+    assert.deepEqual(tables, ["legacy_import_receipts", "routing_decisions", "schema_migrations", "sessions", "store_meta", "tasks"]);
   });
 });
 
