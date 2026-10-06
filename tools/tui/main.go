@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -611,124 +612,167 @@ func buildInstallSteps() []installStep {
 }
 
 func runInstallStep(m model, idx int) tea.Cmd {
-	nexus := m.nexusDir
 	return func() tea.Msg {
 		switch idx {
-		case 0: // validate repo
-			for _, req := range []string{"core/NEXUS.md", "core/CLAUDE.md", "personas", "tools"} {
-				if _, err := os.Stat(filepath.Join(nexus, req)); err != nil {
-					return stepDoneMsg{idx: idx, ok: false, detail: "missing " + req}
-				}
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: nexus}
-
-		case 1: // symlink core files
-			home, err := os.UserHomeDir()
-			if err != nil || home == "" {
-				return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
-			}
-			links := []struct{ src, dst string }{
-				{"core/NEXUS.md", filepath.Join(home, ".gemini", "GEMINI.md")},
-				{"core/CLAUDE.md", filepath.Join(home, ".claude", "CLAUDE.md")},
-				{"core/kiro-nexus-steering.md", filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")},
-			}
-			for _, l := range links {
-				if err := safeLink(filepath.Join(nexus, l.src), l.dst); err != nil {
-					return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
-				}
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: "3 core files linked"}
-
-		case 2: // symlink config dirs
-			home, err := os.UserHomeDir()
-			if err != nil || home == "" {
-				return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
-			}
-			configDir := filepath.Join(home, ".config", "nexus")
-			dirs := []string{"core", "personas", "tools", "prompts", "mcp-configs", "agent-memory"}
-			for _, d := range dirs {
-				if err := safeLink(filepath.Join(nexus, d), filepath.Join(configDir, d)); err != nil {
-					return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
-				}
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: fmt.Sprintf("%d directories linked", len(dirs))}
-
-		case 3: // configure MCP
-			home, err := os.UserHomeDir()
-			if err != nil || home == "" {
-				return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
-			}
-			configDir := filepath.Join(home, ".config", "nexus")
-			serverPath := filepath.Join(configDir, "tools", "mcp", "server.mjs")
-
-			deps, err := installMCPDeps(filepath.Join(nexus, "tools", "mcp"))
-			if err != nil {
-				return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
-			}
-			configured := []string{}
-			for _, t := range []struct{ name, file string }{
-				{"Kiro", filepath.Join(home, ".kiro", "settings", "mcp.json")},
-				{"Gemini", filepath.Join(home, ".gemini", "config", "mcp_config.json")},
-			} {
-				if err := configureMCP(t.file, serverPath); err != nil {
-					return stepDoneMsg{idx: idx, ok: false, detail: t.name + ": " + err.Error()}
-				}
-				configured = append(configured, t.name)
-			}
-			skipped, err := configureClaudeMCP(serverPath)
-			if err != nil {
-				return stepDoneMsg{idx: idx, ok: false, detail: "Claude: " + err.Error()}
-			}
-			if !skipped {
-				configured = append(configured, "Claude")
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: fmt.Sprintf("nexus-ollama → %s | deps %s", strings.Join(configured, ", "), deps)}
-
-		case 4: // check dependencies
-			var found, missing []string
-			for _, dep := range []string{"node", "ollama", "git"} {
-				if _, err := exec.LookPath(dep); err == nil {
-					found = append(found, dep)
-				} else {
-					missing = append(missing, dep)
-				}
-			}
-			detail := "found: " + strings.Join(found, ", ")
-			if len(missing) > 0 {
-				detail += " | missing: " + strings.Join(missing, ", ")
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: detail}
-
-		case 5: // pull ollama models
-			if _, err := exec.LookPath("ollama"); err != nil {
-				return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not installed)"}
-			}
-			// Check if ollama is reachable using the configured URL
-			client := &http.Client{Timeout: 3 * time.Second}
-			ollamaURL := m.configVals[1]
-			if ollamaURL == "" {
-				ollamaURL = "http://localhost:11434"
-			}
-			if _, err := client.Get(ollamaURL); err != nil {
-				return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not running)"}
-			}
-			models := []string{"qwen2.5-coder:1.5b", "llama3.2:3b"}
-			var pulled []string
-			for _, m := range models {
-				cmd := exec.Command("ollama", "pull", m)
-				if err := cmd.Run(); err == nil {
-					pulled = append(pulled, m)
-				}
-			}
-			if len(pulled) == 0 {
-				return stepDoneMsg{idx: idx, ok: true, detail: "no models pulled (check ollama)"}
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: strings.Join(pulled, ", ")}
+		case 0:
+			return installStepValidateRepo(idx, m)
+		case 1:
+			return installStepSymlinkCoreFiles(idx, m)
+		case 2:
+			return installStepSymlinkConfigDirs(idx, m)
+		case 3:
+			return installStepConfigureMCP(idx, m)
+		case 4:
+			return installStepCheckDependencies(idx, m)
+		case 5:
+			return installStepPullOllamaModels(idx, m)
 		}
 		return stepDoneMsg{idx: idx, ok: true}
 	}
 }
 
+// isCriticalInstallStep reports whether a failed install step must stop the
+// wizard. Steps 0-3 (repo validation, symlinks, MCP config) are load-bearing;
+// later steps only degrade functionality.
+func isCriticalInstallStep(idx int) bool {
+	return idx <= 3
+}
+
+// The installStep* workers below were extracted verbatim from runInstallStep
+// so each of the six install steps can be unit-tested in isolation. Behavior
+// is unchanged; runInstallStep is now only a dispatcher.
+
+// installStepValidateRepo checks the repo has the paths the installer links.
+func installStepValidateRepo(idx int, m model) stepDoneMsg {
+	nexus := m.nexusDir
+	for _, req := range []string{"core/NEXUS.md", "core/CLAUDE.md", "personas", "tools"} {
+		if _, err := os.Stat(filepath.Join(nexus, req)); err != nil {
+			return stepDoneMsg{idx: idx, ok: false, detail: "missing " + req}
+		}
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: nexus}
+}
+
+// installStepSymlinkCoreFiles links the three core prompt files into the
+// vendor config locations.
+func installStepSymlinkCoreFiles(idx int, m model) stepDoneMsg {
+	nexus := m.nexusDir
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: /home/cano unset"}
+	}
+	links := []struct{ src, dst string }{
+		{"core/NEXUS.md", filepath.Join(home, ".gemini", "GEMINI.md")},
+		{"core/CLAUDE.md", filepath.Join(home, ".claude", "CLAUDE.md")},
+		{"core/kiro-nexus-steering.md", filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")},
+	}
+	for _, l := range links {
+		if err := safeLink(filepath.Join(nexus, l.src), l.dst); err != nil {
+			return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
+		}
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: "3 core files linked"}
+}
+
+// installStepSymlinkConfigDirs links the nexus content dirs into
+// ~/.config/nexus.
+func installStepSymlinkConfigDirs(idx int, m model) stepDoneMsg {
+	nexus := m.nexusDir
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: /home/cano unset"}
+	}
+	configDir := filepath.Join(home, ".config", "nexus")
+	dirs := []string{"core", "personas", "tools", "prompts", "mcp-configs", "agent-memory"}
+	for _, d := range dirs {
+		if err := safeLink(filepath.Join(nexus, d), filepath.Join(configDir, d)); err != nil {
+			return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
+		}
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: fmt.Sprintf("%d directories linked", len(dirs))}
+}
+
+// installStepConfigureMCP installs the MCP server deps and registers
+// nexus-ollama in the Kiro and Gemini MCP configs (plus Claude Code via its
+// CLI when present).
+func installStepConfigureMCP(idx int, m model) stepDoneMsg {
+	nexus := m.nexusDir
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: /home/cano unset"}
+	}
+	configDir := filepath.Join(home, ".config", "nexus")
+	serverPath := filepath.Join(configDir, "tools", "mcp", "server.mjs")
+
+	deps, err := installMCPDeps(filepath.Join(nexus, "tools", "mcp"))
+	if err != nil {
+		return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
+	}
+	configured := []string{}
+	for _, t := range []struct{ name, file string }{
+		{"Kiro", filepath.Join(home, ".kiro", "settings", "mcp.json")},
+		{"Gemini", filepath.Join(home, ".gemini", "config", "mcp_config.json")},
+	} {
+		if err := configureMCP(t.file, serverPath); err != nil {
+			return stepDoneMsg{idx: idx, ok: false, detail: t.name + ": " + err.Error()}
+		}
+		configured = append(configured, t.name)
+	}
+	skipped, err := configureClaudeMCP(serverPath)
+	if err != nil {
+		return stepDoneMsg{idx: idx, ok: false, detail: "Claude: " + err.Error()}
+	}
+	if !skipped {
+		configured = append(configured, "Claude")
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: fmt.Sprintf("nexus-ollama → %s | deps %s", strings.Join(configured, ", "), deps)}
+}
+
+// installStepCheckDependencies reports which external tools are present.
+func installStepCheckDependencies(idx int, _ model) stepDoneMsg {
+	var found, missing []string
+	for _, dep := range []string{"node", "ollama", "git"} {
+		if _, err := exec.LookPath(dep); err == nil {
+			found = append(found, dep)
+		} else {
+			missing = append(missing, dep)
+		}
+	}
+	detail := "found: " + strings.Join(found, ", ")
+	if len(missing) > 0 {
+		detail += " | missing: " + strings.Join(missing, ", ")
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: detail}
+}
+
+// installStepPullOllamaModels pulls the default local models when ollama is
+// installed and reachable. Every outcome is ok=true: models are best-effort.
+func installStepPullOllamaModels(idx int, m model) stepDoneMsg {
+	if _, err := exec.LookPath("ollama"); err != nil {
+		return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not installed)"}
+	}
+	// Check if ollama is reachable using the configured URL
+	client := &http.Client{Timeout: 3 * time.Second}
+	ollamaURL := m.configVals[1]
+	if ollamaURL == "" {
+		ollamaURL = "http://localhost:11434"
+	}
+	if _, err := client.Get(ollamaURL); err != nil {
+		return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not running)"}
+	}
+	models := []string{"qwen2.5-coder:1.5b", "llama3.2:3b"}
+	var pulled []string
+	for _, name := range models {
+		cmd := exec.Command("ollama", "pull", name)
+		if err := cmd.Run(); err == nil {
+			pulled = append(pulled, name)
+		}
+	}
+	if len(pulled) == 0 {
+		return stepDoneMsg{idx: idx, ok: true, detail: "no models pulled (check ollama)"}
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: strings.Join(pulled, ", ")}
+}
 func updateInstall(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case stepDoneMsg:
@@ -739,8 +783,8 @@ func updateInstall(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 		}
 		m.steps[msg.idx].detail = msg.detail
 
-		// If failed on a critical step (0-3), stop
-		if !msg.ok && msg.idx <= 3 {
+		// If failed on a critical step, stop
+		if !msg.ok && isCriticalInstallStep(msg.idx) {
 			m.installDone = true
 			return m, nil
 		}
@@ -1325,8 +1369,8 @@ func updateConfigure(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "enter":
 				if m.configKeys[m.configCursor] == claudeSessionRetentionKey {
-					days, valid := parseClaudeSessionRetentionDays(m.editBuf)
-					m.configVals[m.configCursor] = strconv.Itoa(days)
+					normalized, valid := normalizeClaudeSessionRetention(m.editBuf)
+					m.configVals[m.configCursor] = normalized
 					if !valid {
 						m.output = fmt.Sprintf("Invalid %s; using default %d days", claudeSessionRetentionKey, defaultClaudeSessionRetention)
 						m.err = nil
@@ -1719,57 +1763,113 @@ func safeLink(source, target string) error {
 	return os.Symlink(source, target)
 }
 
-func configureMCP(mcpFile, serverPath string) error {
-	if err := os.MkdirAll(filepath.Dir(mcpFile), 0755); err != nil {
-		return err
-	}
+// mergeMCPConfig merges the nexus-ollama server entry into raw MCP config
+// JSON and returns the updated document. It implements the canonical MCP
+// merge spec shared with scripts/mcp-merge.js (see the spec comment there):
+//
+//   - unknown top-level keys are preserved;
+//   - other servers are untouched;
+//   - when the nexus-ollama entry already exists, only the managed fields
+//     (command, args) are updated; per-entry extras (env, cwd, ...) are kept;
+//   - fail-closed: blank input yields a fresh config, but unparseable JSON,
+//     a null or non-object top-level value, or a present-but-not-object
+//     mcpServers value is an error and nothing is written;
+//   - when nothing changes, the input is returned byte-identical so the
+//     caller can skip the write.
+//
+// The #114 nil-map guards live here: a null document or a null mcpServers is
+// refused, never coerced into an empty object (writing into the nil map
+// produced by json.Unmarshal of `null` would panic).
+func mergeMCPConfig(data []byte, serverPath string) ([]byte, error) {
+	const serverName = "nexus-ollama"
 
 	// Decode into raw maps so top-level keys and other servers' fields (env,
 	// disabled, autoApprove, ...) survive the rewrite untouched.
 	cfg := map[string]json.RawMessage{}
 	servers := map[string]json.RawMessage{}
+	if len(bytes.TrimSpace(data)) > 0 {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("refusing to merge unparseable MCP config: %w", err)
+		}
+		if cfg == nil {
+			return nil, errors.New("refusing to merge null MCP config")
+		}
+		if raw, ok := cfg["mcpServers"]; ok {
+			if err := json.Unmarshal(raw, &servers); err != nil {
+				return nil, fmt.Errorf("refusing to merge MCP config: mcpServers is not an object: %w", err)
+			}
+			if servers == nil {
+				return nil, errors.New("refusing to merge MCP config: mcpServers is not an object")
+			}
+		}
+	}
+
+	docChanged := false
+	if raw, exists := servers[serverName]; exists {
+		entry := map[string]json.RawMessage{}
+		if err := json.Unmarshal(raw, &entry); err != nil || entry == nil {
+			return nil, fmt.Errorf("refusing to merge MCP config: %q entry is not an object", serverName)
+		}
+		// Managed fields are always canonical; per-entry extras survive.
+		// Compared semantically (not by raw bytes): our own pretty-printer
+		// expands arrays across lines, so byte comparison would never settle.
+		var entryCommand string
+		var entryArgs []string
+		_ = json.Unmarshal(entry["command"], &entryCommand)
+		_ = json.Unmarshal(entry["args"], &entryArgs)
+		if entryCommand != "node" || len(entryArgs) != 1 || entryArgs[0] != serverPath {
+			entry["command"], _ = json.Marshal("node")
+			entry["args"], _ = json.Marshal([]string{serverPath})
+			docChanged = true
+		}
+		merged, err := json.Marshal(entry)
+		if err != nil {
+			return nil, err
+		}
+		servers[serverName] = merged
+	} else {
+		entry, err := json.Marshal(struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		}{Command: "node", Args: []string{serverPath}})
+		if err != nil {
+			return nil, err
+		}
+		servers[serverName] = entry
+		docChanged = true
+	}
+
+	if !docChanged {
+		return data, nil // byte-identical: nothing to write
+	}
+	serversRaw, err := json.Marshal(servers)
+	if err != nil {
+		return nil, err
+	}
+	cfg["mcpServers"] = serversRaw
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(out, '\n'), nil
+}
+
+func configureMCP(mcpFile, serverPath string) error {
+	if err := os.MkdirAll(filepath.Dir(mcpFile), 0755); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(mcpFile)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if len(strings.TrimSpace(string(data))) > 0 {
-		if err := json.Unmarshal(data, &cfg); err != nil {
-			return fmt.Errorf("refusing to overwrite unparseable %s: %w", mcpFile, err)
-		}
-		if cfg == nil {
-			// json.Unmarshal of `null` leaves the map nil; writing into it panics.
-			return fmt.Errorf("refusing to overwrite unparseable %s: null configuration", mcpFile)
-		}
-		if raw, ok := cfg["mcpServers"]; ok {
-			if err := json.Unmarshal(raw, &servers); err != nil {
-				return fmt.Errorf("%s: mcpServers is not an object: %w", mcpFile, err)
-			}
-			if servers == nil {
-				return fmt.Errorf("%s: mcpServers is not an object", mcpFile)
-			}
-		}
-	}
-
-	if _, exists := servers["nexus-ollama"]; exists {
-		return nil
-	}
-
-	entry, err := json.Marshal(struct {
-		Command string   `json:"command"`
-		Args    []string `json:"args"`
-	}{Command: "node", Args: []string{serverPath}})
+	merged, err := mergeMCPConfig(data, serverPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", mcpFile, err)
 	}
-	servers["nexus-ollama"] = entry
-	if cfg["mcpServers"], err = json.Marshal(servers); err != nil {
-		return err
+	if bytes.Equal(merged, data) {
+		return nil // unchanged
 	}
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(mcpFile, append(out, '\n'), 0644)
+	return os.WriteFile(mcpFile, merged, 0644)
 }
 
 // configureClaudeMCP registers nexus-ollama at Claude Code's user scope via its
@@ -1831,8 +1931,7 @@ func loadEnv(m *model) {
 		for i, k := range m.configKeys {
 			if k == key {
 				if k == claudeSessionRetentionKey {
-					days, _ := parseClaudeSessionRetentionDays(val)
-					m.configVals[i] = strconv.Itoa(days)
+					m.configVals[i], _ = normalizeClaudeSessionRetention(val)
 				} else {
 					m.configVals[i] = val
 				}
@@ -1847,8 +1946,7 @@ func saveEnv(m model) error {
 	for i, key := range m.configKeys {
 		value := m.configVals[i]
 		if key == claudeSessionRetentionKey {
-			days, _ := parseClaudeSessionRetentionDays(value)
-			value = strconv.Itoa(days)
+			value, _ = normalizeClaudeSessionRetention(value)
 		}
 		lines = append(lines, fmt.Sprintf("%s=%q", key, value))
 	}
@@ -1867,10 +1965,23 @@ func parseClaudeSessionRetentionDays(raw string) (days int, valid bool) {
 	return days, true
 }
 
+// normalizeClaudeSessionRetention is the single normalization point for the
+// NEXUS_CLAUDE_SESSION_RETENTION_DAYS setting. It parses raw input with
+// parseClaudeSessionRetentionDays and returns the canonical stored form: the
+// valid day count as a string, or the default when the input is malformed or
+// negative. All four touch points (loadEnv, saveEnv, the updateConfigure
+// commit branch, and configuredClaudeSessionRetentionDays) route through here
+// so the fallback rules cannot silently drift apart again.
+func normalizeClaudeSessionRetention(raw string) (normalized string, valid bool) {
+	days, valid := parseClaudeSessionRetentionDays(raw)
+	return strconv.Itoa(days), valid
+}
+
 func configuredClaudeSessionRetentionDays(m model) int {
 	for i, key := range m.configKeys {
 		if key == claudeSessionRetentionKey && i < len(m.configVals) {
-			days, _ := parseClaudeSessionRetentionDays(m.configVals[i])
+			normalized, _ := normalizeClaudeSessionRetention(m.configVals[i])
+			days, _ := strconv.Atoi(normalized) // cannot fail: normalize emits Itoa output
 			return days
 		}
 	}
