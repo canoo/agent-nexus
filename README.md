@@ -259,7 +259,6 @@ tools/tui/      NEXUS TUI (Go / Bubbletea v2)
 tools/mcp/      nexus-ollama MCP server (Node.js)
 tools/compat/   Tool driver registry (tools.json) — planned v0.2.5
 prompts/        Engineering rules and quality gates
-mcp-configs/    MCP configuration templates
 docs/           Documentation and hardware presets
 tests/          Integration tests
 ```
