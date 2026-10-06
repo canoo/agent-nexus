@@ -85,13 +85,21 @@ The `nexus-ollama` MCP server exposes local Ollama delegation as standard MCP to
   "mcpServers": {
     "nexus-ollama": {
       "command": "node",
-      "args": ["~/.config/nexus/tools/mcp/server.mjs"]
+      "args": ["/home/you/.config/nexus/tools/mcp/server.mjs"]
     }
   }
 }
 ```
 
-Available tools: `ollama_commit_msg`, `ollama_boilerplate`, `ollama_test_scaffold`, `ollama_lint_fix`, `ollama_logic_refactor`.
+Use your absolute home path — MCP clients do not expand `~` in `args`.
+(The TUI Install screen and `setup-nexus.sh` register the server automatically
+with the correct absolute path, so manual configuration is usually unnecessary.)
+
+Available tools: `ollama_health`, `ollama_commit_msg`, `ollama_boilerplate`, `ollama_test_scaffold`, `ollama_lint_fix`, `ollama_logic_refactor`.
+
+`ollama_health` checks that the local Ollama instance is reachable and lists
+available models, so an AI client can verify the local compute plane is up
+before delegating tasks to it.
 
 ### 5. TUI for setup and health
 
@@ -191,12 +199,13 @@ See [docs/model-configuration.md](docs/model-configuration.md) for hardware-spec
 
 ```
 ⚡ NEXUS Framework Manager
-   v0.1.5
 
 ▸ Install NEXUS
   Configure
   Health Check
-  Update
+  Task Log
+  Usage & Cost Dashboard
+  Update NEXUS
   Uninstall NEXUS
 
 j/k: navigate • enter: select • q: quit
@@ -207,6 +216,8 @@ j/k: navigate • enter: select • q: quit
 | **Install** | Step-by-step wizard: validates repo, creates symlinks, configures MCP, checks deps, pulls Ollama models |
 | **Configure** | Edit Ollama host URL and model overrides inline |
 | **Health Check** | Verifies Ollama reachability, symlink integrity, MCP server status |
+| **Task Log** | Browse logged MCP task sessions: model, routing, latency, success/failure |
+| **Usage & Cost Dashboard** | NEXUS-native task routing stats and cloud-cost savings, plus Tokscale CLI usage aggregates (shown separately) |
 | **Update** | Checks latest release and self-updates with checksum verification |
 | **Uninstall** | Removes all symlinks and binary with confirmation |
 
@@ -248,7 +259,6 @@ tools/tui/      NEXUS TUI (Go / Bubbletea v2)
 tools/mcp/      nexus-ollama MCP server (Node.js)
 tools/compat/   Tool driver registry (tools.json) — planned v0.2.5
 prompts/        Engineering rules and quality gates
-mcp-configs/    MCP configuration templates
 docs/           Documentation and hardware presets
 tests/          Integration tests
 ```

@@ -49,6 +49,31 @@ safe_link() {
     echo "  Linked: $target -> $source"
 }
 
+# node >= 22.13 is required: the MCP config merges below run `node scripts/mcp-merge.js`, and the
+# nexus-ollama MCP server itself uses node:sqlite. Fail early with a clear
+# message instead of dying mid-script on a missing node.
+require_node() {
+    command -v node &>/dev/null || {
+        echo "ERROR: Node.js 22.13+ is required (the nexus-ollama MCP server uses node:sqlite)."
+        echo "Install it from https://nodejs.org and re-run setup."
+        exit 1
+    }
+    local ver have want
+    ver="$(node --version | sed 's/^v//')"
+    want="22.13.0"
+    have="$(printf '%s\n%s\n' "$want" "$ver" | sort -V | head -n1)"
+    if [ "$have" != "$want" ]; then
+        echo "ERROR: Node.js 22.13+ is required, found v$ver."
+        echo "Upgrade from https://nodejs.org and re-run setup."
+        exit 1
+    fi
+    command -v npm &>/dev/null || {
+        echo "ERROR: npm is required but was not found alongside node."
+        echo "Reinstall Node.js from https://nodejs.org and re-run setup."
+        exit 1
+    }
+}
+
 # Verify a symlink actually resolves after creation.
 verify_link() {
     local target="$1"
@@ -59,6 +84,8 @@ verify_link() {
         exit 1
     fi
 }
+
+require_node
 
 echo ""
 echo "Linking core files..."
@@ -92,6 +119,15 @@ else
     echo "  WARNING: npm ci failed in $MCP_DIR. The nexus-ollama MCP server will not start until it succeeds."
 fi
 
+# Canonical MCP config merge. All MCP config writes (Kiro, Gemini) go through
+# scripts/mcp-merge.js so every writer shares one fail-closed,
+# full-document-preserving implementation -- see the spec comment in that file.
+# Prints one of: added | updated | unchanged. Exits non-zero on refusal.
+# Usage: nexus_mcp_merge <config-file> <server-path>
+nexus_mcp_merge() {
+    node "$NEXUS_REPO/scripts/mcp-merge.js" "$1" "$2"
+}
+
 # Configure MCP server for Kiro CLI.
 # Kiro reads MCP config from ~/.kiro/settings/mcp.json (not symlinked — it's
 # a standalone JSON file that references the server script via the symlinked path).
@@ -103,52 +139,17 @@ echo ""
 echo "Configuring Kiro MCP..."
 mkdir -p "$KIRO_SETTINGS_DIR"
 
-if [ -f "$KIRO_MCP_FILE" ] && grep -q '"nexus-ollama"' "$KIRO_MCP_FILE" 2>/dev/null; then
-    echo "  Already configured: nexus-ollama in $KIRO_MCP_FILE (skipped)"
+if merge_status=$(nexus_mcp_merge "$KIRO_MCP_FILE" "$MCP_SERVER_PATH" 2>&1); then
+    case "$merge_status" in
+        added)     echo "  Configured: nexus-ollama in $KIRO_MCP_FILE" ;;
+        updated)   echo "  Updated: nexus-ollama in $KIRO_MCP_FILE (entry refreshed, extras preserved)" ;;
+        unchanged) echo "  Already configured: nexus-ollama in $KIRO_MCP_FILE (skipped)" ;;
+        *)         echo "  Configured: nexus-ollama in $KIRO_MCP_FILE" ;;
+    esac
 else
-    # Merge nexus-ollama into existing config (or create new).
-    # Uses Node since it's already a dependency for the MCP server.
-    node -e "
-      const fs = require('fs');
-      const path = '$KIRO_MCP_FILE';
-      let config = { mcpServers: {} };
-      let parseFailed = false;
-      if (fs.existsSync(path)) {
-        const raw = fs.readFileSync(path, 'utf8').trim();
-        if (raw.length > 0) {
-          try {
-            config = JSON.parse(raw);
-          } catch (err) {
-            parseFailed = true;
-            console.error('  ERROR: Failed to parse ' + path + ': ' + err.message);
-          }
-        }
-      }
-      if (!parseFailed) {
-        if (!config || typeof config !== 'object' || Array.isArray(config)) config = {};
-        if (!config.mcpServers || typeof config.mcpServers !== 'object' || Array.isArray(config.mcpServers)) config.mcpServers = {};
-        config.mcpServers['nexus-ollama'] = {
-          command: 'node',
-          args: ['$MCP_SERVER_PATH']
-        };
-        try {
-          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
-        } catch (err) {
-          try {
-            fs.chmodSync(path, 0o644);
-            fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
-          } catch (err2) {
-            console.error('  ERROR: Failed to write ' + path + ': ' + err2.message);
-          }
-        }
-      }
-    "
-    if grep -q '"nexus-ollama"' "$KIRO_MCP_FILE" 2>/dev/null; then
-        echo "  Configured: nexus-ollama in $KIRO_MCP_FILE"
-    else
-        echo "  ERROR: Failed to configure nexus-ollama in $KIRO_MCP_FILE"
-        ERRORS=$((ERRORS + 1))
-    fi
+    echo "  ERROR: Failed to configure nexus-ollama in $KIRO_MCP_FILE"
+    printf '%s\n' "$merge_status" | sed 's/^/  /'
+    ERRORS=$((ERRORS + 1))
 fi
 
 # Configure MCP server for Antigravity CLI (Gemini).
@@ -160,52 +161,17 @@ echo ""
 echo "Configuring Antigravity CLI (Gemini) MCP..."
 mkdir -p "$GEMINI_CONFIG_DIR"
 
-if [ -f "$GEMINI_MCP_FILE" ] && grep -q '"nexus-ollama"' "$GEMINI_MCP_FILE" 2>/dev/null; then
-    echo "  Already configured: nexus-ollama in $GEMINI_MCP_FILE (skipped)"
+if merge_status=$(nexus_mcp_merge "$GEMINI_MCP_FILE" "$MCP_SERVER_PATH" 2>&1); then
+    case "$merge_status" in
+        added)     echo "  Configured: nexus-ollama in $GEMINI_MCP_FILE" ;;
+        updated)   echo "  Updated: nexus-ollama in $GEMINI_MCP_FILE (entry refreshed, extras preserved)" ;;
+        unchanged) echo "  Already configured: nexus-ollama in $GEMINI_MCP_FILE (skipped)" ;;
+        *)         echo "  Configured: nexus-ollama in $GEMINI_MCP_FILE" ;;
+    esac
 else
-    # Merge nexus-ollama into existing config (or create new).
-    # Uses Node since it's already a dependency for the MCP server.
-    node -e "
-      const fs = require('fs');
-      const path = '$GEMINI_MCP_FILE';
-      let config = { mcpServers: {} };
-      let parseFailed = false;
-      if (fs.existsSync(path)) {
-        const raw = fs.readFileSync(path, 'utf8').trim();
-        if (raw.length > 0) {
-          try {
-            config = JSON.parse(raw);
-          } catch (err) {
-            parseFailed = true;
-            console.error('  ERROR: Failed to parse ' + path + ': ' + err.message);
-          }
-        }
-      }
-      if (!parseFailed) {
-        if (!config || typeof config !== 'object' || Array.isArray(config)) config = {};
-        if (!config.mcpServers || typeof config.mcpServers !== 'object' || Array.isArray(config.mcpServers)) config.mcpServers = {};
-        config.mcpServers['nexus-ollama'] = {
-          command: 'node',
-          args: ['$MCP_SERVER_PATH']
-        };
-        try {
-          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
-        } catch (err) {
-          try {
-            fs.chmodSync(path, 0o644);
-            fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
-          } catch (err2) {
-            console.error('  ERROR: Failed to write ' + path + ': ' + err2.message);
-          }
-        }
-      }
-    "
-    if grep -q '"nexus-ollama"' "$GEMINI_MCP_FILE" 2>/dev/null; then
-        echo "  Configured: nexus-ollama in $GEMINI_MCP_FILE"
-    else
-        echo "  ERROR: Failed to configure nexus-ollama in $GEMINI_MCP_FILE"
-        ERRORS=$((ERRORS + 1))
-    fi
+    echo "  ERROR: Failed to configure nexus-ollama in $GEMINI_MCP_FILE"
+    printf '%s\n' "$merge_status" | sed 's/^/  /'
+    ERRORS=$((ERRORS + 1))
 fi
 
 # Configure MCP server for Claude Code (user scope, stored in ~/.claude.json).
@@ -233,7 +199,12 @@ echo ""
 echo "Building NEXUS TUI..."
 if command -v go &>/dev/null; then
     mkdir -p "$NEXUS_BIN_DIR"
-    if (cd "$TUI_SRC" && go build -o "$NEXUS_BIN" .); then
+    # Inject the release version like GoReleaser does (-X main.version).
+    # Falls back to "dev" when the clone has no tags.
+    NEXUS_VERSION="$(git -C "$NEXUS_REPO" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"
+    [ -z "$NEXUS_VERSION" ] && NEXUS_VERSION="dev"
+    echo "  Version: $NEXUS_VERSION"
+    if (cd "$TUI_SRC" && go build -ldflags "-s -w -X main.version=$NEXUS_VERSION" -o "$NEXUS_BIN" .); then
         echo "  Installed: $NEXUS_BIN"
         # Hint if ~/.local/bin isn't in PATH
         if ! echo "$PATH" | tr ':' '\n' | grep -qx "$NEXUS_BIN_DIR"; then

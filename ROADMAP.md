@@ -31,6 +31,19 @@ Extend observability to AI CLI tools by integrating [Tokscale](https://github.co
 
 **Why Tokscale over custom parsers:** Rust-native core (10x faster), 1,000+ tests, 54 releases, MIT license, zero-config install (`bunx tokscale@latest`). When new CLIs emerge or change data formats, Tokscale handles it upstream.
 
+## v0.2.5 — Universal Sync Layer [Planned]
+
+One config, every tool: adopt existing tool setups, keep them in sync, and
+project NEXUS state into each tool's native format.
+
+- **`nexus adopt`** — import an existing tool's config into NEXUS (TBD)
+- **`nexus sync`** — propagate personas, steering files, and routing rules to all configured tools (TBD)
+- **AGENTS.md projection** — generate `AGENTS.md` from NEXUS state (TBD)
+- **Tool driver system** — driver registry (`tools/compat/`) for per-tool config dialects (TBD)
+- **nexus-context MCP** — context projection over MCP (TBD)
+- **Smithery MCP registry** — discover/install community MCP servers (TBD)
+- **Compatibility matrix** — per-tool feature support table (TBD)
+
 ## v0.3.0 — Dynamic Routing & Antigravity CLI Integration
 
 Transform NEXUS from a config manager into an intelligent execution runtime.
@@ -40,6 +53,15 @@ Transform NEXUS from a config manager into an intelligent execution runtime.
 - **Latency-based fallback** — transparent failover between local and cloud (#13)
 - **Chain-of-models** — multi-step orchestration: draft → review → apply (#14)
 - **Modular CLI architecture** — refactor `tools/tui/` into subcommands (`cmd/root.go`, `cmd/tui.go`) and internal router packages
+
+## v0.3.5 — Community Benchmarks [Planned]
+
+Crowd-sourced picture of how local models perform on real hardware.
+
+- **Benchmark schema** — standard format for benchmark results (TBD)
+- **Hardware-tiered test runner** — run the same tasks across GPU tiers (TBD)
+- **Community submission pipeline** — submit results back to the project (TBD)
+- **Results showcase** — browse community results by hardware tier (TBD)
 
 ## v0.4.0 — Persona Ecosystem & Registry
 
