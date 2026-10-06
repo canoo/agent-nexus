@@ -15,6 +15,28 @@ ok()    { printf "\033[1;32m  ✓\033[0m %s\n" "$1"; }
 warn()  { printf "\033[1;33m  !\033[0m %s\n" "$1"; }
 fail()  { printf "\033[1;31m  ✗\033[0m %s\n" "$1"; exit 1; }
 
+# --- prerequisites ---
+
+require_git() {
+    command -v git &>/dev/null || \
+        fail "git is required but was not found. Install git (https://git-scm.com/downloads) and re-run."
+}
+
+# node >= 22.13 is required: the nexus-ollama MCP server uses node:sqlite.
+require_node() {
+    command -v node &>/dev/null || \
+        fail "Node.js 22.13+ is required (the nexus-ollama MCP server uses node:sqlite). Install it from https://nodejs.org and re-run."
+    local ver have want
+    ver="$(node --version | sed 's/^v//')"
+    want="22.13.0"
+    have="$(printf '%s\n%s\n' "$want" "$ver" | sort -V | head -n1)"
+    if [ "$have" != "$want" ]; then
+        fail "Node.js 22.13+ is required, found v$ver. Upgrade from https://nodejs.org and re-run."
+    fi
+    command -v npm &>/dev/null || \
+        fail "npm is required but was not found alongside node. Reinstall Node.js from https://nodejs.org and re-run."
+}
+
 detect_platform() {
     OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
     ARCH="$(uname -m)"
@@ -150,6 +172,8 @@ echo ""
 echo "  ⚡ NEXUS Installer"
 echo ""
 
+require_git
+require_node
 detect_platform
 get_latest_version
 download_binary
