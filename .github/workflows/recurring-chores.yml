@@ -32,36 +32,36 @@ jobs:
 
       - name: Install dependencies (Go)
         run: |
-          cd tools/tui
+          cd tools/tui || exit 1
           go mod download
 
       - name: Install dependencies (Node.js)
         run: |
-          cd tools/mcp
+          cd tools/mcp || exit 1
           npm install
 
       - name: Update Go dependencies
         run: |
-          cd tools/tui
+          cd tools/tui || exit 1
           go get -u ./...
           go mod tidy
           go mod verify
 
       - name: Update Node.js dependencies
         run: |
-          cd tools/mcp
+          cd tools/mcp || exit 1
           npm update
           npm install
 
       - name: Run Go security audit
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          cd tools/tui
+          cd tools/tui || exit 1
           govulncheck ./... || echo "Vulnerabilities found in Go code"
 
       - name: Run Node.js security audit
         run: |
-          cd tools/mcp
+          cd tools/mcp || exit 1
           npm audit || echo "Vulnerabilities found in Node.js code"
 
       - name: Project Integrity Check
