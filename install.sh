@@ -116,6 +116,23 @@ clone_repo() {
     fi
 }
 
+# Install the MCP server's npm dependencies. node_modules is not committed,
+# so without this step server.mjs fails to import @modelcontextprotocol/sdk.
+install_mcp_deps() {
+    local mcp_dir="$NEXUS_DIR/tools/mcp"
+    info "Installing MCP server dependencies..."
+    if [ -f "$mcp_dir/node_modules/.package-lock.json" ] && \
+       [ ! "$mcp_dir/package-lock.json" -nt "$mcp_dir/node_modules/.package-lock.json" ]; then
+        ok "MCP dependencies already installed (skipped)"
+        return 0
+    fi
+    if (cd "$mcp_dir" && npm ci --omit=dev --no-audit --no-fund --loglevel=error); then
+        ok "MCP dependencies installed to $mcp_dir/node_modules"
+    else
+        warn "npm ci failed in $mcp_dir — the nexus-ollama MCP server will not start until it succeeds."
+    fi
+}
+
 check_path() {
     if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
         echo ""
@@ -137,6 +154,7 @@ detect_platform
 get_latest_version
 download_binary
 clone_repo
+install_mcp_deps
 check_path
 
 echo ""
