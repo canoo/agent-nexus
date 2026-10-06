@@ -1,6 +1,6 @@
-# Next release proposal: Desktop Companion private preview
+# Next release plan: Desktop Companion private preview
 
-**Proposed version:** v0.3.0. v0.2.2 shipped as a stability release. An opt-in
+**Planned version:** v0.3.0. v0.2.2 shipped as a stability release. An opt-in
 browser extension, native host, desktop controls, and new activity storage are
 a new product surface, so a minor version is clearer than another v0.2.x patch.
 The existing v0.3.0 milestone already contains the shared-settings and dynamic
@@ -45,7 +45,7 @@ privacy/storage foundation and remains under review.
 - Task Log, Companion activity, and optional Tokscale aggregates remain
   explicitly separate in the TUI.
 
-## Proposed milestone cleanup (approval required)
+## Milestone cleanup (applied)
 
 | Milestone | Change |
 |---|---|
@@ -68,5 +68,5 @@ Move existing #13, #14, #28, #29, #64, and #69 from v0.3.0 to the backlog;
 they are routing and quality follow-ups. Leave #100 on v0.3.0 until the
 #56-versus-#100 design decision. Keep #12 and #99 as the router foundation.
 
-No milestone title, assignment, or state changes should be made until this
-proposal is approved.
+The milestone changes above were approved and applied. The two stale milestones
+were closed only after their open issues moved; no issues were closed.
