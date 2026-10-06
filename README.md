@@ -191,12 +191,13 @@ See [docs/model-configuration.md](docs/model-configuration.md) for hardware-spec
 
 ```
 ⚡ NEXUS Framework Manager
-   v0.1.5
 
 ▸ Install NEXUS
   Configure
   Health Check
-  Update
+  Task Log
+  Usage & Cost Dashboard
+  Update NEXUS
   Uninstall NEXUS
 
 j/k: navigate • enter: select • q: quit
@@ -207,6 +208,8 @@ j/k: navigate • enter: select • q: quit
 | **Install** | Step-by-step wizard: validates repo, creates symlinks, configures MCP, checks deps, pulls Ollama models |
 | **Configure** | Edit Ollama host URL and model overrides inline |
 | **Health Check** | Verifies Ollama reachability, symlink integrity, MCP server status |
+| **Task Log** | Browse logged MCP task sessions: model, routing, latency, success/failure |
+| **Usage & Cost Dashboard** | NEXUS-native task routing stats and cloud-cost savings, plus Tokscale CLI usage aggregates (shown separately) |
 | **Update** | Checks latest release and self-updates with checksum verification |
 | **Uninstall** | Removes all symlinks and binary with confirmation |
 
