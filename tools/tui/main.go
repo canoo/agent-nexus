@@ -118,9 +118,14 @@ type taskLogEntry struct {
 	Tool                string  `json:"tool"`
 	Model               string  `json:"model"`
 	Routing             string  `json:"routing,omitempty"`
+	TaskType            string  `json:"task_type,omitempty"`
+	ModelProvider       string  `json:"model_provider,omitempty"`
 	TokensIn            int     `json:"tokens_in,omitempty"`
 	TokensOut           int     `json:"tokens_out,omitempty"`
 	CloudCostEquivalent float64 `json:"cloud_cost_equivalent,omitempty"`
+	CostUSD             float64 `json:"cost_usd,omitempty"`
+	InputBytes          int64   `json:"input_bytes,omitempty"`
+	OutputBytes         int64   `json:"output_bytes,omitempty"`
 	Ms                  int     `json:"ms"`
 	Ok                  bool    `json:"ok"`
 	Error               string  `json:"error,omitempty"`
@@ -967,49 +972,55 @@ func healthView(m model) string {
 
 // --- uninstall ---
 
+// loadTaskLogJSONLFrom reads the compatibility JSONL log. It is the fallback
+// when the SQLite observability database is absent or unreadable.
+func loadTaskLogJSONLFrom(logFile string) []taskLogEntry {
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+
+	// Log rotation: cap file at 5000 lines
+	const maxLines = 5000
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+
+		tmp := logFile + ".tmp"
+		if os.WriteFile(tmp, []byte(strings.Join(lines, "\n")+"\n"), 0644) == nil {
+			os.Rename(tmp, logFile)
+		}
+	}
+
+	var entries []taskLogEntry
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var e taskLogEntry
+		if json.Unmarshal([]byte(line), &e) == nil {
+			entries = append(entries, e)
+		}
+	}
+	// Show most recent first, cap display at 50
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+	if len(entries) > 50 {
+		entries = entries[:50]
+	}
+	return entries
+}
+
 func loadTaskLog() tea.Cmd {
 	return func() tea.Msg {
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
-			// No $HOME means no log file to load. Return empty rather
-			// than reading from "/.config/nexus/logs/mcp-tasks.jsonl".
+		// No $HOME means neither log location can be resolved.
+		if _, err := nexusLogDir(); err != nil {
 			return taskLogMsg{}
 		}
-		logFile := filepath.Join(home, ".config", "nexus", "logs", "mcp-tasks.jsonl")
-		data, err := os.ReadFile(logFile)
-		if err != nil {
-			return taskLogMsg{}
-		}
-		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-
-		// Log rotation: cap file at 5000 lines
-		const maxLines = 5000
-		if len(lines) > maxLines {
-			lines = lines[len(lines)-maxLines:]
-			tmp := logFile + ".tmp"
-			if os.WriteFile(tmp, []byte(strings.Join(lines, "\n")+"\n"), 0644) == nil {
-				os.Rename(tmp, logFile)
-			}
-		}
-
-		var entries []taskLogEntry
-		for _, line := range lines {
-			if line == "" {
-				continue
-			}
-			var e taskLogEntry
-			if json.Unmarshal([]byte(line), &e) == nil {
-				entries = append(entries, e)
-			}
-		}
-		// Show most recent first, cap display at 50
-		for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-			entries[i], entries[j] = entries[j], entries[i]
-		}
-		if len(entries) > 50 {
-			entries = entries[:50]
-		}
-		return taskLogMsg{entries: entries}
+		dbPath, _ := observabilityDBPath()
+		jsonlPath, _ := taskLogJSONLPath()
+		return taskLogMsg{entries: loadTaskLogEntries(dbPath, jsonlPath)}
 	}
 }
 
