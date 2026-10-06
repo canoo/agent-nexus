@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -29,23 +30,17 @@ func observabilityDBPath() (string, error) {
 	return filepath.Join(dir, "observability.sqlite"), nil
 }
 
-func taskLogJSONLPath() (string, error) {
-	dir, err := nexusLogDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "mcp-tasks.jsonl"), nil
-}
-
 // openObservabilityDB opens the SQLite observability database for reading.
-// WAL mode lets this reader proceed while the MCP server holds write
+// SQLite is the only task-log source; an absent or unreadable database
+// yields an empty log view, never a fallback. WAL mode lets this reader
+// proceed while the MCP server holds write
 // transactions; the mode change persists on the database file, so the server
 // inherits it on its next open. busy_timeout turns a contested lock into a
 // retry instead of an instant SQLITE_BUSY. MaxOpenConns(1) keeps pragma state
 // predictable on the single connection.
 func openObservabilityDB(dbPath string) (*sql.DB, error) {
 	// Never create the database from the TUI: an absent file means the MCP
-	// server has never run here, and the JSONL fallback covers that case.
+	// server has never run here, so the log view shows an empty state.
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil, fmt.Errorf("observability database not present: %w", err)
 	}
@@ -107,7 +102,7 @@ func (r sqliteTaskRow) toEntry() taskLogEntry {
 
 // loadTaskLogSQLiteFrom reads the most recent tasks from SQLite. Any failure
 // (absent/corrupt/unreadable database, missing table, locked longer than the
-// busy timeout) returns an error so the caller can fall back to JSONL.
+// busy timeout) returns an error; the caller shows an empty state instead.
 func loadTaskLogSQLiteFrom(dbPath string) ([]taskLogEntry, error) {
 	db, err := openObservabilityDB(dbPath)
 	if err != nil {
@@ -142,11 +137,14 @@ func loadTaskLogSQLiteFrom(dbPath string) ([]taskLogEntry, error) {
 	return entries, nil
 }
 
-// loadTaskLogEntries implements the documented preference: SQLite first,
-// JSONL compatibility log when the database is unavailable for any reason.
-func loadTaskLogEntries(dbPath, jsonlPath string) []taskLogEntry {
-	if entries, err := loadTaskLogSQLiteFrom(dbPath); err == nil {
-		return entries
+// loadTaskLogEntries returns the most recent tasks from SQLite, the single
+// task-log source. Any read failure is logged and yields an empty view:
+// a corrupt or missing database must never panic the TUI.
+func loadTaskLogEntries(dbPath string) []taskLogEntry {
+	entries, err := loadTaskLogSQLiteFrom(dbPath)
+	if err != nil {
+		log.Printf("NEXUS task log: SQLite read failed (%v); showing empty task log", err)
+		return nil
 	}
-	return loadTaskLogJSONLFrom(jsonlPath)
+	return entries
 }

@@ -138,53 +138,25 @@ func TestLoadTaskLogSQLite_NullableColumnsDefaultCleanly(t *testing.T) {
 	}
 }
 
-func TestLoadTaskLogEntries_MissingDBFallsBackToJSONL(t *testing.T) {
+func TestLoadTaskLogEntries_MissingDBReturnsEmpty(t *testing.T) {
+	// SQLite is the only task-log source: a missing database is an empty
+	// log, not a fallback.
 	dir := t.TempDir()
-	jsonlPath := filepath.Join(dir, "mcp-tasks.jsonl")
-	line := `{"tool":"ollama_commit_msg","model":"qwen2.5-coder:1.5b","routing":"local",` +
-		`"tokens_in":12,"tokens_out":7,"cloud_cost_equivalent":0.000141,` +
-		`"ms":42,"ok":true,"ts":1759423425678}` + "\n"
-	if err := os.WriteFile(jsonlPath, []byte(line), 0644); err != nil {
-		t.Fatalf("write jsonl: %v", err)
-	}
-	entries := loadTaskLogEntries(filepath.Join(dir, "observability.sqlite"), jsonlPath)
-	if len(entries) != 1 {
-		t.Fatalf("expected JSONL fallback with 1 entry, got %d", len(entries))
-	}
-	if entries[0].Tool != "ollama_commit_msg" || entries[0].TokensIn != 12 {
-		t.Errorf("fallback entry mismatch: %+v", entries[0])
+	entries := loadTaskLogEntries(filepath.Join(dir, "observability.sqlite"))
+	if len(entries) != 0 {
+		t.Fatalf("expected empty task log for missing database, got %d entries", len(entries))
 	}
 }
 
-func TestLoadTaskLogEntries_CorruptDBFallsBackWithoutCrashing(t *testing.T) {
+func TestLoadTaskLogEntries_CorruptDBReturnsEmptyWithoutCrashing(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "observability.sqlite")
 	if err := os.WriteFile(dbPath, []byte("this is not a sqlite database at all"), 0644); err != nil {
 		t.Fatalf("write corrupt db: %v", err)
 	}
-	jsonlPath := filepath.Join(dir, "mcp-tasks.jsonl")
-	line := `{"tool":"ollama_boilerplate","model":"qwen2.5-coder:1.5b","ms":5,"ok":false,` +
-		`"error":"ollama_unreachable","ts":1759423425678}` + "\n"
-	if err := os.WriteFile(jsonlPath, []byte(line), 0644); err != nil {
-		t.Fatalf("write jsonl: %v", err)
-	}
-	entries := loadTaskLogEntries(dbPath, jsonlPath)
-	if len(entries) != 1 || entries[0].Tool != "ollama_boilerplate" || entries[0].Ok {
-		t.Fatalf("expected corrupt-DB fallback to JSONL entry, got %+v", entries)
-	}
-}
-
-func TestLoadTaskLogEntries_EmptyDBShowsEmptyNotJSONL(t *testing.T) {
-	// SQLite is the source of truth: an existing-but-empty database means an
-	// empty log, not a fallback to the compatibility file.
-	dbPath := fixtureDB(t)
-	dir := t.TempDir()
-	jsonlPath := filepath.Join(dir, "mcp-tasks.jsonl")
-	if err := os.WriteFile(jsonlPath, []byte("{}\n"), 0644); err != nil {
-		t.Fatalf("write jsonl: %v", err)
-	}
-	if entries := loadTaskLogEntries(dbPath, jsonlPath); len(entries) != 0 {
-		t.Fatalf("expected empty (SQLite authoritative), got %d entries", len(entries))
+	entries := loadTaskLogEntries(dbPath)
+	if len(entries) != 0 {
+		t.Fatalf("expected empty task log for corrupt database, got %+v", entries)
 	}
 }
 
