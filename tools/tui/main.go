@@ -1463,7 +1463,20 @@ func runSelfUpdate(tag string) tea.Cmd {
 			return updateDoneMsg{err: fmt.Errorf("invalid version tag: %q", tag)}
 		}
 		// tag is passed as $1 so it is never interpolated into the script text.
-		script := `
+		cmd := exec.Command("bash", "-c", selfUpdateScript(), "bash", tag)
+		out, err := cmd.CombinedOutput()
+		if err != nil && len(out) > 0 {
+			err = fmt.Errorf("%w: %s", err, string(out))
+		}
+		return updateDoneMsg{err: err}
+	}
+}
+
+// selfUpdateScript downloads the release's install.sh and checksums.txt,
+// verifies install.sh against its checksums.txt entry (added via
+// checksum.extra_files in .goreleaser.yml), then executes it.
+func selfUpdateScript() string {
+	return `
 set -e
 TAG="$1"
 BASE="https://github.com/canoo/agent-nexus/releases/download/v${TAG}"
@@ -1489,13 +1502,6 @@ fi
 
 bash "$SCRIPT"
 `
-		cmd := exec.Command("bash", "-c", script, "bash", tag)
-		out, err := cmd.CombinedOutput()
-		if err != nil && len(out) > 0 {
-			err = fmt.Errorf("%w: %s", err, string(out))
-		}
-		return updateDoneMsg{err: err}
-	}
 }
 
 func updateUpdateScreen(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
@@ -1730,9 +1736,16 @@ func configureMCP(mcpFile, serverPath string) error {
 		if err := json.Unmarshal(data, &cfg); err != nil {
 			return fmt.Errorf("refusing to overwrite unparseable %s: %w", mcpFile, err)
 		}
+		if cfg == nil {
+			// json.Unmarshal of `null` leaves the map nil; writing into it panics.
+			return fmt.Errorf("refusing to overwrite unparseable %s: null configuration", mcpFile)
+		}
 		if raw, ok := cfg["mcpServers"]; ok {
 			if err := json.Unmarshal(raw, &servers); err != nil {
 				return fmt.Errorf("%s: mcpServers is not an object: %w", mcpFile, err)
+			}
+			if servers == nil {
+				return fmt.Errorf("%s: mcpServers is not an object", mcpFile)
 			}
 		}
 	}
