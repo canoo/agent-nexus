@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/canoo/agent-nexus?style=flat-square)](https://github.com/canoo/agent-nexus/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/canoo/agent-nexus/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/canoo/agent-nexus/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.27.1-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![Linux](https://img.shields.io/badge/Linux-supported-FCC624?style=flat-square&logo=linux&logoColor=black)](https://github.com/canoo/agent-nexus)
 [![macOS](https://img.shields.io/badge/macOS-supported-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/canoo/agent-nexus)
 [![Discord](https://img.shields.io/badge/Discord-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/qCdkHVkRHP)
@@ -24,6 +24,10 @@ nexus
 ```
 
 > Make sure `~/.local/bin` is in your `PATH`: `export PATH="$HOME/.local/bin:$PATH"`
+
+**Latest release: [v0.2.2](docs/releases/v0.2.2.md).** It completed the
+stability sprint, moved Task Log to SQLite alone, repaired fresh installs, and
+updated the Go/MCP toolchain with zero `npm audit` vulnerabilities.
 
 ---
 
@@ -54,7 +58,12 @@ On top of that, every tool has its own MCP server config location. Adding a sing
 
 ### 1. Complexity-based local routing (zero-token git)
 
-NEXUS routes micro-tasks to local Ollama models based on complexity, reserving cloud API tokens for work that actually needs them. The most concrete example: commit messages, lint fixes, and boilerplate generation routed to a local 1.5B model instead of Sonnet.
+NEXUS routes suitable micro-tasks to local Ollama models based on complexity,
+reserving cloud API tokens for work that needs them. The most concrete example:
+commit messages, lint fixes, and boilerplate generation routed to a local 1.5B
+model instead of Sonnet. `nexus route --dry-run --goal "write a commit message"`
+shows a route decision without running a model. A failed local route only falls
+back to a cloud agent when `--allow-cloud-fallback` is explicitly set.
 
 Developers routing these tasks locally report saving thousands of cloud tokens per day.<sup>[2]</sup>
 
@@ -74,7 +83,9 @@ Personas live in `~/.config/nexus/personas/` as markdown files. The active perso
 
 ### 3. Unified config projection
 
-Steering files, personas, and routing rules are maintained in one place and projected into each installed AI tool's native format via symlinks and generated files. When you update a persona or routing rule, `nexus sync` propagates it everywhere.
+Steering files, personas, and routing rules are maintained in one place. The
+installer links them into currently supported tools. Broader tool projection
+and a `nexus sync` command are planned for the Universal Sync Layer.
 
 ### 4. MCP server for local model delegation
 
@@ -123,11 +134,11 @@ Thank you to the Tokscale maintainers and contributors for their upstream work.
 | Antigravity CLI (`agy`) | `AGENTS.md`, `.agents/skills/` | ✓ | ✅ Full |
 | Gemini CLI | `AGENTS.md` | ✓ | ✅ Full (Transitioning to `agy`) |
 | Kiro | `.kiro/steering/*.md` | ✓ | ✅ Full |
-| Cursor | `.cursor/rules/*.mdc` | ✓ | 🔄 Planned — v0.2.5 |
-| Copilot | `.github/copilot-instructions.md` | GitHub-managed | 🔄 Planned — v0.2.5 |
-| Windsurf | `.windsurfrules` | ✓ | 🔄 Planned — v0.2.5 |
-| Cline | `.clinerules` | VS Code shared | 🔄 Planned — v0.2.5 |
-| Continue.dev | `.continuerc.json` | ✓ | 🔄 Planned — v0.2.5 |
+| Cursor | `.cursor/rules/*.mdc` | ✓ | 🔄 Planned — Universal Sync |
+| Copilot | `.github/copilot-instructions.md` | GitHub-managed | 🔄 Planned — Universal Sync |
+| Windsurf | `.windsurfrules` | ✓ | 🔄 Planned — Universal Sync |
+| Cline | `.clinerules` | VS Code shared | 🔄 Planned — Universal Sync |
+| Continue.dev | `.continuerc.json` | ✓ | 🔄 Planned — Universal Sync |
 | Amazon Q | `.qrules` | ✓ | 📋 Backlog |
 | Crush | Agent Skills | ✓ | 📋 Backlog |
 | Aider | `.aider.conf.yml` | — | 📋 Backlog |
@@ -227,7 +238,7 @@ nexus "design authentication for a private Hub"
 | **Install** | Step-by-step wizard: validates repo, creates symlinks, configures MCP, checks deps, pulls Ollama models |
 | **Configure** | Edit Ollama host URL and model overrides inline |
 | **Health Check** | Verifies Ollama reachability, symlink integrity, MCP server status |
-| **Task Log** | Browse logged MCP task sessions: model, routing, latency, success/failure |
+| **Task Log** | Read recent MCP tasks from SQLite: model, route band, latency, status, and cloud-equivalent versus actual local cost |
 | **Usage & Cost Dashboard** | NEXUS-native task routing stats and cloud-cost savings, plus Tokscale CLI usage aggregates (shown separately) |
 | **Update** | Checks latest release and self-updates with checksum verification |
 | **Uninstall** | Removes all symlinks and binary with confirmation |
@@ -257,7 +268,7 @@ cd agent-nexus
 bash setup-nexus.sh
 ```
 
-Requires Go 1.25+ to build the TUI binary.
+Requires Go 1.27.1 or newer to build the TUI binary.
 
 ---
 
@@ -268,7 +279,7 @@ core/           Orchestrator instructions (NEXUS.md, AGENTS.md, kiro steering)
 personas/       Specialist agent definitions
 tools/tui/      NEXUS TUI (Go / Bubbletea v2)
 tools/mcp/      nexus-ollama MCP server (Node.js)
-tools/compat/   Tool driver registry (tools.json) — planned v0.2.5
+tools/compat/   Tool driver registry (tools.json) — planned Universal Sync Layer
 prompts/        Engineering rules and quality gates
 docs/           Documentation and hardware presets
 tests/          Integration tests
@@ -278,13 +289,17 @@ tests/          Integration tests
 
 ## Roadmap
 
+The next planned release and its gates are in the
+[Companion release plan](docs/companion-release-plan.md).
+
 | Version | Theme | Key deliverables |
 |---|---|---|
 | **v0.1.6** | Security fixes | Checksum hardening, input validation, PAT removal — [Released] |
 | **v0.2.0** | Observability core | Session logging, cost tracker, live TUI dashboard — [Released] |
-| **v0.2.1** | CLI usage ingestion | Tokscale adapter, unified usage dashboard |
-| **v0.2.5** | Universal sync layer | `nexus adopt`, `nexus sync`, AGENTS.md projection, tool driver system, nexus-context MCP, Smithery MCP registry, compatibility matrix |
-| **v0.3.0** | Dynamic routing | Command interception, Antigravity CLI (`agy`) delegation, auto model selection, latency fallback |
+| **v0.2.1** | CLI usage ingestion | Tokscale adapter and separate Usage & Cost Dashboard — [Released](docs/releases/v0.2.1.md) |
+| **v0.2.2** | Stability and SQLite Task Log | Fresh-install fixes, SQLite-only task history, Go 1.27.1, zero audit vulnerabilities — [Released](docs/releases/v0.2.2.md) |
+| **v0.3.0 (planned)** | Desktop Companion private preview | Explicit consent, Chrome/Edge extension, strict native host, Linux/macOS controls, and routing foundation |
+| **v0.3.1 (planned)** | Universal sync layer | `nexus adopt`, `nexus sync`, AGENTS.md projection, tool driver system, nexus-context MCP, compatibility matrix |
 | **v0.3.5** | Community benchmarks | Benchmark schema, hardware-tiered test runner, community submission pipeline, results showcase |
 | **v0.4.0** | Persona marketplace & registry | Dynamic package manager (`canoo/Nexus-Personas`), `nexus persona install`, persona composition, auto-update |
 | **v1.0.0** | Stable | Windows/Docker support, team features, stable public API |
@@ -293,9 +308,10 @@ tests/          Integration tests
 
 ## Prerequisites
 
-**Required:** Bash, one or more supported AI tools (see [compatibility table](#tool-compatibility))
+**Required for installers:** Bash, git, Node.js ≥22.13.0, and one or more
+supported AI tools (see [compatibility table](#tool-compatibility)).
 
-**Optional:** [Node.js](https://nodejs.org/) ≥22.13.0 (for MCP server), [Ollama](https://ollama.com/) (for local model delegation)
+**Optional:** [Ollama](https://ollama.com/) for local model delegation.
 
 > **Platform support:** Linux and macOS. Windows support is tracked in [#18](https://github.com/canoo/agent-nexus/issues/18).
 
