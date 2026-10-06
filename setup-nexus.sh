@@ -260,7 +260,12 @@ echo ""
 echo "Building NEXUS TUI..."
 if command -v go &>/dev/null; then
     mkdir -p "$NEXUS_BIN_DIR"
-    if (cd "$TUI_SRC" && go build -o "$NEXUS_BIN" .); then
+    # Inject the release version like GoReleaser does (-X main.version).
+    # Falls back to "dev" when the clone has no tags.
+    NEXUS_VERSION="$(git -C "$NEXUS_REPO" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"
+    [ -z "$NEXUS_VERSION" ] && NEXUS_VERSION="dev"
+    echo "  Version: $NEXUS_VERSION"
+    if (cd "$TUI_SRC" && go build -ldflags "-s -w -X main.version=$NEXUS_VERSION" -o "$NEXUS_BIN" .); then
         echo "  Installed: $NEXUS_BIN"
         # Hint if ~/.local/bin isn't in PATH
         if ! echo "$PATH" | tr ':' '\n' | grep -qx "$NEXUS_BIN_DIR"; then
