@@ -1730,9 +1730,16 @@ func configureMCP(mcpFile, serverPath string) error {
 		if err := json.Unmarshal(data, &cfg); err != nil {
 			return fmt.Errorf("refusing to overwrite unparseable %s: %w", mcpFile, err)
 		}
+		if cfg == nil {
+			// json.Unmarshal of `null` leaves the map nil; writing into it panics.
+			return fmt.Errorf("refusing to overwrite unparseable %s: null configuration", mcpFile)
+		}
 		if raw, ok := cfg["mcpServers"]; ok {
 			if err := json.Unmarshal(raw, &servers); err != nil {
 				return fmt.Errorf("%s: mcpServers is not an object: %w", mcpFile, err)
+			}
+			if servers == nil {
+				return fmt.Errorf("%s: mcpServers is not an object", mcpFile)
 			}
 		}
 	}
