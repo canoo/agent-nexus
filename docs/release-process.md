@@ -54,8 +54,8 @@ The initial desktop target is Linux and macOS only.
 |---|---|
 | v0.2.1 (released) | SQLite observability foundation with JSONL compatibility, optional Tokscale aggregates, dashboard, health, and retention guidance. |
 | v0.2.2 (released) | Stability sprint, SQLite-only Task Log, fresh-install repairs, and toolchain/security updates. |
-| v0.2.5 | Tool sync/adopt integration can install Companion configuration without copying device-local consent or history. |
-| v0.3.0 (proposed) | Companion private preview: consented browser signals, Linux/macOS desktop controls, and strict privacy/packaging gates; dynamic routing remains in scope as a foundation. |
+| v0.3.0 (planned) | Companion private preview: consented browser signals, Linux/macOS desktop controls, and strict privacy/packaging gates; dynamic routing remains in scope as a foundation. |
+| v0.3.1 (planned) | Tool sync/adopt integration can install Companion configuration without copying device-local consent or history. |
 
 ## Release ownership
 
