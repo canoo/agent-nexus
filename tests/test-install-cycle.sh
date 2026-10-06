@@ -127,7 +127,7 @@ for pair in \
 done
 
 # Config directories
-for dir in core personas tools prompts mcp-configs agent-memory; do
+for dir in core personas tools prompts agent-memory; do
     path="$FAKE_HOME/.config/nexus/$dir"
     assert_link_exists   "$path"              "config/$dir"
     assert_link_target   "$path" "$FAKE_REPO/$dir" "config/$dir"
@@ -183,7 +183,7 @@ for pair in \
     assert_link_target   "$path"   "$target" "$label"
 done
 
-for dir in core personas tools prompts mcp-configs agent-memory; do
+for dir in core personas tools prompts agent-memory; do
     path="$FAKE_HOME/.config/nexus/$dir"
     assert_link_exists   "$path"              "idempotent config/$dir"
     assert_link_target   "$path" "$FAKE_REPO/$dir" "idempotent config/$dir"
@@ -296,7 +296,7 @@ assert_not_exists "$FAKE_HOME/.gemini/GEMINI.md"                       "GEMINI.m
 assert_not_exists "$FAKE_HOME/.claude/CLAUDE.md"                       "CLAUDE.md removed"
 assert_not_exists "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md"    "kiro steering removed"
 
-for dir in core personas tools prompts mcp-configs agent-memory; do
+for dir in core personas tools prompts agent-memory; do
     assert_not_exists "$FAKE_HOME/.config/nexus/$dir" "config/$dir removed"
 done
 
