@@ -8,9 +8,13 @@ after the code, release notes, website, and community announcement are ready.
 1. **Scope:** the milestone's acceptance criteria and supported platforms pass.
 2. **Verification:** run the focused Node and Go tests, install-cycle tests, and
    platform packaging checks appropriate to the release.
-3. **Release log:** move verified entries from `CHANGELOG.md`'s `Unreleased`
-   section into a dated version heading. The GitHub Release body summarizes the
-   same user-visible changes, upgrades, limitations, and rollback notes.
+3. **Release log:** the release PR must add a dated `## [X.Y.Z]` heading in
+   `CHANGELOG.md` immediately below `Unreleased` and a matching
+   `docs/releases/vX.Y.Z.md` file. Move only changes that shipped into the
+   version heading; leave work in progress out of it. Review both files against
+   the release commit range and the GitHub Release body, which summarizes the
+   same user-visible changes, upgrades, limitations, and rollback notes. The
+   tag workflow checks for both files before it publishes artifacts.
 4. **Website:** update `../nexus-site` in a separate, reviewable commit:
    release/changelog page, supported-platform claims, installation instructions,
    and any new product surface. Record the site commit SHA in the NEXUS release
@@ -48,9 +52,10 @@ The initial desktop target is Linux and macOS only.
 
 | Version | Release condition |
 |---|---|
-| v0.2.1 | SQLite/JSONL observability migration, Tokscale ingestion, dashboard, health, and retention guidance are complete. |
-| v0.2.2 | Companion private preview: consented browser signals plus the Linux/macOS desktop shell and status interface pass privacy and packaging gates. |
-| v0.2.5 | Tool sync/adopt integration can install Companion configuration without copying device-local consent or history. |
+| v0.2.1 (released) | SQLite observability foundation with JSONL compatibility, optional Tokscale aggregates, dashboard, health, and retention guidance. |
+| v0.2.2 (released) | Stability sprint, SQLite-only Task Log, fresh-install repairs, and toolchain/security updates. |
+| v0.3.0 (planned) | Companion private preview: consented browser signals, Linux/macOS desktop controls, and strict privacy/packaging gates; dynamic routing remains in scope as a foundation. |
+| v0.3.1 (planned) | Tool sync/adopt integration can install Companion configuration without copying device-local consent or history. |
 
 ## Release ownership
 

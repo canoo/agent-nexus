@@ -36,6 +36,8 @@ All notable changes to NEXUS are documented here. Releases use
   as permanent `"dev"`.
 - `install.sh` installs the MCP server's npm dependencies (was the only
   setup path missing it).
+- Claude Code loads the NEXUS orchestrator and starts `nexus-ollama` on a fresh
+  install ([#111](https://github.com/canoo/agent-nexus/pull/111)).
 - `recurring-chores.yml` granted push permissions — the dependency-bot 403
   that starved all updates is fixed.
 
@@ -45,33 +47,21 @@ All notable changes to NEXUS are documented here. Releases use
 - Go toolchain 1.26.3 → 1.27.1 (known stdlib CVEs on the old toolchain).
 - `npm audit`: 0 vulnerabilities.
 
+## [0.2.1] - 2026-10-02
+
 ### Added
 
 - Migration-owned local SQLite observability store with compatibility JSONL
-  dual-write and idempotent legacy JSONL import.
+  dual-write and an idempotent legacy JSONL import path.
 - Optional [Tokscale](https://github.com/junhoyeo/tokscale) CLI usage adapter
   for local model/cost aggregates, with gratitude to its maintainers for the
   upstream multi-tool usage ingestion work.
-- NEXUS Companion privacy contract and initial Linux/macOS desktop direction.
+- Usage & Cost Dashboard showing Tokscale aggregates separately from NEXUS
+  routing metrics, with optional Tokscale health and session-retention guidance.
 
 ### Changed
 
 - MCP runtime now requires Node.js 22.13 or newer for the built-in SQLite API.
-
-### Fixed
-
-- Claude Code now loads the NEXUS orchestrator: setup links `core/` into
-  `~/.config/nexus`, so the `@~/.config/nexus/core/NEXUS.md` import in
-  `CLAUDE.md` resolves.
-- Setup installs the `nexus-ollama` MCP server's npm dependencies, so the
-  server starts on a fresh install.
-- The TUI installer and `setup-nexus.sh` register `nexus-ollama` with the same
-  tools: Kiro, Gemini/Antigravity CLI, and Claude Code (user scope, through
-  `claude mcp`). Teardown removes the Claude Code entry.
-- The TUI no longer drops other MCP servers' settings or overwrites an
-  unparseable MCP config file when adding `nexus-ollama`.
-- Health Check reports dangling symlinks as broken instead of linked.
-- `zod` is declared as a direct dependency of the MCP server.
 
 ### Security
 

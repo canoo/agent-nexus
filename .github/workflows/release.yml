@@ -17,6 +17,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Require versioned release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          test -f "docs/releases/${RELEASE_TAG}.md"
+          grep -Fqx "# NEXUS ${RELEASE_TAG}" "docs/releases/${RELEASE_TAG}.md"
+          grep -Fq "## [${version}]" CHANGELOG.md
+
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: tools/tui/go.mod
