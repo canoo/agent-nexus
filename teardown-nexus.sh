@@ -8,6 +8,9 @@ CLAUDE_DIR="$HOME/.claude"
 KIRO_STEERING_DIR="$HOME/.kiro/steering"
 CONFIG_NEXUS_DIR="$HOME/.config/nexus"
 
+# Repo root, derived from this script's location (for scripts/mcp-remove.js).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # Helper: remove a symlink and restore its backup if one exists.
 # Usage: safe_unlink <target>
 safe_unlink() {
@@ -30,6 +33,15 @@ safe_unlink() {
 }
 
 echo ""
+# Canonical MCP config removal. Both removals (Kiro, Gemini) go through
+# scripts/mcp-remove.js so every writer shares one fail-closed,
+# full-document-preserving implementation -- see the spec comment in that file.
+# Prints one of: removed | removed-file | unchanged. Exits non-zero on refusal.
+# Usage: nexus_mcp_remove <config-file>
+nexus_mcp_remove() {
+    node "$SCRIPT_DIR/scripts/mcp-remove.js" "$1"
+}
+
 echo "Unlinking core files..."
 safe_unlink "$GEMINI_DIR/GEMINI.md"
 safe_unlink "$CLAUDE_DIR/CLAUDE.md"
@@ -60,92 +72,36 @@ fi
 KIRO_MCP_FILE="$HOME/.kiro/settings/mcp.json"
 echo ""
 echo "Cleaning up Kiro MCP config..."
-if [ -f "$KIRO_MCP_FILE" ] && grep -q '"nexus-ollama"' "$KIRO_MCP_FILE" 2>/dev/null; then
-    # Remove the nexus-ollama key, preserving other servers.
-    node -e "
-      const fs = require('fs');
-      const path = '$KIRO_MCP_FILE';
-      let config;
-      try {
-        config = JSON.parse(fs.readFileSync(path, 'utf8'));
-      } catch (err) {
-        console.error('  ERROR: Failed to parse ' + path + ': ' + err.message);
-      }
-      if (config && typeof config === 'object' && !Array.isArray(config)) {
-        if (config.mcpServers && typeof config.mcpServers === 'object' && !Array.isArray(config.mcpServers)) {
-          delete config.mcpServers['nexus-ollama'];
-        }
-        const remainingServers = (config.mcpServers && typeof config.mcpServers === 'object' && !Array.isArray(config.mcpServers))
-          ? Object.keys(config.mcpServers).length : 0;
-        const otherKeys = Object.keys(config).filter(k => k !== 'mcpServers').length;
-        try {
-          if (remainingServers === 0 && otherKeys === 0) {
-            fs.unlinkSync(path);
-            console.log('  Removed: $KIRO_MCP_FILE (no servers remaining)');
-          } else {
-            try {
-              fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
-            } catch (err) {
-              fs.chmodSync(path, 0o644);
-              fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
-            }
-            console.log('  Removed nexus-ollama from $KIRO_MCP_FILE (other servers preserved)');
-          }
-        } catch (err) {
-          console.error('  ERROR: Failed to update ' + path + ': ' + err.message);
-        }
-      }
-    "
-elif [ -f "$KIRO_MCP_FILE" ]; then
-    echo "  No nexus-ollama entry found (skipped)"
-else
+if [ ! -f "$KIRO_MCP_FILE" ]; then
     echo "  No Kiro MCP config found (skipped)"
+elif remove_status=$(nexus_mcp_remove "$KIRO_MCP_FILE" 2>&1); then
+    case "$remove_status" in
+        removed)      echo "  Removed nexus-ollama from $KIRO_MCP_FILE (other servers preserved)" ;;
+        removed-file) echo "  Removed: $KIRO_MCP_FILE (no servers remaining)" ;;
+        unchanged)    echo "  No nexus-ollama entry found (skipped)" ;;
+        *)            echo "  Updated: $KIRO_MCP_FILE" ;;
+    esac
+else
+    echo "  ERROR: Failed to update $KIRO_MCP_FILE (left untouched)"
+    printf '%s\n' "$remove_status" | sed 's/^/  /'
 fi
 
 # Remove nexus-ollama from Antigravity CLI (Gemini) MCP config.
 GEMINI_MCP_FILE="$GEMINI_DIR/config/mcp_config.json"
 echo ""
 echo "Cleaning up Antigravity CLI (Gemini) MCP config..."
-if [ -f "$GEMINI_MCP_FILE" ] && grep -q '"nexus-ollama"' "$GEMINI_MCP_FILE" 2>/dev/null; then
-    # Remove the nexus-ollama key, preserving other servers.
-    node -e "
-      const fs = require('fs');
-      const path = '$GEMINI_MCP_FILE';
-      let config;
-      try {
-        config = JSON.parse(fs.readFileSync(path, 'utf8'));
-      } catch (err) {
-        console.error('  ERROR: Failed to parse ' + path + ': ' + err.message);
-      }
-      if (config && typeof config === 'object' && !Array.isArray(config)) {
-        if (config.mcpServers && typeof config.mcpServers === 'object' && !Array.isArray(config.mcpServers)) {
-          delete config.mcpServers['nexus-ollama'];
-        }
-        const remainingServers = (config.mcpServers && typeof config.mcpServers === 'object' && !Array.isArray(config.mcpServers))
-          ? Object.keys(config.mcpServers).length : 0;
-        const otherKeys = Object.keys(config).filter(k => k !== 'mcpServers').length;
-        try {
-          if (remainingServers === 0 && otherKeys === 0) {
-            fs.unlinkSync(path);
-            console.log('  Removed: $GEMINI_MCP_FILE (no servers remaining)');
-          } else {
-            try {
-              fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
-            } catch (err) {
-              fs.chmodSync(path, 0o644);
-              fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
-            }
-            console.log('  Removed nexus-ollama from $GEMINI_MCP_FILE (other configurations preserved)');
-          }
-        } catch (err) {
-          console.error('  ERROR: Failed to update ' + path + ': ' + err.message);
-        }
-      }
-    "
-elif [ -f "$GEMINI_MCP_FILE" ]; then
-    echo "  No nexus-ollama entry found (skipped)"
-else
+if [ ! -f "$GEMINI_MCP_FILE" ]; then
     echo "  No Antigravity CLI (Gemini) MCP config found (skipped)"
+elif remove_status=$(nexus_mcp_remove "$GEMINI_MCP_FILE" 2>&1); then
+    case "$remove_status" in
+        removed)      echo "  Removed nexus-ollama from $GEMINI_MCP_FILE (other servers preserved)" ;;
+        removed-file) echo "  Removed: $GEMINI_MCP_FILE (no servers remaining)" ;;
+        unchanged)    echo "  No nexus-ollama entry found (skipped)" ;;
+        *)            echo "  Updated: $GEMINI_MCP_FILE" ;;
+    esac
+else
+    echo "  ERROR: Failed to update $GEMINI_MCP_FILE (left untouched)"
+    printf '%s\n' "$remove_status" | sed 's/^/  /'
 fi
 
 # Remove the TUI binary.
