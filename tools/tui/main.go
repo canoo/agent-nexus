@@ -611,124 +611,167 @@ func buildInstallSteps() []installStep {
 }
 
 func runInstallStep(m model, idx int) tea.Cmd {
-	nexus := m.nexusDir
 	return func() tea.Msg {
 		switch idx {
-		case 0: // validate repo
-			for _, req := range []string{"core/NEXUS.md", "core/CLAUDE.md", "personas", "tools"} {
-				if _, err := os.Stat(filepath.Join(nexus, req)); err != nil {
-					return stepDoneMsg{idx: idx, ok: false, detail: "missing " + req}
-				}
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: nexus}
-
-		case 1: // symlink core files
-			home, err := os.UserHomeDir()
-			if err != nil || home == "" {
-				return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
-			}
-			links := []struct{ src, dst string }{
-				{"core/NEXUS.md", filepath.Join(home, ".gemini", "GEMINI.md")},
-				{"core/CLAUDE.md", filepath.Join(home, ".claude", "CLAUDE.md")},
-				{"core/kiro-nexus-steering.md", filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")},
-			}
-			for _, l := range links {
-				if err := safeLink(filepath.Join(nexus, l.src), l.dst); err != nil {
-					return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
-				}
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: "3 core files linked"}
-
-		case 2: // symlink config dirs
-			home, err := os.UserHomeDir()
-			if err != nil || home == "" {
-				return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
-			}
-			configDir := filepath.Join(home, ".config", "nexus")
-			dirs := []string{"core", "personas", "tools", "prompts", "mcp-configs", "agent-memory"}
-			for _, d := range dirs {
-				if err := safeLink(filepath.Join(nexus, d), filepath.Join(configDir, d)); err != nil {
-					return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
-				}
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: fmt.Sprintf("%d directories linked", len(dirs))}
-
-		case 3: // configure MCP
-			home, err := os.UserHomeDir()
-			if err != nil || home == "" {
-				return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
-			}
-			configDir := filepath.Join(home, ".config", "nexus")
-			serverPath := filepath.Join(configDir, "tools", "mcp", "server.mjs")
-
-			deps, err := installMCPDeps(filepath.Join(nexus, "tools", "mcp"))
-			if err != nil {
-				return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
-			}
-			configured := []string{}
-			for _, t := range []struct{ name, file string }{
-				{"Kiro", filepath.Join(home, ".kiro", "settings", "mcp.json")},
-				{"Gemini", filepath.Join(home, ".gemini", "config", "mcp_config.json")},
-			} {
-				if err := configureMCP(t.file, serverPath); err != nil {
-					return stepDoneMsg{idx: idx, ok: false, detail: t.name + ": " + err.Error()}
-				}
-				configured = append(configured, t.name)
-			}
-			skipped, err := configureClaudeMCP(serverPath)
-			if err != nil {
-				return stepDoneMsg{idx: idx, ok: false, detail: "Claude: " + err.Error()}
-			}
-			if !skipped {
-				configured = append(configured, "Claude")
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: fmt.Sprintf("nexus-ollama → %s | deps %s", strings.Join(configured, ", "), deps)}
-
-		case 4: // check dependencies
-			var found, missing []string
-			for _, dep := range []string{"node", "ollama", "git"} {
-				if _, err := exec.LookPath(dep); err == nil {
-					found = append(found, dep)
-				} else {
-					missing = append(missing, dep)
-				}
-			}
-			detail := "found: " + strings.Join(found, ", ")
-			if len(missing) > 0 {
-				detail += " | missing: " + strings.Join(missing, ", ")
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: detail}
-
-		case 5: // pull ollama models
-			if _, err := exec.LookPath("ollama"); err != nil {
-				return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not installed)"}
-			}
-			// Check if ollama is reachable using the configured URL
-			client := &http.Client{Timeout: 3 * time.Second}
-			ollamaURL := m.configVals[1]
-			if ollamaURL == "" {
-				ollamaURL = "http://localhost:11434"
-			}
-			if _, err := client.Get(ollamaURL); err != nil {
-				return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not running)"}
-			}
-			models := []string{"qwen2.5-coder:1.5b", "llama3.2:3b"}
-			var pulled []string
-			for _, m := range models {
-				cmd := exec.Command("ollama", "pull", m)
-				if err := cmd.Run(); err == nil {
-					pulled = append(pulled, m)
-				}
-			}
-			if len(pulled) == 0 {
-				return stepDoneMsg{idx: idx, ok: true, detail: "no models pulled (check ollama)"}
-			}
-			return stepDoneMsg{idx: idx, ok: true, detail: strings.Join(pulled, ", ")}
+		case 0:
+			return installStepValidateRepo(idx, m)
+		case 1:
+			return installStepSymlinkCoreFiles(idx, m)
+		case 2:
+			return installStepSymlinkConfigDirs(idx, m)
+		case 3:
+			return installStepConfigureMCP(idx, m)
+		case 4:
+			return installStepCheckDependencies(idx, m)
+		case 5:
+			return installStepPullOllamaModels(idx, m)
 		}
 		return stepDoneMsg{idx: idx, ok: true}
 	}
 }
 
+// isCriticalInstallStep reports whether a failed install step must stop the
+// wizard. Steps 0-3 (repo validation, symlinks, MCP config) are load-bearing;
+// later steps only degrade functionality.
+func isCriticalInstallStep(idx int) bool {
+	return idx <= 3
+}
+
+// The installStep* workers below were extracted verbatim from runInstallStep
+// so each of the six install steps can be unit-tested in isolation. Behavior
+// is unchanged; runInstallStep is now only a dispatcher.
+
+// installStepValidateRepo checks the repo has the paths the installer links.
+func installStepValidateRepo(idx int, m model) stepDoneMsg {
+	nexus := m.nexusDir
+	for _, req := range []string{"core/NEXUS.md", "core/CLAUDE.md", "personas", "tools"} {
+		if _, err := os.Stat(filepath.Join(nexus, req)); err != nil {
+			return stepDoneMsg{idx: idx, ok: false, detail: "missing " + req}
+		}
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: nexus}
+}
+
+// installStepSymlinkCoreFiles links the three core prompt files into the
+// vendor config locations.
+func installStepSymlinkCoreFiles(idx int, m model) stepDoneMsg {
+	nexus := m.nexusDir
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: /home/cano unset"}
+	}
+	links := []struct{ src, dst string }{
+		{"core/NEXUS.md", filepath.Join(home, ".gemini", "GEMINI.md")},
+		{"core/CLAUDE.md", filepath.Join(home, ".claude", "CLAUDE.md")},
+		{"core/kiro-nexus-steering.md", filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")},
+	}
+	for _, l := range links {
+		if err := safeLink(filepath.Join(nexus, l.src), l.dst); err != nil {
+			return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
+		}
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: "3 core files linked"}
+}
+
+// installStepSymlinkConfigDirs links the nexus content dirs into
+// ~/.config/nexus.
+func installStepSymlinkConfigDirs(idx int, m model) stepDoneMsg {
+	nexus := m.nexusDir
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: /home/cano unset"}
+	}
+	configDir := filepath.Join(home, ".config", "nexus")
+	dirs := []string{"core", "personas", "tools", "prompts", "mcp-configs", "agent-memory"}
+	for _, d := range dirs {
+		if err := safeLink(filepath.Join(nexus, d), filepath.Join(configDir, d)); err != nil {
+			return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
+		}
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: fmt.Sprintf("%d directories linked", len(dirs))}
+}
+
+// installStepConfigureMCP installs the MCP server deps and registers
+// nexus-ollama in the Kiro and Gemini MCP configs (plus Claude Code via its
+// CLI when present).
+func installStepConfigureMCP(idx int, m model) stepDoneMsg {
+	nexus := m.nexusDir
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: /home/cano unset"}
+	}
+	configDir := filepath.Join(home, ".config", "nexus")
+	serverPath := filepath.Join(configDir, "tools", "mcp", "server.mjs")
+
+	deps, err := installMCPDeps(filepath.Join(nexus, "tools", "mcp"))
+	if err != nil {
+		return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
+	}
+	configured := []string{}
+	for _, t := range []struct{ name, file string }{
+		{"Kiro", filepath.Join(home, ".kiro", "settings", "mcp.json")},
+		{"Gemini", filepath.Join(home, ".gemini", "config", "mcp_config.json")},
+	} {
+		if err := configureMCP(t.file, serverPath); err != nil {
+			return stepDoneMsg{idx: idx, ok: false, detail: t.name + ": " + err.Error()}
+		}
+		configured = append(configured, t.name)
+	}
+	skipped, err := configureClaudeMCP(serverPath)
+	if err != nil {
+		return stepDoneMsg{idx: idx, ok: false, detail: "Claude: " + err.Error()}
+	}
+	if !skipped {
+		configured = append(configured, "Claude")
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: fmt.Sprintf("nexus-ollama → %s | deps %s", strings.Join(configured, ", "), deps)}
+}
+
+// installStepCheckDependencies reports which external tools are present.
+func installStepCheckDependencies(idx int, _ model) stepDoneMsg {
+	var found, missing []string
+	for _, dep := range []string{"node", "ollama", "git"} {
+		if _, err := exec.LookPath(dep); err == nil {
+			found = append(found, dep)
+		} else {
+			missing = append(missing, dep)
+		}
+	}
+	detail := "found: " + strings.Join(found, ", ")
+	if len(missing) > 0 {
+		detail += " | missing: " + strings.Join(missing, ", ")
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: detail}
+}
+
+// installStepPullOllamaModels pulls the default local models when ollama is
+// installed and reachable. Every outcome is ok=true: models are best-effort.
+func installStepPullOllamaModels(idx int, m model) stepDoneMsg {
+	if _, err := exec.LookPath("ollama"); err != nil {
+		return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not installed)"}
+	}
+	// Check if ollama is reachable using the configured URL
+	client := &http.Client{Timeout: 3 * time.Second}
+	ollamaURL := m.configVals[1]
+	if ollamaURL == "" {
+		ollamaURL = "http://localhost:11434"
+	}
+	if _, err := client.Get(ollamaURL); err != nil {
+		return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not running)"}
+	}
+	models := []string{"qwen2.5-coder:1.5b", "llama3.2:3b"}
+	var pulled []string
+	for _, name := range models {
+		cmd := exec.Command("ollama", "pull", name)
+		if err := cmd.Run(); err == nil {
+			pulled = append(pulled, name)
+		}
+	}
+	if len(pulled) == 0 {
+		return stepDoneMsg{idx: idx, ok: true, detail: "no models pulled (check ollama)"}
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: strings.Join(pulled, ", ")}
+}
 func updateInstall(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case stepDoneMsg:
@@ -739,8 +782,8 @@ func updateInstall(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 		}
 		m.steps[msg.idx].detail = msg.detail
 
-		// If failed on a critical step (0-3), stop
-		if !msg.ok && msg.idx <= 3 {
+		// If failed on a critical step, stop
+		if !msg.ok && isCriticalInstallStep(msg.idx) {
 			m.installDone = true
 			return m, nil
 		}

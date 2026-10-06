@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -919,5 +920,225 @@ func TestRetentionNormalizationIsConsistentAcrossTouchPoints(t *testing.T) {
 		if got := configuredClaudeSessionRetentionDays(m4); got != wantDays {
 			t.Errorf("raw %q: configuredClaudeSessionRetentionDays = %d, want %d", raw, got, wantDays)
 		}
+	}
+}
+
+func TestIsCriticalInstallStep(t *testing.T) {
+	for idx := 0; idx <= 5; idx++ {
+		if got := isCriticalInstallStep(idx); got != (idx <= 3) {
+			t.Errorf("isCriticalInstallStep(%d) = %t, want %t", idx, got, idx <= 3)
+		}
+	}
+}
+
+// withTempHome points /home/cano at a fresh temp dir for the duration of the test.
+func withTempHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	return home
+}
+
+// withIsolatedPath empties PATH so exec.LookPath cannot find real tools
+// (ollama, claude, npm); steps must degrade gracefully, never shell out.
+func withIsolatedPath(t *testing.T) {
+	t.Helper()
+	t.Setenv("PATH", t.TempDir())
+}
+
+// makeRepoLayout creates the repo paths the installer validates/links.
+func makeRepoLayout(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, req := range []string{"core/NEXUS.md", "core/CLAUDE.md", "core/kiro-nexus-steering.md", "personas", "tools"} {
+		p := filepath.Join(dir, req)
+		if strings.HasSuffix(req, ".md") {
+			if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte("x"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		} else if err := os.MkdirAll(p, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// makeMCPDepsReady marks the MCP server deps as already installed so step 3
+// never invokes npm.
+func makeMCPDepsReady(t *testing.T, nexusDir string) {
+	t.Helper()
+	mcpDir := filepath.Join(nexusDir, "tools", "mcp")
+	nmDir := filepath.Join(mcpDir, "node_modules")
+	if err := os.MkdirAll(nmDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(mcpDir, "package-lock.json")
+	installed := filepath.Join(nmDir, ".package-lock.json")
+	if err := os.WriteFile(lock, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// installed marker must be newer than the lockfile.
+	past := time.Now().Add(-time.Hour)
+	recent := time.Now()
+	if err := os.Chtimes(lock, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(installed, recent, recent); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInstallStepValidateRepo(t *testing.T) {
+	dir := makeRepoLayout(t)
+	m := initialModel()
+	m.nexusDir = dir
+
+	msg := installStepValidateRepo(0, m)
+	if !msg.ok || msg.idx != 0 || msg.detail != dir {
+		t.Fatalf("valid repo: got %+v", msg)
+	}
+
+	if err := os.Remove(filepath.Join(dir, "core", "NEXUS.md")); err != nil {
+		t.Fatal(err)
+	}
+	msg = installStepValidateRepo(0, m)
+	if msg.ok || msg.detail != "missing core/NEXUS.md" {
+		t.Fatalf("missing file: got %+v", msg)
+	}
+}
+
+func TestInstallStepSymlinkCoreFiles(t *testing.T) {
+	home := withTempHome(t)
+	dir := makeRepoLayout(t)
+	m := initialModel()
+	m.nexusDir = dir
+
+	msg := installStepSymlinkCoreFiles(1, m)
+	if !msg.ok || msg.idx != 1 || msg.detail != "3 core files linked" {
+		t.Fatalf("got %+v", msg)
+	}
+	for _, link := range []struct{ dst, src string }{
+		{filepath.Join(home, ".gemini", "GEMINI.md"), filepath.Join(dir, "core/NEXUS.md")},
+		{filepath.Join(home, ".claude", "CLAUDE.md"), filepath.Join(dir, "core/CLAUDE.md")},
+		{filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md"), filepath.Join(dir, "core/kiro-nexus-steering.md")},
+	} {
+		target, err := os.Readlink(link.dst)
+		if err != nil {
+			t.Fatalf("readlink %s: %v", link.dst, err)
+		}
+		if target != link.src {
+			t.Errorf("%s -> %s, want %s", link.dst, target, link.src)
+		}
+	}
+}
+
+func TestInstallStepSymlinkConfigDirs(t *testing.T) {
+	home := withTempHome(t)
+	dir := makeRepoLayout(t)
+	m := initialModel()
+	m.nexusDir = dir
+
+	msg := installStepSymlinkConfigDirs(2, m)
+	if !msg.ok || msg.idx != 2 || msg.detail != "6 directories linked" {
+		t.Fatalf("got %+v", msg)
+	}
+	for _, d := range []string{"core", "personas", "tools", "prompts", "mcp-configs", "agent-memory"} {
+		dst := filepath.Join(home, ".config", "nexus", d)
+		target, err := os.Readlink(dst)
+		if err != nil {
+			t.Fatalf("readlink %s: %v", dst, err)
+		}
+		if want := filepath.Join(dir, d); target != want {
+			t.Errorf("%s -> %s, want %s", dst, target, want)
+		}
+	}
+}
+
+func TestInstallStepConfigureMCP(t *testing.T) {
+	home := withTempHome(t)
+	withIsolatedPath(t) // no claude CLI: must report skipped, never shell out
+	dir := makeRepoLayout(t)
+	makeMCPDepsReady(t, dir)
+	m := initialModel()
+	m.nexusDir = dir
+
+	msg := installStepConfigureMCP(3, m)
+	if !msg.ok || msg.idx != 3 {
+		t.Fatalf("got %+v", msg)
+	}
+	if !strings.Contains(msg.detail, "nexus-ollama → Kiro, Gemini") {
+		t.Fatalf("detail missing Kiro+Gemini coverage: %q", msg.detail)
+	}
+	if !strings.Contains(msg.detail, "deps already installed") {
+		t.Fatalf("detail missing deps status: %q", msg.detail)
+	}
+	for _, f := range []string{
+		filepath.Join(home, ".kiro", "settings", "mcp.json"),
+		filepath.Join(home, ".gemini", "config", "mcp_config.json"),
+	} {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		if !strings.Contains(string(data), "nexus-ollama") {
+			t.Errorf("%s missing nexus-ollama entry: %s", f, data)
+		}
+	}
+}
+
+func TestInstallStepCheckDependencies(t *testing.T) {
+	m := initialModel()
+	msg := installStepCheckDependencies(4, m)
+	if !msg.ok || msg.idx != 4 {
+		t.Fatalf("got %+v", msg)
+	}
+	if !strings.HasPrefix(msg.detail, "found: ") {
+		t.Fatalf("detail has unexpected shape: %q", msg.detail)
+	}
+}
+
+func TestInstallStepPullOllamaModelsSkipsWithoutOllama(t *testing.T) {
+	withIsolatedPath(t)
+	m := initialModel()
+	msg := installStepPullOllamaModels(5, m)
+	if !msg.ok || msg.idx != 5 || msg.detail != "skipped (ollama not installed)" {
+		t.Fatalf("got %+v", msg)
+	}
+}
+
+// TestRunInstallStepDispatchesAllSteps proves the dispatcher still reaches
+// every extracted worker and preserves the legacy out-of-range fallback.
+func TestRunInstallStepDispatchesAllSteps(t *testing.T) {
+	withTempHome(t)
+	withIsolatedPath(t)
+	dir := makeRepoLayout(t)
+	makeMCPDepsReady(t, dir)
+	m := initialModel()
+	m.nexusDir = dir
+
+	for idx := 0; idx <= 5; idx++ {
+		raw := runInstallStep(m, idx)()
+		msg, ok := raw.(stepDoneMsg)
+		if !ok {
+			t.Fatalf("step %d: message is %T, want stepDoneMsg", idx, raw)
+		}
+		if msg.idx != idx {
+			t.Errorf("step %d: message idx = %d", idx, msg.idx)
+		}
+		if !msg.ok {
+			t.Errorf("step %d: not ok: %+v", idx, msg)
+		}
+	}
+
+	raw := runInstallStep(m, 99)()
+	msg, ok := raw.(stepDoneMsg)
+	if !ok || !msg.ok || msg.idx != 99 {
+		t.Fatalf("out-of-range idx: got %+v (ok=%t)", raw, ok)
 	}
 }
