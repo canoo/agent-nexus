@@ -34,12 +34,27 @@ const REQUIRED_EVENT_FIELDS = new Set([
   "ts",
 ]);
 const OPTIONAL_EVENT_FIELDS = new Set(["error"]);
+// Extended metadata fields (all optional). Metadata only: sizes, hashes,
+// correlation IDs — never prompt/response content. See "Privacy And Retention"
+// in docs/observability-schema.md.
+const EXTENDED_EVENT_FIELDS = new Set([
+  "input_bytes",
+  "output_bytes",
+  "input_hash",
+  "trace_id",
+  "span_id",
+  "idempotency_key",
+  "quality_rating",
+]);
 const LEGACY_EVENT_FIELDS = new Set([
   ...REQUIRED_EVENT_FIELDS,
   "error",
   "id",
 ]);
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
+const HEX64_PATTERN = /^[0-9a-f]{64}$/;
+const CORRELATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 const SAFE_ERROR_CODES = new Set([
   "ollama_unreachable",
   "ollama_http_error",
@@ -88,7 +103,7 @@ export function normalizeMcpTaskEvent(rawEvent) {
   }
 
   for (const key of Object.keys(rawEvent)) {
-    if (!REQUIRED_EVENT_FIELDS.has(key) && !OPTIONAL_EVENT_FIELDS.has(key)) {
+    if (!REQUIRED_EVENT_FIELDS.has(key) && !OPTIONAL_EVENT_FIELDS.has(key) && !EXTENDED_EVENT_FIELDS.has(key)) {
       throw new TypeError(`MCP task event contains unsupported field: ${key}`);
     }
   }
@@ -96,7 +111,10 @@ export function normalizeMcpTaskEvent(rawEvent) {
     if (!(key in rawEvent)) throw new TypeError(`MCP task event is missing ${key}`);
   }
 
-  const { tool, model, routing, tokens_in, tokens_out, cloud_cost_equivalent, ms, ok, ts, error } = rawEvent;
+  const {
+    tool, model, routing, tokens_in, tokens_out, cloud_cost_equivalent, ms, ok, ts, error,
+    input_bytes, output_bytes, input_hash, trace_id, span_id, idempotency_key, quality_rating,
+  } = rawEvent;
   if (typeof tool !== "string" || !MCP_TOOLS.has(tool)) {
     throw new TypeError("tool must be an allowlisted MCP tool");
   }
@@ -118,12 +136,32 @@ export function normalizeMcpTaskEvent(rawEvent) {
   if (error !== undefined && (typeof error !== "string" || !SAFE_ERROR_CODES.has(error))) {
     throw new TypeError("error must be an allowlisted safe error code");
   }
+  if (input_bytes !== undefined) assertSafeInteger(input_bytes, "input_bytes");
+  if (output_bytes !== undefined) assertSafeInteger(output_bytes, "output_bytes");
+  if (input_hash !== undefined && (typeof input_hash !== "string" || !HEX64_PATTERN.test(input_hash))) {
+    throw new TypeError("input_hash must be a 64-character lowercase hex sha256 digest");
+  }
+  if (trace_id !== undefined && (typeof trace_id !== "string" || !CORRELATION_ID_PATTERN.test(trace_id))) {
+    throw new TypeError("trace_id must be 1-64 chars of letters, digits, ., _, -");
+  }
+  if (span_id !== undefined && (typeof span_id !== "string" || !CORRELATION_ID_PATTERN.test(span_id))) {
+    throw new TypeError("span_id must be 1-64 chars of letters, digits, ., _, -");
+  }
+  if (idempotency_key !== undefined && (typeof idempotency_key !== "string" || !IDEMPOTENCY_KEY_PATTERN.test(idempotency_key))) {
+    throw new TypeError("idempotency_key must be 1-128 chars of letters, digits, ., _, -");
+  }
+  if (quality_rating !== undefined && (!Number.isInteger(quality_rating) || quality_rating < 1 || quality_rating > 5)) {
+    throw new TypeError("quality_rating must be an integer 1-5");
+  }
 
   const timestamp = new Date(ts);
   if (Number.isNaN(timestamp.getTime())) throw new TypeError("ts must be a valid Unix timestamp");
 
+  // trace_id/span_id default to fresh correlation values so every row carries
+  // them even when the caller has no distributed trace to propagate.
+  const id = randomUUID();
   return Object.freeze({
-    id: randomUUID(),
+    id,
     tool,
     model,
     routing,
@@ -134,6 +172,13 @@ export function normalizeMcpTaskEvent(rawEvent) {
     ok,
     ts,
     ...(error === undefined ? {} : { error }),
+    ...(input_bytes === undefined ? {} : { input_bytes }),
+    ...(output_bytes === undefined ? {} : { output_bytes }),
+    ...(input_hash === undefined ? {} : { input_hash }),
+    trace_id: trace_id ?? randomUUID(),
+    span_id: span_id ?? id,
+    ...(idempotency_key === undefined ? {} : { idempotency_key }),
+    ...(quality_rating === undefined ? {} : { quality_rating }),
     timestamp: timestamp.toISOString(),
   });
 }
@@ -184,6 +229,22 @@ function applyMigrations(database, migrations) {
 function routeBandFor(tool, model) {
   if (model === "fast-path") return "fast-path";
   return tool === "ollama_lint_fix" || tool === "ollama_logic_refactor" ? "logic" : "supervisor";
+}
+
+/**
+ * Actual spend per million tokens by model provider. Local providers cost $0
+ * here; this table is the extension point for future cloud-routed models
+ * (see "Cost Estimation" in docs/observability-schema.md). Unknown providers
+ * are treated as zero-cost rather than guessed.
+ */
+export const MODEL_USD_PRICES_PER_1M = Object.freeze({
+  ollama: Object.freeze({ input: 0, output: 0 }),
+  "fast-path": Object.freeze({ input: 0, output: 0 }),
+});
+
+function actualCostUsd(provider, tokensIn, tokensOut) {
+  const prices = MODEL_USD_PRICES_PER_1M[provider] ?? { input: 0, output: 0 };
+  return (tokensIn / 1_000_000) * prices.input + (tokensOut / 1_000_000) * prices.output;
 }
 
 function sha256(value) {
@@ -392,13 +453,19 @@ export class ObservabilityStore {
         database.prepare(`INSERT INTO tasks (
           id, session_id, timestamp, source, tool, task_type, model,
           model_provider, route_band, routing, routing_reason, tokens_in,
-          tokens_out, total_tokens, latency_ms, cloud_cost_equivalent, ok, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          tokens_out, total_tokens, latency_ms, cloud_cost_equivalent, ok, error,
+          cost_usd, input_bytes, output_bytes, input_hash, trace_id, span_id,
+          idempotency_key, quality_rating
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(
             event.id, sessionId, event.timestamp, "mcp-tool", event.tool, event.tool,
             event.model, provider, routeBandFor(event.tool, event.model), event.routing,
             reason, event.tokens_in, event.tokens_out, event.tokens_in + event.tokens_out,
             event.ms, event.cloud_cost_equivalent, event.ok ? 1 : 0, event.error ?? null,
+            actualCostUsd(provider, event.tokens_in, event.tokens_out),
+            event.input_bytes ?? null, event.output_bytes ?? null, event.input_hash ?? null,
+            event.trace_id, event.span_id,
+            event.idempotency_key ?? null, event.quality_rating ?? null,
           );
 
         database.prepare(`INSERT INTO routing_decisions (

@@ -12,6 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { createObservabilityStore } from "./lib/observability-store.mjs";
+import { taskLogEntry } from "./lib/task-event.mjs";
 
 const OLLAMA_HOST_URL = process.env.OLLAMA_HOST_URL || "http://localhost:11434";
 const CONNECT_TIMEOUT_MS = 5000;
@@ -35,40 +36,6 @@ function recordMcpTask(entry) {
   }
 }
 
-// Early cost tracking uses a conservative cloud-equivalent estimate. Local
-// Ollama tasks cost $0 here; this value answers "what would this have cost if
-// routed to a typical cloud coding model?" until provider-specific pricing lands.
-const CLOUD_INPUT_USD_PER_1M = 3.0;
-const CLOUD_OUTPUT_USD_PER_1M = 15.0;
-
-function estimateTokens(text) {
-  if (!text) return 0;
-  return Math.ceil(text.length / 4);
-}
-
-function estimateCloudCost(tokensIn, tokensOut) {
-  return (tokensIn / 1_000_000) * CLOUD_INPUT_USD_PER_1M +
-    (tokensOut / 1_000_000) * CLOUD_OUTPUT_USD_PER_1M;
-}
-
-function taskLogEntry({ tool, model, ms, ok, prompt = "", response = "", error }) {
-  const tokensIn = estimateTokens(prompt);
-  const tokensOut = estimateTokens(response);
-  const routing = model === "fast-path" ? "deterministic" : "local";
-  const entry = {
-    tool,
-    model,
-    routing,
-    tokens_in: tokensIn,
-    tokens_out: tokensOut,
-    cloud_cost_equivalent: estimateCloudCost(tokensIn, tokensOut),
-    ms,
-    ok,
-    ts: Date.now(),
-  };
-  if (error) entry.error = error;
-  return entry;
-}
 
 // Never persist a provider Error.message: it can contain a response body, URL,
 // or source content. MCP callers still receive the original message below;
