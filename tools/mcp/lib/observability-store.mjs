@@ -1,9 +1,12 @@
 /**
  * The MCP observability boundary intentionally accepts metadata only.  Prompt
  * and response content is used by the MCP server to calculate estimates, but
- * must never be handed to this module or written to either persistence target.
+ * must never be handed to this module or written to the SQLite persistence
+ * target.  The legacy JSONL compatibility log is no longer written; it is
+ * read exactly once by ensureLegacyJsonlImported() so historical rows land in
+ * SQLite, after which it is a frozen artifact.
  */
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -76,10 +79,6 @@ function defaultDatabaseFactory(path) {
   return new DatabaseSync(path, { enableForeignKeyConstraints: true });
 }
 
-function defaultAppendJsonl(path, line) {
-  appendFileSync(path, line);
-}
-
 function assertSafeInteger(value, field) {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new TypeError(`${field} must be a non-negative safe integer`);
@@ -94,8 +93,8 @@ function assertFiniteNonNegative(value, field) {
 
 /**
  * Rejects unknown fields instead of silently dropping them.  This makes a
- * future accidental call such as recordMcpTask({ prompt }) fail before either
- * SQLite or compatibility JSONL can receive sensitive content.
+ * future accidental call such as recordMcpTask({ prompt }) fail before the
+ * SQLite store can receive sensitive content.
  */
 export function normalizeMcpTaskEvent(rawEvent) {
   if (!rawEvent || typeof rawEvent !== "object" || Array.isArray(rawEvent)) {
@@ -317,18 +316,18 @@ function normalizeLegacyMcpTaskRow(rawRow) {
  * limited to file/database operations so consumers cannot bypass validation.
  */
 export class ObservabilityStore {
+  // jsonlPath is kept for the run-once legacy import and the manual
+  // importer script; recordMcpTask no longer writes the JSONL log.
   constructor({
     databasePath = DEFAULT_DATABASE_PATH,
     jsonlPath = DEFAULT_JSONL_PATH,
     migrationsDir = MIGRATIONS_DIR,
     databaseFactory = defaultDatabaseFactory,
-    appendJsonl = defaultAppendJsonl,
   } = {}) {
     this.databasePath = databasePath;
     this.jsonlPath = jsonlPath;
     this.migrationsDir = migrationsDir;
     this.databaseFactory = databaseFactory;
-    this.appendJsonl = appendJsonl;
   }
 
   migrate() {
@@ -340,33 +339,26 @@ export class ObservabilityStore {
     }
   }
 
+  // SQLite is the single writer.  A store failure is reported in the
+  // result and never thrown: observability must not break an MCP response.
   recordMcpTask(rawEvent) {
     const event = normalizeMcpTaskEvent(rawEvent);
-    const result = { id: event.id, sqlite: { ok: false }, jsonl: { ok: false } };
+    const result = { id: event.id, sqlite: { ok: false } };
 
-    // These are deliberately independent attempts: neither compatibility log
-    // degradation nor SQLite degradation gets to suppress the other writer.
     try {
       this.#writeSqlite(event);
       result.sqlite.ok = true;
     } catch (error) {
       result.sqlite.error = error instanceof Error ? error.message : String(error);
     }
-
-    try {
-      this.#writeJsonl(event);
-      result.jsonl.ok = true;
-    } catch (error) {
-      result.jsonl.error = error instanceof Error ? error.message : String(error);
-    }
     return result;
   }
 
   /**
    * Import one local JSONL snapshot without invoking recordMcpTask(), because
-   * that public ingestion API intentionally emits a compatibility JSONL line.
-   * Receipts make preserved snapshots and normal append-only growth safe to
-   * import repeatedly.
+   * legacy rows must not be re-validated as live events or re-identified with
+   * fresh task IDs.  Receipts make preserved snapshots and normal append-only
+   * growth safe to import repeatedly.
    */
   importLegacyMcpJsonl({ inputPath = DEFAULT_JSONL_PATH } = {}) {
     if (typeof inputPath !== "string" || inputPath.length === 0 || inputPath.startsWith("file:")) {
@@ -595,26 +587,6 @@ export class ObservabilityStore {
     } finally {
       database.close();
     }
-  }
-
-  #writeJsonl(event) {
-    ensurePrivateDirectory(dirname(this.jsonlPath));
-    // Keep the established compatibility fields and their familiar ordering;
-    // `id` is deliberately additive for older JSONL readers.
-    const jsonlEvent = {
-      tool: event.tool,
-      model: event.model,
-      routing: event.routing,
-      tokens_in: event.tokens_in,
-      tokens_out: event.tokens_out,
-      cloud_cost_equivalent: event.cloud_cost_equivalent,
-      ms: event.ms,
-      ok: event.ok,
-      ts: event.ts,
-      ...(event.error === undefined ? {} : { error: event.error }),
-      id: event.id,
-    };
-    this.appendJsonl(this.jsonlPath, `${JSON.stringify(jsonlEvent)}\n`);
   }
 }
 

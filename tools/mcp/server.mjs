@@ -19,9 +19,8 @@ const CONNECT_TIMEOUT_MS = 5000;
 const REQUEST_TIMEOUT_MS = 120000;
 
 // ── Task log ────────────────────────────────────────────────────────────────
-// The store owns both SQLite and the temporary JSONL compatibility write.  Its
-// failure result is intentionally ignored here: logging can never change an
-// MCP response or prevent the other persistence target from being attempted.
+// The store is the single SQLite writer for task events.  Its failure result
+// is intentionally ignored here: logging can never change an MCP response.
 const observabilityStore = createObservabilityStore();
 
 function recordMcpTask(entry) {
