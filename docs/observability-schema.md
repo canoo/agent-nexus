@@ -220,14 +220,21 @@ LIMIT 20;
 
 ## Migration Plan
 
-1. Add a small SQLite writer used by the MCP server for new task rows.
-2. Keep JSONL writes temporarily so older TUI builds can still display task
-   history.
-3. Add a one-time importer that reads `mcp-tasks.jsonl` and writes missing rows
-   into SQLite using deterministic task IDs.
-4. Update the TUI Task Log and dashboard screens to prefer SQLite and fall back
-   to JSONL when the database is absent.
-5. Remove JSONL writes only after one release cycle with SQLite enabled.
+1. ✅ Add a small SQLite writer used by the MCP server for new task rows.
+   (Done: `tools/mcp/lib/observability-store.mjs`.)
+2. ✅ Keep JSONL writes temporarily so older TUI builds can still display task
+   history. (Done: the JSONL writer is unchanged and still written on every
+   task event.)
+3. ⏳ Add a one-time importer that reads `mcp-tasks.jsonl` and writes missing rows
+   into SQLite using deterministic task IDs. (Not started.)
+4. ✅ Update the TUI Task Log and dashboard screens to prefer SQLite and fall back
+   to JSONL when the database is absent. (Done: `tools/tui/tasklog_sqlite.go`
+   reads `observability.sqlite` first via `modernc.org/sqlite` in WAL mode and
+   falls back to `mcp-tasks.jsonl` on any failure. Both the Task Log screen
+   and the Usage & Cost Dashboard go through `loadTaskLog()`, so both inherit
+   the preference.)
+5. ⏳ Remove JSONL writes only after one release cycle with SQLite enabled.
+   (Not started.)
 
 ## Cost Estimation
 
