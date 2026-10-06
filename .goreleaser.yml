@@ -23,6 +23,11 @@ archives:
 
 checksum:
   name_template: "checksums.txt"
+  # install.sh is uploaded via release.extra_files but GoReleaser only
+  # checksums built archives by default; without this entry the TUI's
+  # self-update checksum lookup for install.sh always fails.
+  extra_files:
+    - glob: install.sh
 
 release:
   github:

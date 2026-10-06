@@ -796,3 +796,31 @@ func TestConfigureMCP_RejectsNullWithoutPanic(t *testing.T) {
 		})
 	}
 }
+
+func TestSelfUpdateScriptVerifiesInstallSh(t *testing.T) {
+	script := selfUpdateScript()
+	for _, want := range []string{
+		"checksums.txt",
+		`$2 == "install.sh"`,
+		"install.sh",
+		`"${BASE}/checksums.txt"`,
+		"shasum -a 256 --check",
+		"sha256sum --check",
+		// The tag must reach the script as $1, never interpolated into the text.
+		`TAG="$1"`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("self-update script missing %q", want)
+		}
+	}
+	// v${TAG} is fine: TAG is a shell variable assigned from $1, never a
+	// hardcoded version interpolated into the script text.
+	for _, bad := range []string{"0.2.1", "latest", `"v"` + "0.2"} {
+		if strings.Contains(script, bad) {
+			t.Errorf("self-update script interpolates a version: contains %q", bad)
+		}
+	}
+	if !strings.Contains(script, "exit 1") {
+		t.Error("self-update script should fail closed when the checksum entry is missing")
+	}
+}
