@@ -688,7 +688,7 @@ func installStepSymlinkConfigDirs(idx int, m model) stepDoneMsg {
 		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: /home/cano unset"}
 	}
 	configDir := filepath.Join(home, ".config", "nexus")
-	dirs := []string{"core", "personas", "tools", "prompts", "mcp-configs", "agent-memory"}
+	dirs := []string{"core", "personas", "tools", "prompts", "agent-memory"}
 	for _, d := range dirs {
 		if err := safeLink(filepath.Join(nexus, d), filepath.Join(configDir, d)); err != nil {
 			return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
@@ -1633,7 +1633,6 @@ func checkHealth(nexusDir, ollamaURL string, claudeSessionRetentionDays int, tok
 			{"Personas", filepath.Join(home, ".config", "nexus", "personas")},
 			{"Tools", filepath.Join(home, ".config", "nexus", "tools")},
 			{"Prompts", filepath.Join(home, ".config", "nexus", "prompts")},
-			{"MCP Configs", filepath.Join(home, ".config", "nexus", "mcp-configs")},
 			{"Agent Memory", filepath.Join(home, ".config", "nexus", "agent-memory")},
 		}
 		for _, l := range links {

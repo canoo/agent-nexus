@@ -7,7 +7,7 @@ NEXUS_REPO="$(cd "$(dirname "$0")" && pwd)"
 echo "Setting up NEXUS Framework from: $NEXUS_REPO"
 
 # Validate that the repo looks correct before touching anything.
-for required in core/NEXUS.md core/CLAUDE.md core/kiro-nexus-steering.md personas tools prompts mcp-configs agent-memory; do
+for required in core/NEXUS.md core/CLAUDE.md core/kiro-nexus-steering.md personas tools prompts agent-memory; do
     if [ ! -e "$NEXUS_REPO/$required" ]; then
         echo "ERROR: Missing required path: $NEXUS_REPO/$required"
         echo "Is this a complete agent-nexus clone? Aborting."
@@ -96,7 +96,7 @@ safe_link "$NEXUS_REPO/core/kiro-nexus-steering.md"  "$KIRO_STEERING_DIR/nexus-o
 echo ""
 echo "Linking config directories..."
 # core is linked because core/CLAUDE.md imports ~/.config/nexus/core/NEXUS.md.
-for dir in core personas tools prompts mcp-configs agent-memory; do
+for dir in core personas tools prompts agent-memory; do
     safe_link "$NEXUS_REPO/$dir" "$CONFIG_NEXUS_DIR/$dir"
 done
 
@@ -229,7 +229,6 @@ for link in \
     "$CONFIG_NEXUS_DIR/personas" \
     "$CONFIG_NEXUS_DIR/tools" \
     "$CONFIG_NEXUS_DIR/prompts" \
-    "$CONFIG_NEXUS_DIR/mcp-configs" \
     "$CONFIG_NEXUS_DIR/agent-memory"; do
     if [ ! -e "$link" ]; then
         echo "  BROKEN: $link -> $(readlink "$link")"

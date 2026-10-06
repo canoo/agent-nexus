@@ -1060,10 +1060,10 @@ func TestInstallStepSymlinkConfigDirs(t *testing.T) {
 	m.nexusDir = dir
 
 	msg := installStepSymlinkConfigDirs(2, m)
-	if !msg.ok || msg.idx != 2 || msg.detail != "6 directories linked" {
+	if !msg.ok || msg.idx != 2 || msg.detail != "5 directories linked" {
 		t.Fatalf("got %+v", msg)
 	}
-	for _, d := range []string{"core", "personas", "tools", "prompts", "mcp-configs", "agent-memory"} {
+	for _, d := range []string{"core", "personas", "tools", "prompts", "agent-memory"} {
 		dst := filepath.Join(home, ".config", "nexus", d)
 		target, err := os.Readlink(dst)
 		if err != nil {
