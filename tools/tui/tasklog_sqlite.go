@@ -65,6 +65,7 @@ type sqliteTaskRow struct {
 	routing             sql.NullString
 	taskType            sql.NullString
 	modelProvider       sql.NullString
+	routeBand           sql.NullString
 	tokensIn            sql.NullInt64
 	tokensOut           sql.NullInt64
 	latencyMs           sql.NullInt64
@@ -84,6 +85,7 @@ func (r sqliteTaskRow) toEntry() taskLogEntry {
 		Routing:             r.routing.String,
 		TaskType:            r.taskType.String,
 		ModelProvider:       r.modelProvider.String,
+		RouteBand:           r.routeBand.String,
 		TokensIn:            int(r.tokensIn.Int64),
 		TokensOut:           int(r.tokensOut.Int64),
 		CloudCostEquivalent: r.cloudCostEquivalent.Float64,
@@ -110,7 +112,7 @@ func loadTaskLogSQLiteFrom(dbPath string) ([]taskLogEntry, error) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT tool, model, routing, task_type, model_provider,
+	rows, err := db.Query(`SELECT tool, model, routing, task_type, model_provider, route_band,
 		tokens_in, tokens_out, latency_ms, ok, error, timestamp,
 		cloud_cost_equivalent, cost_usd, input_bytes, output_bytes
 		FROM tasks ORDER BY timestamp DESC LIMIT 50`)
@@ -123,7 +125,7 @@ func loadTaskLogSQLiteFrom(dbPath string) ([]taskLogEntry, error) {
 	for rows.Next() {
 		var r sqliteTaskRow
 		if err := rows.Scan(
-			&r.tool, &r.model, &r.routing, &r.taskType, &r.modelProvider,
+			&r.tool, &r.model, &r.routing, &r.taskType, &r.modelProvider, &r.routeBand,
 			&r.tokensIn, &r.tokensOut, &r.latencyMs, &r.ok, &r.errText, &r.timestamp,
 			&r.cloudCostEquivalent, &r.costUSD, &r.inputBytes, &r.outputBytes,
 		); err != nil {

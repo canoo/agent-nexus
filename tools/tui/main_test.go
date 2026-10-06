@@ -651,30 +651,37 @@ func TestSummarizeTokscaleUsage(t *testing.T) {
 
 func TestSummarizeTaskLog(t *testing.T) {
 	entries := []taskLogEntry{
-		{Tool: "ollama_commit_msg", Model: "qwen2.5-coder:1.5b", Routing: "local", CloudCostEquivalent: 0.001, Ms: 10, Ok: true},
-		{Tool: "ollama_boilerplate", Model: "qwen2.5-coder:1.5b", Routing: "local", CloudCostEquivalent: 0.002, Ms: 20, Ok: true},
-		{Tool: "ollama_commit_msg", Model: "fast-path", Routing: "deterministic", CloudCostEquivalent: 0.001, Ms: 0, Ok: true},
-		{Tool: "ollama_lint_fix", Model: "llama3.2:3b", Routing: "local", CloudCostEquivalent: 0.003, Ms: 30, Ok: false},
+		{Tool: "ollama_commit_msg", Model: "qwen2.5-coder:1.5b", Routing: "local", RouteBand: "supervisor", CloudCostEquivalent: 0.001, CostUSD: 0.0002, Ms: 10, Ok: true},
+		{Tool: "ollama_boilerplate", Model: "qwen2.5-coder:1.5b", Routing: "local", RouteBand: "supervisor", CloudCostEquivalent: 0.002, Ms: 20, Ok: true},
+		{Tool: "ollama_commit_msg", Model: "fast-path", Routing: "deterministic", RouteBand: "fast-path", CloudCostEquivalent: 0.001, Ms: 0, Ok: true},
+		{Tool: "ollama_lint_fix", Model: "llama3.2:3b", Routing: "local", RouteBand: "logic", CloudCostEquivalent: 0.003, Ms: 30, Ok: false},
+		{Tool: "cloud_delegate", Model: "cloud-model", Routing: "cloud", RouteBand: "cloud", CloudCostEquivalent: 0.005, CostUSD: 0.004, Ms: 40, Ok: true},
 	}
 
 	stats := summarizeTaskLog(entries)
-	if stats.total != 4 {
-		t.Errorf("total: got %d, want 4", stats.total)
+	if stats.total != 5 {
+		t.Errorf("total: got %d, want 5", stats.total)
 	}
-	if stats.successes != 3 {
-		t.Errorf("successes: got %d, want 3", stats.successes)
+	if stats.successes != 4 {
+		t.Errorf("successes: got %d, want 4", stats.successes)
 	}
 	if stats.failures != 1 {
 		t.Errorf("failures: got %d, want 1", stats.failures)
 	}
-	if stats.avgMs != 15 {
-		t.Errorf("avgMs: got %d, want 15", stats.avgMs)
+	if stats.avgMs != 20 {
+		t.Errorf("avgMs: got %d, want 20", stats.avgMs)
 	}
-	if stats.p95Ms != 30 {
-		t.Errorf("p95Ms: got %d, want 30", stats.p95Ms)
+	if stats.p95Ms != 40 {
+		t.Errorf("p95Ms: got %d, want 40", stats.p95Ms)
 	}
-	if math.Abs(stats.savingsUSD-0.007) > 0.000001 {
-		t.Errorf("savingsUSD: got %f, want 0.007", stats.savingsUSD)
+	if math.Abs(stats.savingsUSD-0.0068) > 0.000001 {
+		t.Errorf("savingsUSD: got %f, want 0.0068", stats.savingsUSD)
+	}
+	if math.Abs(stats.cloudUSD-0.007) > 0.000001 || math.Abs(stats.costUSD-0.0002) > 0.000001 {
+		t.Errorf("cost totals: cloud=%f local=%f", stats.cloudUSD, stats.costUSD)
+	}
+	if stats.routeBands["supervisor"] != 2 || stats.routeBands["fast-path"] != 1 || stats.routeBands["logic"] != 1 || stats.routeBands["cloud"] != 1 {
+		t.Errorf("route bands: %#v", stats.routeBands)
 	}
 	if stats.modelTasks["qwen2.5-coder:1.5b"] != 2 {
 		t.Errorf("qwen count: got %d, want 2", stats.modelTasks["qwen2.5-coder:1.5b"])

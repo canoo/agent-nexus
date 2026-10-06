@@ -84,7 +84,7 @@ func TestLoadTaskLogSQLite_ReadsPopulatedColumns(t *testing.T) {
 	if e.Tool != "ollama_commit_msg" || e.Model != "qwen2.5-coder:1.5b" {
 		t.Errorf("identity mismatch: %+v", e)
 	}
-	if e.Routing != "local" || e.TaskType != "ollama_commit_msg" || e.ModelProvider != "ollama" {
+	if e.Routing != "local" || e.TaskType != "ollama_commit_msg" || e.ModelProvider != "ollama" || e.RouteBand != "supervisor" {
 		t.Errorf("routing/type/provider mismatch: %+v", e)
 	}
 	if e.TokensIn != 100 || e.TokensOut != 50 || e.Ms != 42 {
@@ -130,7 +130,7 @@ func TestLoadTaskLogSQLite_NullableColumnsDefaultCleanly(t *testing.T) {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
 	}
 	e := entries[0]
-	if e.Ok || e.Tool != "" || e.TaskType != "" || e.ModelProvider != "" {
+	if e.Ok || e.Tool != "" || e.TaskType != "" || e.ModelProvider != "" || e.RouteBand != "" {
 		t.Errorf("nullable columns should zero-value: %+v", e)
 	}
 	if e.TokensIn != 0 || e.CostUSD != 0 || e.InputBytes != 0 {
