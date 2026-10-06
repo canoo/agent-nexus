@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Run this ON THE LLM PC (The machine with the GPU)
+# setup-llm-server.sh — one-shot manual runbook for provisioning a remote LLM
+# PC (the machine with the GPU). NOT part of any automated flow and NOT
+# referenced by the TUI, installers, or CI — run it by hand on a fresh GPU
+# box to install Ollama, expose it on the LAN via systemd, and open the
+# firewall. Kept intentionally as a provisioning helper.
 set -e
 
 echo "Configuring Ollama as a Headless Network AI Server..."
