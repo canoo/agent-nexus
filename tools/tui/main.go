@@ -1325,8 +1325,8 @@ func updateConfigure(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "enter":
 				if m.configKeys[m.configCursor] == claudeSessionRetentionKey {
-					days, valid := parseClaudeSessionRetentionDays(m.editBuf)
-					m.configVals[m.configCursor] = strconv.Itoa(days)
+					normalized, valid := normalizeClaudeSessionRetention(m.editBuf)
+					m.configVals[m.configCursor] = normalized
 					if !valid {
 						m.output = fmt.Sprintf("Invalid %s; using default %d days", claudeSessionRetentionKey, defaultClaudeSessionRetention)
 						m.err = nil
@@ -1831,8 +1831,7 @@ func loadEnv(m *model) {
 		for i, k := range m.configKeys {
 			if k == key {
 				if k == claudeSessionRetentionKey {
-					days, _ := parseClaudeSessionRetentionDays(val)
-					m.configVals[i] = strconv.Itoa(days)
+					m.configVals[i], _ = normalizeClaudeSessionRetention(val)
 				} else {
 					m.configVals[i] = val
 				}
@@ -1847,8 +1846,7 @@ func saveEnv(m model) error {
 	for i, key := range m.configKeys {
 		value := m.configVals[i]
 		if key == claudeSessionRetentionKey {
-			days, _ := parseClaudeSessionRetentionDays(value)
-			value = strconv.Itoa(days)
+			value, _ = normalizeClaudeSessionRetention(value)
 		}
 		lines = append(lines, fmt.Sprintf("%s=%q", key, value))
 	}
@@ -1867,10 +1865,23 @@ func parseClaudeSessionRetentionDays(raw string) (days int, valid bool) {
 	return days, true
 }
 
+// normalizeClaudeSessionRetention is the single normalization point for the
+// NEXUS_CLAUDE_SESSION_RETENTION_DAYS setting. It parses raw input with
+// parseClaudeSessionRetentionDays and returns the canonical stored form: the
+// valid day count as a string, or the default when the input is malformed or
+// negative. All four touch points (loadEnv, saveEnv, the updateConfigure
+// commit branch, and configuredClaudeSessionRetentionDays) route through here
+// so the fallback rules cannot silently drift apart again.
+func normalizeClaudeSessionRetention(raw string) (normalized string, valid bool) {
+	days, valid := parseClaudeSessionRetentionDays(raw)
+	return strconv.Itoa(days), valid
+}
+
 func configuredClaudeSessionRetentionDays(m model) int {
 	for i, key := range m.configKeys {
 		if key == claudeSessionRetentionKey && i < len(m.configVals) {
-			days, _ := parseClaudeSessionRetentionDays(m.configVals[i])
+			normalized, _ := normalizeClaudeSessionRetention(m.configVals[i])
+			days, _ := strconv.Atoi(normalized) // cannot fail: normalize emits Itoa output
 			return days
 		}
 	}

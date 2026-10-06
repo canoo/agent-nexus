@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -822,5 +823,101 @@ func TestSelfUpdateScriptVerifiesInstallSh(t *testing.T) {
 	}
 	if !strings.Contains(script, "exit 1") {
 		t.Error("self-update script should fail closed when the checksum entry is missing")
+	}
+}
+
+func TestNormalizeClaudeSessionRetention(t *testing.T) {
+	tests := []struct {
+		name  string
+		raw   string
+		want  string
+		valid bool
+	}{
+		{name: "valid days", raw: "7", want: "7", valid: true},
+		{name: "zero is valid", raw: "0", want: "0", valid: true},
+		{name: "trims whitespace", raw: "  45 ", want: "45", valid: true},
+		{name: "strips leading zeros", raw: "007", want: "7", valid: true},
+		{name: "empty falls back to default", raw: "", want: "30", valid: false},
+		{name: "text falls back to default", raw: "thirty", want: "30", valid: false},
+		{name: "negative falls back to default", raw: "-2", want: "30", valid: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, valid := normalizeClaudeSessionRetention(tt.raw)
+			if got != tt.want || valid != tt.valid {
+				t.Fatalf("normalizeClaudeSessionRetention(%q) = (%q, %t), want (%q, %t)",
+					tt.raw, got, valid, tt.want, tt.valid)
+			}
+		})
+	}
+}
+
+// retentionKeyIndex returns the configVals index of the retention key.
+func retentionKeyIndex(m model) int {
+	for i, key := range m.configKeys {
+		if key == claudeSessionRetentionKey {
+			return i
+		}
+	}
+	return -1
+}
+
+// TestRetentionNormalizationIsConsistentAcrossTouchPoints guards the exact
+// failure mode of the #102 silent merge: four copies of the same fallback
+// logic drifting apart. Every touch point must produce the identical
+// canonical string for the same raw input.
+func TestRetentionNormalizationIsConsistentAcrossTouchPoints(t *testing.T) {
+	for _, raw := range []string{"29", "0", "007", " 14 ", "-5", "junk", ""} {
+		want, _ := normalizeClaudeSessionRetention(raw)
+
+		// Touch point 1: loadEnv.
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ".env"),
+			[]byte(claudeSessionRetentionKey+"=\""+raw+"\"\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		m := initialModel()
+		m.nexusDir = dir
+		loadEnv(&m)
+		if got := m.configVals[retentionKeyIndex(m)]; got != want {
+			t.Errorf("raw %q: loadEnv = %q, want %q", raw, got, want)
+		}
+
+		// Touch point 2: saveEnv.
+		m2 := initialModel()
+		m2.nexusDir = dir
+		m2.configVals[retentionKeyIndex(m2)] = raw
+		if err := saveEnv(m2); err != nil {
+			t.Fatalf("raw %q: saveEnv failed: %v", raw, err)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, ".env"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if wantLine := claudeSessionRetentionKey + "=\"" + want + "\""; !strings.Contains(string(data), wantLine) {
+			t.Errorf("raw %q: saveEnv wrote %q, want line %q", raw, data, wantLine)
+		}
+
+		// Touch point 3: updateConfigure commit branch.
+		m3 := initialModel()
+		m3.screen = screenConfigure
+		m3.configCursor = retentionKeyIndex(m3)
+		m3.configEditing = true
+		m3.editBuf = raw
+		updated, _ := m3.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
+		got3 := updated.(model)
+		if got3.configVals[retentionKeyIndex(got3)] != want {
+			t.Errorf("raw %q: updateConfigure commit = %q, want %q",
+				raw, got3.configVals[retentionKeyIndex(got3)], want)
+		}
+
+		// Touch point 4: configuredClaudeSessionRetentionDays.
+		m4 := initialModel()
+		m4.configVals[retentionKeyIndex(m4)] = raw
+		wantDays, _ := strconv.Atoi(want)
+		if got := configuredClaudeSessionRetentionDays(m4); got != wantDays {
+			t.Errorf("raw %q: configuredClaudeSessionRetentionDays = %d, want %d", raw, got, wantDays)
+		}
 	}
 }
