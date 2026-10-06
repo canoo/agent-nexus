@@ -85,13 +85,21 @@ The `nexus-ollama` MCP server exposes local Ollama delegation as standard MCP to
   "mcpServers": {
     "nexus-ollama": {
       "command": "node",
-      "args": ["~/.config/nexus/tools/mcp/server.mjs"]
+      "args": ["/home/you/.config/nexus/tools/mcp/server.mjs"]
     }
   }
 }
 ```
 
-Available tools: `ollama_commit_msg`, `ollama_boilerplate`, `ollama_test_scaffold`, `ollama_lint_fix`, `ollama_logic_refactor`.
+Use your absolute home path — MCP clients do not expand `~` in `args`.
+(The TUI Install screen and `setup-nexus.sh` register the server automatically
+with the correct absolute path, so manual configuration is usually unnecessary.)
+
+Available tools: `ollama_health`, `ollama_commit_msg`, `ollama_boilerplate`, `ollama_test_scaffold`, `ollama_lint_fix`, `ollama_logic_refactor`.
+
+`ollama_health` checks that the local Ollama instance is reachable and lists
+available models, so an AI client can verify the local compute plane is up
+before delegating tasks to it.
 
 ### 5. TUI for setup and health
 
