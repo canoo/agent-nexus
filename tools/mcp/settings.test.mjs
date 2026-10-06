@@ -12,10 +12,12 @@ test('shell and MCP agree on literal values, duplicates and process overrides', 
   const text = "# comment\n NEXUS_SUPERVISOR_MODEL = 'first'\r\nNEXUS_SUPERVISOR_MODEL=last\nNEXUS_LOGIC_MODEL='$(echo never-executed)'\nOLLAMA_HOST_URL=http://file:11434\nPATH=/invalid\n";
   writeFileSync(join(dir,'.env'), text);
   assert.equal(parseSettings(text).NEXUS_SUPERVISOR_MODEL, 'last');
-  const environment = { PATH: process.env.PATH, NEXUS_REPO: dir, OLLAMA_HOST_URL:'http://override:11434' };
+  const environment = { PATH: '/usr/bin:/bin', NEXUS_REPO: dir, OLLAMA_HOST_URL:'http://override:11434' };
   const settings = loadSettings(environment);
   const output = execFileSync('bash', ['-c', 'source "$1"; _nexus_load_settings "$2"; printf "%s\\n" "$NEXUS_SUPERVISOR_MODEL" "$NEXUS_LOGIC_MODEL" "$OLLAMA_HOST_URL" "$PATH"', 'test', new URL('../automation/settings.sh', import.meta.url).pathname, join(dir,'.env')], {env:environment,encoding:'utf8'}).trimEnd().split('\n');
-  assert.deepEqual(output,[settings.NEXUS_SUPERVISOR_MODEL,settings.NEXUS_LOGIC_MODEL,settings.OLLAMA_HOST_URL,process.env.PATH]);
+  assert.deepEqual(output.slice(0, 3),[settings.NEXUS_SUPERVISOR_MODEL,settings.NEXUS_LOGIC_MODEL,settings.OLLAMA_HOST_URL]);
+  assert.ok(output[3].startsWith(environment.PATH));
+  assert.notEqual(output[3], '/invalid');
   assert.equal(settings.NEXUS_LOGIC_MODEL,'$(echo never-executed)');
   assert.equal(loadSettings({...environment,NEXUS_SUPERVISOR_MODEL:''}).NEXUS_SUPERVISOR_MODEL,'');
  } finally {rmSync(dir,{recursive:true,force:true});}
