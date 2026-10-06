@@ -6,6 +6,10 @@ on:
     - cron: '0 0 * * 0,3'
   workflow_dispatch: # Allow manual triggering
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   maintenance:
     name: Codebase Maintenance
@@ -72,6 +76,7 @@ jobs:
         run: |
           echo "Cleaning up artifacts and temporary files..."
           rm -rf tools/tui/nexus
+          rm -rf tools/tui/tui
           rm -rf .tmp/
           find . -name "*.log" -type f -delete
           echo "Cleanup complete."
