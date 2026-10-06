@@ -51,26 +51,21 @@ test("migrations are owned, transactional, and idempotent", (t) => {
   assert.equal(existsSync(databasePath), true);
   assert.equal(existsSync(jsonlPath), false);
   readDatabase(databasePath, (database) => {
-    assert.deepEqual(database.prepare("SELECT version FROM schema_migrations").all().map(plain), [{ version: 1 }, { version: 2 }]);
+    assert.deepEqual(database.prepare("SELECT version FROM schema_migrations").all().map(plain), [{ version: 1 }, { version: 2 }, { version: 3 }]);
     const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all()
       .map(({ name }) => name);
-    assert.deepEqual(tables, ["legacy_import_receipts", "routing_decisions", "schema_migrations", "sessions", "tasks"]);
+    assert.deepEqual(tables, ["legacy_import_receipts", "routing_decisions", "schema_migrations", "sessions", "store_meta", "tasks"]);
   });
 });
 
-test("one safe event creates compatibility JSONL plus its SQLite task, session, and routing decision", (t) => {
+test("one safe event creates only its SQLite task, session, and routing decision", (t) => {
   const { store, databasePath, jsonlPath } = temporaryStore(t);
   const result = store.recordMcpTask(event());
   assert.equal(result.sqlite.ok, true);
-  assert.equal(result.jsonl.ok, true);
 
-  const lines = readFileSync(jsonlPath, "utf8").trim().split("\n");
-  assert.equal(lines.length, 1);
-  const compatibility = JSON.parse(lines[0]);
-  assert.equal(compatibility.id, result.id);
-  assert.deepEqual(Object.keys(compatibility), [
-    "tool", "model", "routing", "tokens_in", "tokens_out", "cloud_cost_equivalent", "ms", "ok", "ts", "id",
-  ]);
+  // The compatibility JSONL log is frozen: recording must not create or
+  // append to it.
+  assert.equal(existsSync(jsonlPath), false);
 
   readDatabase(databasePath, (database) => {
     assert.deepEqual(plain(database.prepare(`SELECT id, session_id, timestamp, source, tool, model,
@@ -122,7 +117,7 @@ test("fast-path uses deterministic routing and fast-path provider", (t) => {
   });
 });
 
-test("unknown and privacy-sensitive event fields are rejected before either persistence target", (t) => {
+test("unknown and privacy-sensitive event fields are rejected before persistence", (t) => {
   const { store, databasePath, jsonlPath } = temporaryStore(t);
   for (const field of ["prompt", "response", "source", "url", "title", "api_key", "source_diff"]) {
     assert.throws(() => store.recordMcpTask(event({ [field]: `private ${field} content` })), /unsupported field/);
@@ -142,29 +137,15 @@ test("provider error text resembling prompt, URL, and source content is rejected
   assert.equal(existsSync(jsonlPath), false);
 });
 
-test("a SQLite failure still attempts compatibility JSONL without throwing", (t) => {
-  const { store, jsonlPath } = temporaryStore(t, {
+test("a SQLite failure is reported in the result without throwing", (t) => {
+  const { store } = temporaryStore(t, {
     databaseFactory: () => { throw new Error("simulated sqlite outage"); },
   });
   const result = store.recordMcpTask(event());
   assert.equal(result.sqlite.ok, false);
   assert.match(result.sqlite.error, /simulated sqlite outage/);
-  assert.equal(result.jsonl.ok, true);
-  assert.equal(JSON.parse(readFileSync(jsonlPath, "utf8")).id, result.id);
 });
 
-test("a JSONL failure leaves the committed SQLite task intact", (t) => {
-  const { store, databasePath } = temporaryStore(t, {
-    appendJsonl: () => { throw new Error("simulated JSONL outage"); },
-  });
-  const result = store.recordMcpTask(event());
-  assert.equal(result.sqlite.ok, true);
-  assert.equal(result.jsonl.ok, false);
-  assert.match(result.jsonl.error, /simulated JSONL outage/);
-  readDatabase(databasePath, (database) => {
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM tasks").get().count, 1);
-  });
-});
 
 test("legacy JSONL import is idempotent, keeps its source unchanged, and preserves repeated rows", (t) => {
   const { store, databasePath, directory } = temporaryStore(t);

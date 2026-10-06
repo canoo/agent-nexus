@@ -24,14 +24,18 @@ The primary database is:
 ~/.config/nexus/logs/observability.sqlite
 ```
 
-The existing MCP JSONL log remains a compatibility source during migration:
+The old MCP JSONL log is a frozen legacy artifact:
 
 ```text
 ~/.config/nexus/logs/mcp-tasks.jsonl
 ```
 
-Writers should prefer SQLite once implemented. Readers may fall back to JSONL
-until the migration is complete.
+It is no longer written and nothing reads it. Its historical rows were
+absorbed into SQLite by the one-time import
+(`ensureLegacyJsonlImported()` in `tools/mcp/lib/observability-store.mjs`,
+run at MCP server startup); the manual importer
+(`tools/mcp/scripts/import-mcp-jsonl.mjs`) remains available for preserved
+snapshots. The existing file is kept on disk but untouched.
 
 ## Entity Model
 
@@ -136,7 +140,7 @@ CREATE INDEX IF NOT EXISTS idx_routing_decisions_task_id
 
 ## Field Mapping From MCP JSONL
 
-Current `mcp-tasks.jsonl` entries look like:
+Legacy `mcp-tasks.jsonl` entries looked like:
 
 ```json
 {"tool":"ollama_commit_msg","model":"qwen2.5-coder:1.5b","ms":42,"ok":true,"ts":1713890000000}
@@ -220,14 +224,30 @@ LIMIT 20;
 
 ## Migration Plan
 
-1. Add a small SQLite writer used by the MCP server for new task rows.
-2. Keep JSONL writes temporarily so older TUI builds can still display task
-   history.
-3. Add a one-time importer that reads `mcp-tasks.jsonl` and writes missing rows
-   into SQLite using deterministic task IDs.
-4. Update the TUI Task Log and dashboard screens to prefer SQLite and fall back
-   to JSONL when the database is absent.
-5. Remove JSONL writes only after one release cycle with SQLite enabled.
+1. ✅ Add a small SQLite writer used by the MCP server for new task rows.
+   (Done: `tools/mcp/lib/observability-store.mjs`.)
+2. ✅ Keep JSONL writes temporarily so older TUI builds can still display task
+   history. (Done: the JSONL writer is unchanged and still written on every
+   task event.)
+3. ✅ Add a one-time importer that reads `mcp-tasks.jsonl` and writes missing rows
+   into SQLite using deterministic task IDs. (Done:
+   `ObservabilityStore.ensureLegacyJsonlImported()` runs at MCP server
+   startup, guarded by the `legacy_jsonl_imported` marker in `store_meta`
+   (migration 003); the `legacy_import_receipts` table keeps re-runs and
+   concurrent startups exactly-once, and the manual importer stays available
+   for preserved snapshots.)
+4. ✅ Update the TUI Task Log and dashboard screens to prefer SQLite and fall back
+   to JSONL when the database is absent. (Done — and since tightened:
+   `tools/tui/tasklog_sqlite.go` reads `observability.sqlite` via
+   `modernc.org/sqlite` in WAL mode with no JSONL fallback; a missing or
+   unreadable database yields an empty log view. Both the Task Log screen
+   and the Usage & Cost Dashboard go through `loadTaskLog()`, so both inherit
+   the SQLite-only source.)
+5. ✅ Remove JSONL writes only after one release cycle with SQLite enabled.
+   (Done: `recordMcpTask()` in `tools/mcp/lib/observability-store.mjs` writes
+   SQLite only, and the TUI `loadTaskLogEntries()` reads SQLite only. The
+   JSONL file is frozen — never written, never read — and the run-once import
+   in step 3 absorbed its history.)
 
 ## Cost Estimation
 

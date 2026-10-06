@@ -12,15 +12,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { createObservabilityStore } from "./lib/observability-store.mjs";
+import { taskLogEntry } from "./lib/task-event.mjs";
 
 const OLLAMA_HOST_URL = process.env.OLLAMA_HOST_URL || "http://localhost:11434";
 const CONNECT_TIMEOUT_MS = 5000;
 const REQUEST_TIMEOUT_MS = 120000;
 
 // ── Task log ────────────────────────────────────────────────────────────────
-// The store owns both SQLite and the temporary JSONL compatibility write.  Its
-// failure result is intentionally ignored here: logging can never change an
-// MCP response or prevent the other persistence target from being attempted.
+// The store is the single SQLite writer for task events.  Its failure result
+// is intentionally ignored here: logging can never change an MCP response.
 const observabilityStore = createObservabilityStore();
 
 function recordMcpTask(entry) {
@@ -35,40 +35,6 @@ function recordMcpTask(entry) {
   }
 }
 
-// Early cost tracking uses a conservative cloud-equivalent estimate. Local
-// Ollama tasks cost $0 here; this value answers "what would this have cost if
-// routed to a typical cloud coding model?" until provider-specific pricing lands.
-const CLOUD_INPUT_USD_PER_1M = 3.0;
-const CLOUD_OUTPUT_USD_PER_1M = 15.0;
-
-function estimateTokens(text) {
-  if (!text) return 0;
-  return Math.ceil(text.length / 4);
-}
-
-function estimateCloudCost(tokensIn, tokensOut) {
-  return (tokensIn / 1_000_000) * CLOUD_INPUT_USD_PER_1M +
-    (tokensOut / 1_000_000) * CLOUD_OUTPUT_USD_PER_1M;
-}
-
-function taskLogEntry({ tool, model, ms, ok, prompt = "", response = "", error }) {
-  const tokensIn = estimateTokens(prompt);
-  const tokensOut = estimateTokens(response);
-  const routing = model === "fast-path" ? "deterministic" : "local";
-  const entry = {
-    tool,
-    model,
-    routing,
-    tokens_in: tokensIn,
-    tokens_out: tokensOut,
-    cloud_cost_equivalent: estimateCloudCost(tokensIn, tokensOut),
-    ms,
-    ok,
-    ts: Date.now(),
-  };
-  if (error) entry.error = error;
-  return entry;
-}
 
 // Never persist a provider Error.message: it can contain a response body, URL,
 // or source content. MCP callers still receive the original message below;
@@ -571,5 +537,22 @@ server.tool(
 );
 
 // ── Start ───────────────────────────────────────────────────────────────────
+// One-shot absorption of the legacy JSONL compatibility log into SQLite.  It
+// must run before the server starts recording new tasks, and it must never
+// prevent startup: an import failure only means legacy rows stay in the
+// frozen JSONL file, which is safe to import later with the manual importer.
+try {
+  const legacyImport = observabilityStore.ensureLegacyJsonlImported();
+  if (legacyImport.ran) {
+    const { imported, alreadyImported } = legacyImport.result;
+    console.error(
+      `NEXUS observability: legacy JSONL import complete — ${imported} imported, ${alreadyImported} already present`,
+    );
+  }
+} catch (error) {
+  console.error(
+    `NEXUS observability: legacy JSONL import skipped (${error instanceof Error ? error.message : String(error)})`,
+  );
+}
 const transport = new StdioServerTransport();
 await server.connect(transport);

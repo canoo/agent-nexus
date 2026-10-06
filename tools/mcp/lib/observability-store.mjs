@@ -1,9 +1,12 @@
 /**
  * The MCP observability boundary intentionally accepts metadata only.  Prompt
  * and response content is used by the MCP server to calculate estimates, but
- * must never be handed to this module or written to either persistence target.
+ * must never be handed to this module or written to the SQLite persistence
+ * target.  The legacy JSONL compatibility log is no longer written; it is
+ * read exactly once by ensureLegacyJsonlImported() so historical rows land in
+ * SQLite, after which it is a frozen artifact.
  */
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -34,12 +37,27 @@ const REQUIRED_EVENT_FIELDS = new Set([
   "ts",
 ]);
 const OPTIONAL_EVENT_FIELDS = new Set(["error"]);
+// Extended metadata fields (all optional). Metadata only: sizes, hashes,
+// correlation IDs — never prompt/response content. See "Privacy And Retention"
+// in docs/observability-schema.md.
+const EXTENDED_EVENT_FIELDS = new Set([
+  "input_bytes",
+  "output_bytes",
+  "input_hash",
+  "trace_id",
+  "span_id",
+  "idempotency_key",
+  "quality_rating",
+]);
 const LEGACY_EVENT_FIELDS = new Set([
   ...REQUIRED_EVENT_FIELDS,
   "error",
   "id",
 ]);
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
+const HEX64_PATTERN = /^[0-9a-f]{64}$/;
+const CORRELATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 const SAFE_ERROR_CODES = new Set([
   "ollama_unreachable",
   "ollama_http_error",
@@ -61,10 +79,6 @@ function defaultDatabaseFactory(path) {
   return new DatabaseSync(path, { enableForeignKeyConstraints: true });
 }
 
-function defaultAppendJsonl(path, line) {
-  appendFileSync(path, line);
-}
-
 function assertSafeInteger(value, field) {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new TypeError(`${field} must be a non-negative safe integer`);
@@ -79,8 +93,8 @@ function assertFiniteNonNegative(value, field) {
 
 /**
  * Rejects unknown fields instead of silently dropping them.  This makes a
- * future accidental call such as recordMcpTask({ prompt }) fail before either
- * SQLite or compatibility JSONL can receive sensitive content.
+ * future accidental call such as recordMcpTask({ prompt }) fail before the
+ * SQLite store can receive sensitive content.
  */
 export function normalizeMcpTaskEvent(rawEvent) {
   if (!rawEvent || typeof rawEvent !== "object" || Array.isArray(rawEvent)) {
@@ -88,7 +102,7 @@ export function normalizeMcpTaskEvent(rawEvent) {
   }
 
   for (const key of Object.keys(rawEvent)) {
-    if (!REQUIRED_EVENT_FIELDS.has(key) && !OPTIONAL_EVENT_FIELDS.has(key)) {
+    if (!REQUIRED_EVENT_FIELDS.has(key) && !OPTIONAL_EVENT_FIELDS.has(key) && !EXTENDED_EVENT_FIELDS.has(key)) {
       throw new TypeError(`MCP task event contains unsupported field: ${key}`);
     }
   }
@@ -96,7 +110,10 @@ export function normalizeMcpTaskEvent(rawEvent) {
     if (!(key in rawEvent)) throw new TypeError(`MCP task event is missing ${key}`);
   }
 
-  const { tool, model, routing, tokens_in, tokens_out, cloud_cost_equivalent, ms, ok, ts, error } = rawEvent;
+  const {
+    tool, model, routing, tokens_in, tokens_out, cloud_cost_equivalent, ms, ok, ts, error,
+    input_bytes, output_bytes, input_hash, trace_id, span_id, idempotency_key, quality_rating,
+  } = rawEvent;
   if (typeof tool !== "string" || !MCP_TOOLS.has(tool)) {
     throw new TypeError("tool must be an allowlisted MCP tool");
   }
@@ -118,12 +135,32 @@ export function normalizeMcpTaskEvent(rawEvent) {
   if (error !== undefined && (typeof error !== "string" || !SAFE_ERROR_CODES.has(error))) {
     throw new TypeError("error must be an allowlisted safe error code");
   }
+  if (input_bytes !== undefined) assertSafeInteger(input_bytes, "input_bytes");
+  if (output_bytes !== undefined) assertSafeInteger(output_bytes, "output_bytes");
+  if (input_hash !== undefined && (typeof input_hash !== "string" || !HEX64_PATTERN.test(input_hash))) {
+    throw new TypeError("input_hash must be a 64-character lowercase hex sha256 digest");
+  }
+  if (trace_id !== undefined && (typeof trace_id !== "string" || !CORRELATION_ID_PATTERN.test(trace_id))) {
+    throw new TypeError("trace_id must be 1-64 chars of letters, digits, ., _, -");
+  }
+  if (span_id !== undefined && (typeof span_id !== "string" || !CORRELATION_ID_PATTERN.test(span_id))) {
+    throw new TypeError("span_id must be 1-64 chars of letters, digits, ., _, -");
+  }
+  if (idempotency_key !== undefined && (typeof idempotency_key !== "string" || !IDEMPOTENCY_KEY_PATTERN.test(idempotency_key))) {
+    throw new TypeError("idempotency_key must be 1-128 chars of letters, digits, ., _, -");
+  }
+  if (quality_rating !== undefined && (!Number.isInteger(quality_rating) || quality_rating < 1 || quality_rating > 5)) {
+    throw new TypeError("quality_rating must be an integer 1-5");
+  }
 
   const timestamp = new Date(ts);
   if (Number.isNaN(timestamp.getTime())) throw new TypeError("ts must be a valid Unix timestamp");
 
+  // trace_id/span_id default to fresh correlation values so every row carries
+  // them even when the caller has no distributed trace to propagate.
+  const id = randomUUID();
   return Object.freeze({
-    id: randomUUID(),
+    id,
     tool,
     model,
     routing,
@@ -134,6 +171,13 @@ export function normalizeMcpTaskEvent(rawEvent) {
     ok,
     ts,
     ...(error === undefined ? {} : { error }),
+    ...(input_bytes === undefined ? {} : { input_bytes }),
+    ...(output_bytes === undefined ? {} : { output_bytes }),
+    ...(input_hash === undefined ? {} : { input_hash }),
+    trace_id: trace_id ?? randomUUID(),
+    span_id: span_id ?? id,
+    ...(idempotency_key === undefined ? {} : { idempotency_key }),
+    ...(quality_rating === undefined ? {} : { quality_rating }),
     timestamp: timestamp.toISOString(),
   });
 }
@@ -141,7 +185,9 @@ export function normalizeMcpTaskEvent(rawEvent) {
 function migrationsFrom(directory) {
   const migrations = readdirSync(directory)
     .map((name) => {
-      const match = /^(\d+)_[-A-Za-z0-9]+\.sql$/.exec(name);
+      // Migration names allow letters, digits, hyphens, and underscores
+      // (e.g. 003_store_meta.sql).
+      const match = /^(\d+)_[-A-Za-z0-9_]+\.sql$/.exec(name);
       if (!match) return null;
       return { version: Number(match[1]), name, sql: readFileSync(join(directory, name), "utf8") };
     })
@@ -184,6 +230,22 @@ function applyMigrations(database, migrations) {
 function routeBandFor(tool, model) {
   if (model === "fast-path") return "fast-path";
   return tool === "ollama_lint_fix" || tool === "ollama_logic_refactor" ? "logic" : "supervisor";
+}
+
+/**
+ * Actual spend per million tokens by model provider. Local providers cost $0
+ * here; this table is the extension point for future cloud-routed models
+ * (see "Cost Estimation" in docs/observability-schema.md). Unknown providers
+ * are treated as zero-cost rather than guessed.
+ */
+export const MODEL_USD_PRICES_PER_1M = Object.freeze({
+  ollama: Object.freeze({ input: 0, output: 0 }),
+  "fast-path": Object.freeze({ input: 0, output: 0 }),
+});
+
+function actualCostUsd(provider, tokensIn, tokensOut) {
+  const prices = MODEL_USD_PRICES_PER_1M[provider] ?? { input: 0, output: 0 };
+  return (tokensIn / 1_000_000) * prices.input + (tokensOut / 1_000_000) * prices.output;
 }
 
 function sha256(value) {
@@ -254,18 +316,18 @@ function normalizeLegacyMcpTaskRow(rawRow) {
  * limited to file/database operations so consumers cannot bypass validation.
  */
 export class ObservabilityStore {
+  // jsonlPath is kept for the run-once legacy import and the manual
+  // importer script; recordMcpTask no longer writes the JSONL log.
   constructor({
     databasePath = DEFAULT_DATABASE_PATH,
     jsonlPath = DEFAULT_JSONL_PATH,
     migrationsDir = MIGRATIONS_DIR,
     databaseFactory = defaultDatabaseFactory,
-    appendJsonl = defaultAppendJsonl,
   } = {}) {
     this.databasePath = databasePath;
     this.jsonlPath = jsonlPath;
     this.migrationsDir = migrationsDir;
     this.databaseFactory = databaseFactory;
-    this.appendJsonl = appendJsonl;
   }
 
   migrate() {
@@ -277,33 +339,26 @@ export class ObservabilityStore {
     }
   }
 
+  // SQLite is the single writer.  A store failure is reported in the
+  // result and never thrown: observability must not break an MCP response.
   recordMcpTask(rawEvent) {
     const event = normalizeMcpTaskEvent(rawEvent);
-    const result = { id: event.id, sqlite: { ok: false }, jsonl: { ok: false } };
+    const result = { id: event.id, sqlite: { ok: false } };
 
-    // These are deliberately independent attempts: neither compatibility log
-    // degradation nor SQLite degradation gets to suppress the other writer.
     try {
       this.#writeSqlite(event);
       result.sqlite.ok = true;
     } catch (error) {
       result.sqlite.error = error instanceof Error ? error.message : String(error);
     }
-
-    try {
-      this.#writeJsonl(event);
-      result.jsonl.ok = true;
-    } catch (error) {
-      result.jsonl.error = error instanceof Error ? error.message : String(error);
-    }
     return result;
   }
 
   /**
    * Import one local JSONL snapshot without invoking recordMcpTask(), because
-   * that public ingestion API intentionally emits a compatibility JSONL line.
-   * Receipts make preserved snapshots and normal append-only growth safe to
-   * import repeatedly.
+   * legacy rows must not be re-validated as live events or re-identified with
+   * fresh task IDs.  Receipts make preserved snapshots and normal append-only
+   * growth safe to import repeatedly.
    */
   importLegacyMcpJsonl({ inputPath = DEFAULT_JSONL_PATH } = {}) {
     if (typeof inputPath !== "string" || inputPath.length === 0 || inputPath.startsWith("file:")) {
@@ -365,12 +420,63 @@ export class ObservabilityStore {
     return Object.freeze(result);
   }
 
+  /**
+   * Run-once absorption of the legacy compatibility JSONL log into SQLite.
+   * Safe to call at every server startup: a store_meta marker records the
+   * first successful run, and the legacy_import_receipts table makes the
+   * import itself exactly-once, so two concurrently starting servers cannot
+   * duplicate rows (both may do the work; only new rows commit).
+   * Never throws for a missing or empty legacy log; that simply means there
+   * is nothing to absorb and the marker is set directly.
+   */
+  ensureLegacyJsonlImported() {
+    this.migrate();
+    const marker = this.#readStoreMeta("legacy_jsonl_imported");
+    if (marker !== null) {
+      return { ran: false, reason: "already-imported" };
+    }
+    let hasLegacyRows = false;
+    try {
+      const stats = statSync(this.jsonlPath);
+      hasLegacyRows = stats.isFile() && stats.size > 0;
+    } catch {
+      hasLegacyRows = false;
+    }
+    if (!hasLegacyRows) {
+      this.#writeStoreMeta("legacy_jsonl_imported", new Date().toISOString());
+      return { ran: false, reason: "no-legacy-jsonl" };
+    }
+    const result = this.importLegacyMcpJsonl({ inputPath: this.jsonlPath });
+    this.#writeStoreMeta("legacy_jsonl_imported", new Date().toISOString());
+    return { ran: true, result };
+  }
+
   #openDatabase() {
     ensurePrivateDirectory(dirname(this.databasePath));
     const isNew = !existsSync(this.databasePath);
     const database = this.databaseFactory(this.databasePath);
     if (isNew) tryMakePrivate(this.databasePath, 0o600);
     return database;
+  }
+
+  #readStoreMeta(key) {
+    const database = this.#openDatabase();
+    try {
+      const row = database.prepare("SELECT value FROM store_meta WHERE key = ?").get(key);
+      return row ? row.value : null;
+    } finally {
+      database.close();
+    }
+  }
+
+  #writeStoreMeta(key, value) {
+    const database = this.#openDatabase();
+    try {
+      database.prepare(`INSERT INTO store_meta (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value);
+    } finally {
+      database.close();
+    }
   }
 
   #writeSqlite(event) {
@@ -392,13 +498,19 @@ export class ObservabilityStore {
         database.prepare(`INSERT INTO tasks (
           id, session_id, timestamp, source, tool, task_type, model,
           model_provider, route_band, routing, routing_reason, tokens_in,
-          tokens_out, total_tokens, latency_ms, cloud_cost_equivalent, ok, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          tokens_out, total_tokens, latency_ms, cloud_cost_equivalent, ok, error,
+          cost_usd, input_bytes, output_bytes, input_hash, trace_id, span_id,
+          idempotency_key, quality_rating
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(
             event.id, sessionId, event.timestamp, "mcp-tool", event.tool, event.tool,
             event.model, provider, routeBandFor(event.tool, event.model), event.routing,
             reason, event.tokens_in, event.tokens_out, event.tokens_in + event.tokens_out,
             event.ms, event.cloud_cost_equivalent, event.ok ? 1 : 0, event.error ?? null,
+            actualCostUsd(provider, event.tokens_in, event.tokens_out),
+            event.input_bytes ?? null, event.output_bytes ?? null, event.input_hash ?? null,
+            event.trace_id, event.span_id,
+            event.idempotency_key ?? null, event.quality_rating ?? null,
           );
 
         database.prepare(`INSERT INTO routing_decisions (
@@ -439,17 +551,24 @@ export class ObservabilityStore {
         ) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(id) DO NOTHING`).run(sessionId, sessionStart, "active", "mcp", "hybrid");
 
+        // Legacy rows predate the extended metadata columns; those stay NULL
+        // rather than guessed. cost_usd is computed like live rows (0 for
+        // local routes via the prices table) so cost queries stay uniform.
         database.prepare(`INSERT INTO tasks (
           id, session_id, timestamp, source, tool, task_type, model,
           model_provider, route_band, routing, routing_reason, tokens_in,
-          tokens_out, total_tokens, latency_ms, cloud_cost_equivalent, ok, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          tokens_out, total_tokens, latency_ms, cloud_cost_equivalent, ok, error,
+          cost_usd, input_bytes, output_bytes, input_hash, trace_id, span_id,
+          idempotency_key, quality_rating
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(
             taskId, sessionId, event.timestamp, "mcp-tool", event.tool, event.tool,
             event.model, provider, routeBandFor(event.tool, event.model), event.routing,
             reason, event.tokensIn, event.tokensOut,
             event.tokensIn === null || event.tokensOut === null ? null : event.tokensIn + event.tokensOut,
             event.ms, event.cloudCostEquivalent, event.ok ? 1 : 0, event.error,
+            actualCostUsd(provider, event.tokensIn ?? 0, event.tokensOut ?? 0),
+            null, null, null, null, null, null, null,
           );
         database.prepare(`INSERT INTO routing_decisions (
           id, task_id, decided_at, reason, classifier_version, circuit_breaker_triggered
@@ -468,26 +587,6 @@ export class ObservabilityStore {
     } finally {
       database.close();
     }
-  }
-
-  #writeJsonl(event) {
-    ensurePrivateDirectory(dirname(this.jsonlPath));
-    // Keep the established compatibility fields and their familiar ordering;
-    // `id` is deliberately additive for older JSONL readers.
-    const jsonlEvent = {
-      tool: event.tool,
-      model: event.model,
-      routing: event.routing,
-      tokens_in: event.tokens_in,
-      tokens_out: event.tokens_out,
-      cloud_cost_equivalent: event.cloud_cost_equivalent,
-      ms: event.ms,
-      ok: event.ok,
-      ts: event.ts,
-      ...(event.error === undefined ? {} : { error: event.error }),
-      id: event.id,
-    };
-    this.appendJsonl(this.jsonlPath, `${JSON.stringify(jsonlEvent)}\n`);
   }
 }
 
