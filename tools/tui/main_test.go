@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -120,16 +121,30 @@ func TestConfigureMCP_Idempotent(t *testing.T) {
 	mcpFile := filepath.Join(dir, "mcp.json")
 
 	_ = configureMCP(mcpFile, "/path/a")
-	_ = configureMCP(mcpFile, "/path/b") // should not overwrite
 
+	// Unchanged input is not rewritten.
 	data, _ := os.ReadFile(mcpFile)
+	before := string(data)
+	_ = configureMCP(mcpFile, "/path/a")
+	data, _ = os.ReadFile(mcpFile)
+	if string(data) != before {
+		t.Error("unchanged config was rewritten")
+	}
+
+	// Managed fields refresh on a stale entry, but the entry is not duplicated.
+	_ = configureMCP(mcpFile, "/path/b")
+	data, _ = os.ReadFile(mcpFile)
 	var cfg struct {
-		MCPServers map[string]json.RawMessage `json:"mcpServers"`
+		MCPServers map[string]struct {
+			Args []string `json:"args"`
+		} `json:"mcpServers"`
 	}
 	_ = json.Unmarshal(data, &cfg)
-
 	if len(cfg.MCPServers) != 1 {
-		t.Errorf("expected 1 server entry, got %d", len(cfg.MCPServers))
+		t.Fatalf("expected 1 server entry, got %d", len(cfg.MCPServers))
+	}
+	if args := cfg.MCPServers["nexus-ollama"].Args; len(args) != 1 || args[0] != "/path/b" {
+		t.Errorf("stale args not refreshed: %v", args)
 	}
 }
 
@@ -1141,4 +1156,326 @@ func TestRunInstallStepDispatchesAllSteps(t *testing.T) {
 	if !ok || !msg.ok || msg.idx != 99 {
 		t.Fatalf("out-of-range idx: got %+v (ok=%t)", raw, ok)
 	}
+}
+
+func TestMergeMCPConfigPreservesUnknownKeysAndExtras(t *testing.T) {
+	in := []byte(`{"customKey":true,"nested":{"a":[1,2]},"mcpServers":{"other":{"command":"python","args":["serve.py"],"env":{"K":"v"},"cwd":"/tmp","disabled":true}}}`)
+	out, err := mergeMCPConfig(in, "/s.mjs")
+	if err != nil {
+		t.Fatalf("mergeMCPConfig failed: %v", err)
+	}
+	var cfg struct {
+		CustomKey  bool                       `json:"customKey"`
+		Nested     map[string][]int           `json:"nested"`
+		MCPServers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !cfg.CustomKey {
+		t.Error("top-level customKey was dropped")
+	}
+	if len(cfg.Nested["a"]) != 2 {
+		t.Errorf("top-level nested key was dropped: %v", cfg.Nested)
+	}
+	var other map[string]json.RawMessage
+	if err := json.Unmarshal(cfg.MCPServers["other"], &other); err != nil {
+		t.Fatalf("other server unparseable: %v", err)
+	}
+	for _, key := range []string{"command", "args", "env", "cwd", "disabled"} {
+		if _, ok := other[key]; !ok {
+			t.Errorf("other server lost key %q", key)
+		}
+	}
+	var entry struct {
+		Command string   `json:"command"`
+		Args    []string `json:"args"`
+	}
+	if err := json.Unmarshal(cfg.MCPServers["nexus-ollama"], &entry); err != nil {
+		t.Fatalf("nexus-ollama entry unparseable: %v", err)
+	}
+	if entry.Command != "node" || len(entry.Args) != 1 || entry.Args[0] != "/s.mjs" {
+		t.Errorf("unexpected nexus-ollama entry: %+v", entry)
+	}
+}
+
+func TestMergeMCPConfigUpdatesStaleEntryPreservingExtras(t *testing.T) {
+	in := []byte(`{"mcpServers":{"nexus-ollama":{"command":"node","args":["/old.mjs"],"env":{"KEEP":"1"},"cwd":"/work"}}}`)
+	out, err := mergeMCPConfig(in, "/new.mjs")
+	if err != nil {
+		t.Fatalf("mergeMCPConfig failed: %v", err)
+	}
+	var cfg struct {
+		MCPServers map[string]map[string]json.RawMessage `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	entry := cfg.MCPServers["nexus-ollama"]
+	var args []string
+	if err := json.Unmarshal(entry["args"], &args); err != nil || len(args) != 1 || args[0] != "/new.mjs" {
+		t.Errorf("managed args not refreshed: %s", entry["args"])
+	}
+	var cmd string
+	if err := json.Unmarshal(entry["command"], &cmd); err != nil || cmd != "node" {
+		t.Errorf("managed command not canonical: %s", entry["command"])
+	}
+	var env map[string]string
+	if err := json.Unmarshal(entry["env"], &env); err != nil || env["KEEP"] != "1" {
+		t.Errorf("per-entry env extra was dropped: %s", entry["env"])
+	}
+	var cwd string
+	if err := json.Unmarshal(entry["cwd"], &cwd); err != nil || cwd != "/work" {
+		t.Errorf("per-entry cwd extra was dropped: %s", entry["cwd"])
+	}
+}
+
+func TestMergeMCPConfigIdempotentByteIdentical(t *testing.T) {
+	first, err := mergeMCPConfig(nil, "/s.mjs")
+	if err != nil {
+		t.Fatalf("mergeMCPConfig failed: %v", err)
+	}
+	second, err := mergeMCPConfig(first, "/s.mjs")
+	if err != nil {
+		t.Fatalf("second mergeMCPConfig failed: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Error("idempotent merge rewrote byte-identical input")
+	}
+}
+
+// TestMergeMCPConfigRefusesBadInput re-runs the #114 fail-closed guards
+// against the refactored mergeMCPConfig: null/non-object documents and
+// mcpServers values must be refused, never coerced.
+func TestMergeMCPConfigRefusesBadInput(t *testing.T) {
+	cases := []struct{ name, in string }{
+		{"null document", `null`},
+		{"top-level array", `[]`},
+		{"top-level string", `"hello"`},
+		{"top-level number", `42`},
+		{"mcpServers null", `{"mcpServers": null}`},
+		{"mcpServers string", `{"mcpServers": "junk"}`},
+		{"mcpServers array", `{"mcpServers": []}`},
+		{"unparseable", `{"mcpServers": {broken`},
+		{"entry not an object", `{"mcpServers": {"nexus-ollama": "junk"}}`},
+		{"entry null", `{"mcpServers": {"nexus-ollama": null}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if out, err := mergeMCPConfig([]byte(tc.in), "/s.mjs"); err == nil {
+				t.Errorf("expected refusal, got output: %s", out)
+			}
+		})
+	}
+}
+
+func TestMergeMCPConfigBlankInputYieldsFreshConfig(t *testing.T) {
+	for _, in := range []string{"", "   \n  "} {
+		out, err := mergeMCPConfig([]byte(in), "/s.mjs")
+		if err != nil {
+			t.Fatalf("input %q: %v", in, err)
+		}
+		var cfg struct {
+			MCPServers map[string]struct {
+				Command string `json:"command"`
+			} `json:"mcpServers"`
+		}
+		if err := json.Unmarshal(out, &cfg); err != nil {
+			t.Fatalf("input %q: invalid JSON: %v", in, err)
+		}
+		if cfg.MCPServers["nexus-ollama"].Command != "node" {
+			t.Errorf("input %q: missing nexus-ollama entry", in)
+		}
+	}
+}
+
+func TestConfigureMCPWritesOnlyOnChange(t *testing.T) {
+	dir := t.TempDir()
+	mcpFile := filepath.Join(dir, "mcp.json")
+	if err := configureMCP(mcpFile, "/s.mjs"); err != nil {
+		t.Fatalf("configureMCP failed: %v", err)
+	}
+	before, err := os.ReadFile(mcpFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureMCP(mcpFile, "/s.mjs"); err != nil {
+		t.Fatalf("second configureMCP failed: %v", err)
+	}
+	after, err := os.ReadFile(mcpFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("unchanged config was rewritten")
+	}
+	// A stale server path is refreshed (managed fields), extras preserved.
+	stale := []byte(`{"mcpServers":{"nexus-ollama":{"command":"node","args":["/old.mjs"],"env":{"K":"v"}}}}`)
+	if err := os.WriteFile(mcpFile, stale, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := configureMCP(mcpFile, "/new.mjs"); err != nil {
+		t.Fatalf("configureMCP failed: %v", err)
+	}
+	data, _ := os.ReadFile(mcpFile)
+	if !strings.Contains(string(data), `"/new.mjs"`) {
+		t.Errorf("stale args not refreshed: %s", data)
+	}
+	if !strings.Contains(string(data), `"K":"v"`) && !strings.Contains(string(data), `"K": "v"`) {
+		t.Errorf("per-entry extras dropped: %s", data)
+	}
+}
+
+// sharedScriptPath resolves a repo-root scripts/ file from the tools/tui
+// test working directory.
+func sharedScriptPath(t *testing.T, name string) string {
+	t.Helper()
+	p := filepath.Join("..", "..", "scripts", name)
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("shared script %s not present: %v", name, err)
+	}
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node not installed")
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
+}
+
+// TestSharedMCPMergeScriptConformance proves the exact scripts/setup-nexus.sh
+// calls conform to the canonical merge spec.
+func TestSharedMCPMergeScriptConformance(t *testing.T) {
+	script := sharedScriptPath(t, "mcp-merge.js")
+	serverPath := "/x/server.mjs"
+
+	run := func(configPath string) (string, int, string) {
+		cmd := exec.Command("node", script, configPath, serverPath)
+		out, err := cmd.CombinedOutput()
+		code := 0
+		if err != nil {
+			if ee, ok := err.(*exec.ExitError); ok {
+				code = ee.ExitCode()
+			} else {
+				t.Fatalf("node failed: %v", err)
+			}
+		}
+		return strings.TrimSpace(string(out)), code, configPath
+	}
+
+	t.Run("round trip preserves unknown keys and extras", func(t *testing.T) {
+		dir := t.TempDir()
+		f := filepath.Join(dir, "mcp.json")
+		in := `{"customKey":true,"mcpServers":{"other":{"command":"x","env":{"A":"b"},"cwd":"/w"},"nexus-ollama":{"command":"node","args":["/old.mjs"],"env":{"KEEP":"1"}}}}`
+		if err := os.WriteFile(f, []byte(in), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if out, code, _ := run(f); code != 0 || out != "updated" {
+			t.Fatalf("merge = %q, code %d", out, code)
+		}
+		data, _ := os.ReadFile(f)
+		var cfg struct {
+			CustomKey  bool                       `json:"customKey"`
+			MCPServers map[string]json.RawMessage `json:"mcpServers"`
+		}
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		if !cfg.CustomKey {
+			t.Error("customKey dropped")
+		}
+		if !strings.Contains(string(cfg.MCPServers["other"]), `"A":"b"`) &&
+			!strings.Contains(string(cfg.MCPServers["other"]), `"A": "b"`) {
+			t.Error("other server extras dropped")
+		}
+		var entry map[string]json.RawMessage
+		_ = json.Unmarshal(cfg.MCPServers["nexus-ollama"], &entry)
+		var args []string
+		_ = json.Unmarshal(entry["args"], &args)
+		if len(args) != 1 || args[0] != serverPath {
+			t.Errorf("args not refreshed: %v", args)
+		}
+		var env map[string]string
+		_ = json.Unmarshal(entry["env"], &env)
+		if env["KEEP"] != "1" {
+			t.Error("entry extras dropped on update")
+		}
+	})
+
+	t.Run("fail closed on null config", func(t *testing.T) {
+		dir := t.TempDir()
+		f := filepath.Join(dir, "mcp.json")
+		if err := os.WriteFile(f, []byte("null"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		_, code, _ := run(f)
+		if code == 0 {
+			t.Fatal("expected non-zero exit for null config")
+		}
+		if data, _ := os.ReadFile(f); string(data) != "null" {
+			t.Errorf("null config was modified: %q", data)
+		}
+	})
+}
+
+// TestSharedMCPRemoveScriptConformance proves the exact
+// scripts/teardown-nexus.sh calls conform to the canonical remove spec.
+func TestSharedMCPRemoveScriptConformance(t *testing.T) {
+	script := sharedScriptPath(t, "mcp-remove.js")
+
+	run := func(configPath string) (string, int) {
+		cmd := exec.Command("node", script, configPath)
+		out, err := cmd.CombinedOutput()
+		code := 0
+		if err != nil {
+			if ee, ok := err.(*exec.ExitError); ok {
+				code = ee.ExitCode()
+			} else {
+				t.Fatalf("node failed: %v", err)
+			}
+		}
+		return strings.TrimSpace(string(out)), code
+	}
+
+	t.Run("removes only our entry", func(t *testing.T) {
+		dir := t.TempDir()
+		f := filepath.Join(dir, "mcp.json")
+		in := `{"custom":1,"mcpServers":{"nexus-ollama":{"command":"node","args":["/s.mjs"]},"other":{"command":"x"}}}`
+		if err := os.WriteFile(f, []byte(in), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if out, code := run(f); code != 0 || out != "removed" {
+			t.Fatalf("remove = %q, code %d", out, code)
+		}
+		data, _ := os.ReadFile(f)
+		if strings.Contains(string(data), "nexus-ollama") {
+			t.Errorf("entry not removed: %s", data)
+		}
+		if !strings.Contains(string(data), `"custom"`) {
+			t.Errorf("unknown top-level key dropped: %s", data)
+		}
+		if !strings.Contains(string(data), `"other"`) {
+			t.Errorf("other server dropped: %s", data)
+		}
+	})
+
+	t.Run("fail closed on malformed mcpServers", func(t *testing.T) {
+		dir := t.TempDir()
+		f := filepath.Join(dir, "mcp.json")
+		in := `{"mcpServers": "junk"}`
+		if err := os.WriteFile(f, []byte(in), 0644); err != nil {
+			t.Fatal(err)
+		}
+		_, code := run(f)
+		if code == 0 {
+			t.Fatal("expected non-zero exit for non-object mcpServers")
+		}
+		if data, _ := os.ReadFile(f); string(data) != in {
+			t.Errorf("file was modified or deleted: %q", data)
+		}
+		if _, err := os.Stat(f); err != nil {
+			t.Errorf("file was deleted on refusal: %v", err)
+		}
+	})
 }
