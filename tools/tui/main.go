@@ -26,6 +26,7 @@ const (
 	screenUpdate
 	screenTaskLog
 	screenUsageDashboard
+	screenCompanionActivity
 )
 
 // --- model ---
@@ -65,6 +66,14 @@ type model struct {
 	usageTokscaleLoading bool
 	usageTokscaleState   tokscaleLoadState
 	usageTokscaleReport  TokscaleReport
+
+	// Companion activity is an independent privacy-preserving source. It is
+	// never joined with task routing or Tokscale usage, even when timestamps
+	// overlap.
+	companionDatabasePath    string
+	companionActivityLoading bool
+	companionActivityState   companionActivityLoadState
+	companionActivity        []companionActivityEntry
 
 	// configure
 	configCursor  int
@@ -114,10 +123,11 @@ func initialModel() model {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#f7b538"))
 
 	m := model{
-		styles:   newStyles(),
-		nexusDir: findNexusDir(),
-		spinner:  s,
-		localAI:  true, // default on
+		styles:                newStyles(),
+		nexusDir:              findNexusDir(),
+		spinner:               s,
+		localAI:               true, // default on
+		companionDatabasePath: defaultObservabilityDatabasePath(),
 		configKeys: []string{
 			"NEXUS_LOCAL_AI",
 			"OLLAMA_HOST_URL",
@@ -193,6 +203,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return updateTaskLog(msg, m)
 	case screenUsageDashboard:
 		return updateUsageDashboard(msg, m)
+	case screenCompanionActivity:
+		return updateCompanionActivity(msg, m)
 	}
 	return m, nil
 }
@@ -216,6 +228,8 @@ func (m model) View() tea.View {
 		s = taskLogView(m)
 	case screenUsageDashboard:
 		s = usageDashboardView(m)
+	case screenCompanionActivity:
+		s = companionActivityView(m)
 	}
 	v := tea.NewView(s)
 	v.AltScreen = true

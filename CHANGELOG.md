@@ -6,6 +6,15 @@ All notable changes to NEXUS are documented here. Releases use
 
 ## [Unreleased]
 
+### Added
+
+- Shared routing settings and a deterministic CLI prompt router with explicit
+  opt-in before a failed local route falls back to `agy` (#102/#103).
+- Desktop Companion foundation: disabled-by-default activity storage,
+  Chrome/Edge extension, bounded native host, separate TUI Tool Activity view,
+  and a Tauri privacy-status window. This is development work for the v0.3.0
+  private preview; packaging and end-to-end release gates remain outstanding.
+
 ### Changed
 
 - Split the TUI into screen and helper files within the existing Go package,
@@ -15,6 +24,12 @@ All notable changes to NEXUS are documented here. Releases use
 
 - TUI configuration editor Backspace removes a complete UTF-8 character,
   preserving accented text, CJK, and emoji (#53).
+
+- Task Log reports route bands and subtracts actual local cost when calculating
+  estimated cloud savings (#113).
+- Companion upgrades preserve v0.2.2 tasks and import bookkeeping; its new
+  schema uses migration 004 after the shipped store-metadata migration.
+- Desktop builds include the window icon required by Tauri.
 
 ## [0.2.2] - 2026-10-06
 

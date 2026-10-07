@@ -34,9 +34,43 @@ function event(overrides = {}) {
   };
 }
 
+function activity(overrides = {}) {
+  return {
+    tool_id: "chatgpt",
+    surface: "browser",
+    started_at: "2026-10-02T18:00:00Z",
+    ended_at: "2026-10-02T18:04:12Z",
+    detector: "selected-browser-tab",
+    confidence: "surface-active",
+    browser_family: "chrome",
+    platform: "linux",
+    schema_version: 1,
+    consent_policy_version: 1,
+    ...overrides,
+  };
+}
+
 function readDatabase(path, callback) {
   const database = new DatabaseSync(path);
   try { return callback(database); } finally { database.close(); }
+}
+
+function setCompanionCollection(databasePath, { enabled, adapterId, toolId, consentEnabled, policyVersion = 1 }) {
+  readDatabase(databasePath, (database) => {
+    database.prepare(`UPDATE companion_settings
+      SET collection_enabled = ?, updated_at = ? WHERE id = 1`)
+      .run(enabled ? 1 : 0, "2026-10-02T18:00:00.000Z");
+    if (adapterId && toolId && consentEnabled !== undefined) {
+      database.prepare(`INSERT INTO companion_tool_consents (
+        adapter_id, tool_id, enabled, consent_policy_version, updated_at
+      ) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(adapter_id, tool_id) DO UPDATE SET
+        enabled = excluded.enabled,
+        consent_policy_version = excluded.consent_policy_version,
+        updated_at = excluded.updated_at`)
+        .run(adapterId, toolId, consentEnabled ? 1 : 0, policyVersion, "2026-10-02T18:00:00.000Z");
+    }
+  });
 }
 
 function plain(row) {
@@ -51,11 +85,109 @@ test("migrations are owned, transactional, and idempotent", (t) => {
   assert.equal(existsSync(databasePath), true);
   assert.equal(existsSync(jsonlPath), false);
   readDatabase(databasePath, (database) => {
-    assert.deepEqual(database.prepare("SELECT version FROM schema_migrations").all().map(plain), [{ version: 1 }, { version: 2 }, { version: 3 }]);
+    assert.deepEqual(database.prepare("SELECT version FROM schema_migrations").all().map(plain), [{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
     const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all()
       .map(({ name }) => name);
-    assert.deepEqual(tables, ["legacy_import_receipts", "routing_decisions", "schema_migrations", "sessions", "store_meta", "tasks"]);
+    assert.deepEqual(tables, [
+      "companion_settings", "companion_tool_consents", "legacy_import_receipts",
+      "routing_decisions", "schema_migrations", "sessions", "store_meta", "tasks", "tool_activity",
+    ]);
+    assert.deepEqual(plain(database.prepare(`SELECT collection_enabled, raw_span_retention_days,
+      daily_aggregate_retention_days FROM companion_settings WHERE id = 1`).get()), {
+      collection_enabled: 0,
+      raw_span_retention_days: 14,
+      daily_aggregate_retention_days: 90,
+    });
   });
+});
+
+test("Companion collection is disabled by default and cannot persist a valid activity envelope", (t) => {
+  const { store, databasePath, jsonlPath } = temporaryStore(t);
+  const result = store.recordToolActivity(activity());
+  assert.deepEqual(result.sqlite, { ok: false, error: "companion_collection_disabled" });
+  assert.equal(existsSync(jsonlPath), false);
+  readDatabase(databasePath, (database) => {
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM tool_activity").get().count, 0);
+  });
+});
+
+test("Companion requires a current matching adapter/tool consent before persisting activity", (t) => {
+  const { store, databasePath, jsonlPath } = temporaryStore(t);
+  store.migrate();
+  setCompanionCollection(databasePath, { enabled: true });
+
+  const missing = store.recordToolActivity(activity());
+  assert.deepEqual(missing.sqlite, { ok: false, error: "companion_tool_consent_missing" });
+
+  setCompanionCollection(databasePath, {
+    enabled: true, adapterId: "browser-chrome", toolId: "chatgpt", consentEnabled: false,
+  });
+  const revoked = store.recordToolActivity(activity());
+  assert.deepEqual(revoked.sqlite, { ok: false, error: "companion_tool_consent_missing" });
+
+  setCompanionCollection(databasePath, {
+    enabled: true, adapterId: "browser-edge", toolId: "chatgpt", consentEnabled: true,
+  });
+  const wrongAdapter = store.recordToolActivity(activity());
+  assert.deepEqual(wrongAdapter.sqlite, { ok: false, error: "companion_tool_consent_missing" });
+
+  readDatabase(databasePath, (database) => {
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM tool_activity").get().count, 0);
+  });
+  assert.equal(existsSync(jsonlPath), false);
+});
+
+test("a valid Companion activity span with enabled matching consent is persisted only in shared SQLite", (t) => {
+  const { store, databasePath, jsonlPath } = temporaryStore(t);
+  store.migrate();
+  setCompanionCollection(databasePath, {
+    enabled: true, adapterId: "browser-chrome", toolId: "chatgpt", consentEnabled: true,
+  });
+  const result = store.recordToolActivity(activity());
+  assert.equal(result.sqlite.ok, true);
+  assert.equal(existsSync(jsonlPath), false);
+
+  readDatabase(databasePath, (database) => {
+    assert.deepEqual(plain(database.prepare(`SELECT id, session_id, tool_id, surface, started_at,
+      ended_at, detector, confidence, browser_family, platform, schema_version,
+      consent_policy_version FROM tool_activity`).get()), {
+      id: result.id,
+      session_id: null,
+      tool_id: "chatgpt",
+      surface: "browser",
+      started_at: "2026-10-02T18:00:00.000Z",
+      ended_at: "2026-10-02T18:04:12.000Z",
+      detector: "selected-browser-tab",
+      confidence: "surface-active",
+      browser_family: "chrome",
+      platform: "linux",
+      schema_version: 1,
+      consent_policy_version: 1,
+    });
+  });
+});
+
+test("Companion rejects unknown and sensitive activity data before storage", (t) => {
+  const { store, databasePath, jsonlPath } = temporaryStore(t);
+  for (const field of [
+    "prompt", "response", "url", "title", "page_title", "source_code",
+    "account_id", "project_path", "metadata", "extension_payload",
+  ]) {
+    assert.throws(
+      () => store.recordToolActivity(activity({ [field]: `private ${field} content` })),
+      /unsupported field/,
+    );
+  }
+  assert.equal(existsSync(databasePath), false);
+  assert.equal(existsSync(jsonlPath), false);
+});
+
+test("Companion rejects arbitrary identifiers and invalid activity states before storage", (t) => {
+  const { store, databasePath } = temporaryStore(t);
+  assert.throws(() => store.recordToolActivity(activity({ tool_id: "https://chat.example/private" })), /allowlisted/);
+  assert.throws(() => store.recordToolActivity(activity({ confidence: "request-sent" })), /surface-active/);
+  assert.throws(() => store.recordToolActivity(activity({ ended_at: "2026-10-02T18:00:00Z" })), /after started_at/);
+  assert.equal(existsSync(databasePath), false);
 });
 
 test("one safe event creates only its SQLite task, session, and routing decision", (t) => {

@@ -1,0 +1,135 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  align-items: center;
+  background: Canvas;
+  color: CanvasText;
+  display: flex;
+  margin: 0;
+  min-height: 100vh;
+}
+
+main {
+  margin: 0 auto;
+  max-width: 42rem;
+  padding: 2rem;
+}
+
+.eyebrow {
+  color: #5c6ac4;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+h1 {
+  font-size: 2rem;
+  margin: 0.25rem 0 1rem;
+}
+
+.status {
+  border-left: 0.25rem solid #5c6ac4;
+  font-weight: 600;
+  padding-left: 0.75rem;
+}
+
+section {
+  border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+  border-radius: 0.5rem;
+  margin-top: 1.5rem;
+  padding: 1rem;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  background: #5c6ac4;
+  border: 0;
+  border-radius: 0.35rem;
+  color: white;
+  cursor: pointer;
+  font-weight: 650;
+  padding: 0.55rem 0.75rem;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+button.danger {
+  background: #9e2f2f;
+}
+
+.consent-grid {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.consent-row {
+  align-items: baseline;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin: 0;
+}
+
+.state {
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 650;
+  padding: 0.15rem 0.5rem;
+}
+
+.state-enabled {
+  background: #177245;
+  color: white;
+}
+
+.state-disabled,
+.state-unavailable {
+  background: color-mix(in srgb, CanvasText 14%, transparent);
+}
+
+form {
+  display: grid;
+  gap: 0.8rem;
+}
+
+label {
+  display: grid;
+  font-size: 0.9rem;
+  font-weight: 650;
+  gap: 0.35rem;
+}
+
+input,
+select {
+  background: Canvas;
+  border: 1px solid color-mix(in srgb, CanvasText 35%, transparent);
+  border-radius: 0.3rem;
+  color: CanvasText;
+  padding: 0.45rem;
+}
+
+.feedback {
+  min-height: 1.25rem;
+}
+
+h2 {
+  font-size: 1rem;
+  margin-top: 0;
+}
+
+.hint {
+  color: color-mix(in srgb, CanvasText 70%, transparent);
+  font-size: 0.9rem;
+  margin-top: 1.5rem;
+}

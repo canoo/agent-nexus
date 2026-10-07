@@ -7,6 +7,8 @@ The existing v0.3.0 milestone already contains the shared-settings and dynamic
 router foundation. Companion becomes its headline; routing is supporting work.
 
 This is a plan, not a claim that Companion is available in a release.
+Implementation evidence and remaining gates are tracked in
+[v0.3.0-work-tracker.md](v0.3.0-work-tracker.md).
 [PR #110](https://github.com/canoo/agent-nexus/pull/110) is the proposed
 privacy/storage foundation and remains under review.
 

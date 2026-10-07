@@ -1,0 +1,6 @@
+# Tauri/Rust build output
+src-tauri/target/
+src-tauri/gen/
+
+# Dependencies are installed locally; dependency lockfiles are committed.
+node_modules/

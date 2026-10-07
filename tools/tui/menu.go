@@ -10,6 +10,7 @@ var menuItems = []string{
 	"Health Check",
 	"Task Log",
 	"Usage & Cost Dashboard",
+	"Companion Tool Activity",
 	"Update NEXUS",
 	"Uninstall NEXUS",
 }
@@ -51,6 +52,9 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				m.screen = screenUsageDashboard
 				return startUsageDashboardLoad(m)
 			case 5:
+				m.screen = screenCompanionActivity
+				return startCompanionActivityLoad(m)
+			case 6:
 				m.screen = screenUpdate
 				m.running = false
 				m.output = ""
@@ -60,7 +64,7 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 					return m, tea.Batch(m.spinner.Tick, checkLatestVersion())
 				}
 				return m, nil
-			case 6:
+			case 7:
 				m.screen = screenUninstall
 				m.running = false
 				m.output = ""

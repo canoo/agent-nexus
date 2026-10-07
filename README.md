@@ -300,6 +300,7 @@ The next planned release and its gates are in the
 | **v0.2.2** | Stability and SQLite Task Log | Fresh-install fixes, SQLite-only task history, Go 1.27.1, zero audit vulnerabilities — [Released](docs/releases/v0.2.2.md) |
 | **v0.3.0 (planned)** | Desktop Companion private preview | Explicit consent, Chrome/Edge extension, strict native host, Linux/macOS controls, and routing foundation |
 | **v0.3.1 (planned)** | Universal sync layer | `nexus adopt`, `nexus sync`, AGENTS.md projection, tool driver system, nexus-context MCP, compatibility matrix |
+
 | **v0.3.5** | Community benchmarks | Benchmark schema, hardware-tiered test runner, community submission pipeline, results showcase |
 | **v0.4.0** | Persona marketplace & registry | Dynamic package manager (`canoo/Nexus-Personas`), `nexus persona install`, persona composition, auto-update |
 | **v1.0.0** | Stable | Windows/Docker support, team features, stable public API |
