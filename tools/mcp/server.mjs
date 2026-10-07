@@ -11,12 +11,20 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { createObservabilityStore } from "./lib/observability-store.mjs";
 import { taskLogEntry } from "./lib/task-event.mjs";
 
 import { loadSettings, ollamaFetch } from "./settings.mjs";
+import { createModelRoutes } from "./model-routes.mjs";
 
 const settings = loadSettings();
+// Reject invalid explicit overrides before store construction or MCP startup.
+let MODEL_ROUTES;
+try {
+  MODEL_ROUTES = createModelRoutes(settings);
+} catch (error) {
+  console.error(`NEXUS model configuration: ${error.message}`);
+  process.exit(1);
+}
 const OLLAMA_HOST_URL = settings.OLLAMA_HOST_URL || "http://localhost:11434";
 const CONNECT_TIMEOUT_MS = 5000;
 const REQUEST_TIMEOUT_MS = 120000;
@@ -24,6 +32,7 @@ const REQUEST_TIMEOUT_MS = 120000;
 // ── Task log ────────────────────────────────────────────────────────────────
 // The store is the single SQLite writer for task events.  Its failure result
 // is intentionally ignored here: logging can never change an MCP response.
+const { createObservabilityStore } = await import("./lib/observability-store.mjs");
 const observabilityStore = createObservabilityStore();
 
 function recordMcpTask(entry) {
@@ -60,20 +69,6 @@ function safeErrorCode(error) {
 //   NEXUS_MODEL_<TASK>      → replaces a single task route (e.g. NEXUS_MODEL_COMMIT_MSG)
 //
 // See docs/model-configuration.md for hardware-specific presets.
-const DEFAULT_SUPERVISOR = "qwen2.5-coder:1.5b";
-const DEFAULT_LOGIC = "llama3.2:3b";
-
-const supervisorModel = settings.NEXUS_SUPERVISOR_MODEL || DEFAULT_SUPERVISOR;
-const logicModel = settings.NEXUS_LOGIC_MODEL || DEFAULT_LOGIC;
-
-const MODEL_ROUTES = {
-  "commit-msg": settings.NEXUS_MODEL_COMMIT_MSG || supervisorModel,
-  boilerplate: settings.NEXUS_MODEL_BOILERPLATE || supervisorModel,
-  "test-scaffold": settings.NEXUS_MODEL_TEST_SCAFFOLD || supervisorModel,
-  "lint-fix": settings.NEXUS_MODEL_LINT_FIX || logicModel,
-  "logic-refactor": settings.NEXUS_MODEL_LOGIC_REFACTOR || logicModel,
-};
-
 // ── Prompt templates ────────────────────────────────────────────────────────
 // Identical to ollama-delegate.sh so behavior is consistent whether called
 // via MCP or via the shell script directly.

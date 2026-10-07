@@ -57,6 +57,32 @@ NEXUS_MODEL_LOGIC_REFACTOR="qwen2.5:7b"
 Per-task env var  →  Band-level env var  →  Built-in default
 ```
 
+## Startup validation
+
+The MCP server validates both band settings and all five per-task model overrides
+before opening the observability store or starting the MCP transport. An explicit
+empty value is an error; remove that setting to use the default. Process environment
+values still override `.env` values, and per-task settings still override their band.
+
+Use an Ollama model reference such as `llama3.2`, `qwen2.5-coder:1.5b`,
+`team/model:tag`, or `registry.example:5000/team/model:tag`. Model/tag components
+are at most 80 ASCII characters, start with a letter, digit or underscore, and
+contain letters, digits, underscores, dots or hyphens. Namespaces omit dots;
+registry components may include ports and are at most 350 characters. Empty
+components, whitespace, shell expressions, query strings and digest suffixes are
+rejected. The component rules follow
+[Ollama's model-name parser](https://github.com/ollama/ollama/blob/main/types/model/name.go).
+
+An invalid setting exits with code 1 and a diagnostic on stderr naming only the
+setting key; stdout remains reserved for MCP. For example:
+
+```text
+NEXUS model configuration: NEXUS_LOGIC_MODEL must be a non-empty Ollama model name (for example qwen2.5-coder:1.5b).
+```
+
+This validates syntax. It does not check whether a model is pulled, download a
+model, or contact Ollama at startup. Installed-model readiness is tracked in #43.
+
 ## Hardware Profiles
 
 ### RTX 3050 Mobile / 4GB VRAM (Default)
