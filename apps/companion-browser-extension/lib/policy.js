@@ -11,7 +11,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
   }),
   Object.freeze({ id: "claude", label: "Claude", origins: Object.freeze(["https://claude.ai/*"]) }),
   Object.freeze({ id: "gemini", label: "Gemini", origins: Object.freeze(["https://gemini.google.com/*"]) }),
-  Object.freeze({ id: "copilot", label: "Copilot", origins: Object.freeze(["https://copilot.microsoft.com/*"]) }),
+  Object.freeze({ id: "copilot", label: "Microsoft Copilot", origins: Object.freeze(["https://copilot.microsoft.com/*"]) }),
   Object.freeze({ id: "perplexity", label: "Perplexity", origins: Object.freeze(["https://www.perplexity.ai/*"]) }),
 ]);
 

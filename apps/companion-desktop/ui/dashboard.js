@@ -36,17 +36,17 @@ const allowedConsentLabels = Object.freeze({
   "Chrome browser:ChatGPT": "Chrome browser: ChatGPT",
   "Chrome browser:Claude": "Chrome browser: Claude",
   "Chrome browser:Gemini": "Chrome browser: Gemini",
-  "Chrome browser:GitHub Copilot": "Chrome browser: GitHub Copilot",
+  "Chrome browser:Microsoft Copilot": "Chrome browser: Microsoft Copilot",
   "Chrome browser:Perplexity": "Chrome browser: Perplexity",
   "Edge browser:ChatGPT": "Edge browser: ChatGPT",
   "Edge browser:Claude": "Edge browser: Claude",
   "Edge browser:Gemini": "Edge browser: Gemini",
-  "Edge browser:GitHub Copilot": "Edge browser: GitHub Copilot",
+  "Edge browser:Microsoft Copilot": "Edge browser: Microsoft Copilot",
   "Edge browser:Perplexity": "Edge browser: Perplexity",
   "Desktop foreground adapter:ChatGPT": "Desktop foreground adapter: ChatGPT",
   "Desktop foreground adapter:Claude": "Desktop foreground adapter: Claude",
   "Desktop foreground adapter:Gemini": "Desktop foreground adapter: Gemini",
-  "Desktop foreground adapter:GitHub Copilot": "Desktop foreground adapter: GitHub Copilot",
+  "Desktop foreground adapter:Microsoft Copilot": "Desktop foreground adapter: Microsoft Copilot",
   "Desktop foreground adapter:Perplexity": "Desktop foreground adapter: Perplexity",
 });
 const allowedConsentStates = new Set(["enabled", "disabled", "unavailable"]);
@@ -65,7 +65,7 @@ function safeError(error) {
   return safeActionErrors.has(message) ? message : "The requested local action could not be completed.";
 }
 
-const toolLabels = Object.freeze({ chatgpt: "ChatGPT", claude: "Claude", gemini: "Gemini", copilot: "GitHub Copilot", perplexity: "Perplexity" });
+const toolLabels = Object.freeze({ chatgpt: "ChatGPT", claude: "Claude", gemini: "Gemini", copilot: "Microsoft Copilot", perplexity: "Perplexity" });
 const adapterLabels = Object.freeze({ "browser-chrome": "Chrome browser", "browser-edge": "Edge browser", "desktop-foreground-app": "Desktop foreground adapter" });
 function validConsent(item) {
   return item && Object.hasOwn(toolLabels, item.toolId) && Object.hasOwn(adapterLabels, item.adapterId)

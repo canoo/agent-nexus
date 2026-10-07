@@ -25,7 +25,7 @@ const TOOL_IDS: [(&str, &str); 5] = [
     ("chatgpt", "ChatGPT"),
     ("claude", "Claude"),
     ("gemini", "Gemini"),
-    ("copilot", "GitHub Copilot"),
+    ("copilot", "Microsoft Copilot"),
     ("perplexity", "Perplexity"),
 ];
 const ADAPTERS: [(&str, &str); 3] = [

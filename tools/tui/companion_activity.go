@@ -21,7 +21,7 @@ var companionToolLabels = map[string]string{
 	"chatgpt":    "ChatGPT",
 	"claude":     "Claude",
 	"gemini":     "Gemini",
-	"copilot":    "GitHub Copilot",
+	"copilot":    "Microsoft Copilot",
 	"perplexity": "Perplexity",
 }
 
