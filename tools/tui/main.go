@@ -26,6 +26,7 @@ const (
 	screenUpdate
 	screenTaskLog
 	screenUsageDashboard
+	screenMemory
 )
 
 // --- model ---
@@ -37,6 +38,8 @@ type model struct {
 	nexusDir string
 	spinner  spinner.Model
 	width    int
+	height   int
+	memory   memoryState
 
 	// install wizard
 	steps        []installStep
@@ -152,6 +155,10 @@ func (m model) Init() tea.Cmd { return checkLatestVersion() }
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
+		m.height = msg.Height
+		if m.screen == screenMemory {
+			return updateMemory(msg, m)
+		}
 		return m, nil
 	}
 	if msg, ok := msg.(versionCheckMsg); ok {
@@ -166,7 +173,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-		if msg.String() == "esc" && m.screen != screenMenu {
+		if msg.String() == "esc" && m.screen != screenMenu && m.screen != screenMemory {
 			m.screen = screenMenu
 			m.running = false
 			m.output = ""
@@ -193,6 +200,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return updateTaskLog(msg, m)
 	case screenUsageDashboard:
 		return updateUsageDashboard(msg, m)
+	case screenMemory:
+		return updateMemory(msg, m)
 	}
 	return m, nil
 }
@@ -216,6 +225,8 @@ func (m model) View() tea.View {
 		s = taskLogView(m)
 	case screenUsageDashboard:
 		s = usageDashboardView(m)
+	case screenMemory:
+		s = memoryView(m)
 	}
 	v := tea.NewView(s)
 	v.AltScreen = true
@@ -230,6 +241,14 @@ func main() {
 			os.Exit(2)
 		}
 		args = nil
+	}
+	if len(args) > 0 && args[0] == "memory" {
+		root, err := memoryRoot()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Cannot locate user home directory:", err)
+			os.Exit(1)
+		}
+		os.Exit(runMemoryCLI(args[1:], root, os.Stdin, os.Stdout, os.Stderr))
 	}
 	if len(args) > 0 && args[0] == "status" {
 		if len(args) != 2 || args[1] != "--json" {
