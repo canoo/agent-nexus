@@ -8,6 +8,10 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Added
 
+- Native Companion development artifact builds: Linux `.deb` and unsigned macOS
+  `.app`, separate host/launcher setup payload, integrity manifest and preview
+  installation guide. CI archives are build evidence, pending live installation.
+
 - Installer-facing Companion launchers that validate the staged payload and pin
   an external Node runtime for browser hosts and desktop helpers. Configured
   desktop runtime paths fail closed when missing; live installation gates remain.
