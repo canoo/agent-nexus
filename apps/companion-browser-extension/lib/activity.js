@@ -136,8 +136,10 @@ export function discardUnconsentedSpans(activeSpans, consents) {
 export async function dispatchToNativeHost(event, sendNativeMessage) {
   if (!isFixedEnvelope(event) || typeof sendNativeMessage !== "function") return false;
   try {
-    await sendNativeMessage(event);
-    return true;
+    const reply = await sendNativeMessage(event);
+    return reply !== null && typeof reply === "object" && !Array.isArray(reply)
+      && Object.keys(reply).length === 2 && Object.hasOwn(reply, "schema_version")
+      && Object.hasOwn(reply, "ok") && reply.schema_version === 1 && reply.ok === true;
   } catch {
     return false;
   }

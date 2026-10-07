@@ -177,3 +177,15 @@ test("native dispatch fails closed when unavailable and never uses a fallback", 
   }), false);
   assert.equal(await dispatchToNativeHost(null, undefined), false);
 });
+
+test("native dispatch accepts only the fixed positive acknowledgement", async () => {
+  const event = {
+    tool_id: "chatgpt", surface: "browser", started_at: now, ended_at: later,
+    detector: "selected-browser-tab", confidence: "surface-active", browser_family: "chrome",
+    platform: "linux", schema_version: 1, consent_policy_version: 1,
+  };
+  assert.equal(await dispatchToNativeHost(event, async () => ({schema_version: 1, ok: true})), true);
+  for (const reply of [undefined, null, [], "private reply", {schema_version: 1, ok: false}, {schema_version: 2, ok: true}, {schema_version: 1, ok: "true"}, {schema_version: 1, ok: true, url: "https://private.example"}]) {
+    assert.equal(await dispatchToNativeHost(event, async () => reply), false);
+  }
+});

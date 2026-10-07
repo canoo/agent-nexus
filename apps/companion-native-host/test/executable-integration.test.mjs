@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -114,6 +114,13 @@ function countRows(databasePath, table) {
   }
 }
 
+function assertReply(stdout, ok) {
+  assert.ok(stdout.length >= 4);
+  const size = stdout.readUInt32LE(0);
+  assert.equal(size, stdout.length - 4, "exactly one response frame");
+  assert.deepEqual(JSON.parse(stdout.subarray(4).toString("utf8")), {schema_version: 1, ok});
+}
+
 function assertCleanStderr(stderr) {
   const errStr = stderr.toString("utf8");
   for (const line of errStr.split("\n")) {
@@ -136,7 +143,7 @@ test("successful delivery for chrome executable writes activity row and no task/
 
   const res = spawnSync(process.execPath, [BIN_CHROME], { env, input, timeout: 5000 });
   assert.equal(res.status, 0);
-  assert.equal(res.stdout.length, 0);
+  assertReply(res.stdout, true);
   assertCleanStderr(res.stderr);
   assert.doesNotMatch(res.stderr.toString("utf8"), /chatgpt/);
 
@@ -168,7 +175,7 @@ test("successful delivery for edge executable writes activity row and no task/js
 
   const res = spawnSync(process.execPath, [BIN_EDGE], { env, input, timeout: 5000 });
   assert.equal(res.status, 0);
-  assert.equal(res.stdout.length, 0);
+  assertReply(res.stdout, true);
   assertCleanStderr(res.stderr);
   assert.doesNotMatch(res.stderr.toString("utf8"), /chatgpt/);
 
@@ -204,7 +211,7 @@ test("disabled collection rejects ingestion and leaves tables empty", (t) => {
 
   const res = spawnSync(process.execPath, [BIN_CHROME], { env, input, timeout: 5000 });
   assert.equal(res.status, 0);
-  assert.equal(res.stdout.length, 0);
+  assertReply(res.stdout, false);
   assertCleanStderr(res.stderr);
   assert.doesNotMatch(res.stderr.toString("utf8"), /chatgpt/);
 
@@ -226,7 +233,7 @@ test("consent revoked rejects ingestion and leaves tables empty", (t) => {
 
   const res = spawnSync(process.execPath, [BIN_CHROME], { env, input, timeout: 5000 });
   assert.equal(res.status, 0);
-  assert.equal(res.stdout.length, 0);
+  assertReply(res.stdout, false);
   assertCleanStderr(res.stderr);
   assert.doesNotMatch(res.stderr.toString("utf8"), /chatgpt/);
 
@@ -254,7 +261,7 @@ test("moved collection_started_at=Date.now()-1000 rejects older span", (t) => {
 
   const res = spawnSync(process.execPath, [BIN_CHROME], { env, input, timeout: 5000 });
   assert.equal(res.status, 0);
-  assert.equal(res.stdout.length, 0);
+  assertReply(res.stdout, false);
   assertCleanStderr(res.stderr);
   assert.doesNotMatch(res.stderr.toString("utf8"), /chatgpt/);
 
@@ -282,7 +289,7 @@ test("crossed consent regrant similarly rejects older span", (t) => {
 
   const res = spawnSync(process.execPath, [BIN_CHROME], { env, input, timeout: 5000 });
   assert.equal(res.status, 0);
-  assert.equal(res.stdout.length, 0);
+  assertReply(res.stdout, false);
   assertCleanStderr(res.stderr);
   assert.doesNotMatch(res.stderr.toString("utf8"), /chatgpt/);
 
@@ -303,7 +310,7 @@ test("envelope injected private url field rejects, never echoes to stdout/stderr
 
   const res = spawnSync(process.execPath, [BIN_CHROME], { env, input, timeout: 5000 });
   assert.equal(res.status, 0);
-  assert.equal(res.stdout.length, 0);
+  assertReply(res.stdout, false);
   assertCleanStderr(res.stderr);
   assert.doesNotMatch(res.stdout.toString("utf8"), /secret-internal/);
   assert.doesNotMatch(res.stderr.toString("utf8"), /secret-internal/);
@@ -324,7 +331,7 @@ test("browser-family mismatch rejects ingestion and writes no row", (t) => {
 
   const res = spawnSync(process.execPath, [BIN_CHROME], { env, input, timeout: 5000 });
   assert.equal(res.status, 0);
-  assert.equal(res.stdout.length, 0);
+  assertReply(res.stdout, false);
   assertCleanStderr(res.stderr);
   assert.doesNotMatch(res.stderr.toString("utf8"), /chatgpt/);
 
@@ -341,7 +348,7 @@ test("malformed or oversize frame fails closed", (t) => {
   const malformedInput = Buffer.concat([Buffer.from([1, 0, 0, 0]), Buffer.from("{")]);
   const resMalformed = spawnSync(process.execPath, [BIN_CHROME], { env, input: malformedInput, timeout: 5000 });
   assert.equal(resMalformed.status, 0);
-  assert.equal(resMalformed.stdout.length, 0);
+  assertReply(resMalformed.stdout, false);
   assertCleanStderr(resMalformed.stderr);
 
   // Oversize frame: header exceeds the fixed 4 KiB activity limit by one byte.
@@ -349,10 +356,36 @@ test("malformed or oversize frame fails closed", (t) => {
   oversizeHeader.writeUInt32LE(MAX_NATIVE_MESSAGE_BYTES + 1, 0);
   const resOversize = spawnSync(process.execPath, [BIN_CHROME], { env, input: oversizeHeader, timeout: 5000 });
   assert.equal(resOversize.status, 0);
-  assert.equal(resOversize.stdout.length, 0);
+  assertReply(resOversize.stdout, false);
   assertCleanStderr(resOversize.stderr);
 
   assert.equal(countRows(databasePath, "tool_activity"), 0);
   assert.equal(countRows(databasePath, "tasks"), 0);
   assert.equal(existsSync(jsonlPath), false);
+});
+
+test("one-shot reply flushes and host closes even when caller keeps stdin open", {timeout: 5000}, async t => {
+  const {databasePath, env} = createIsolatedFixture(t);
+  enableSettingsAndConsent(databasePath);
+  const event = buildRealExtensionEnvelope();
+  const child = spawn(process.execPath, [BIN_CHROME], {env, stdio: ["pipe", "pipe", "pipe"]});
+  t.after(() => child.kill());
+  const chunks = [], errors = [];
+  child.stdout.on("data", chunk => chunks.push(chunk));
+  child.stderr.on("data", chunk => errors.push(chunk));
+  child.stdin.on("error", () => {});
+  const exit = new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (code, signal) => resolve({code, signal}));
+  });
+  // Do not call end(): model a browser waiting for a response first. A
+  // second batched frame must not cause another row or another response.
+  const frame = encodeNativeMessage(event);
+  child.stdin.write(Buffer.concat([frame, frame]));
+  const result = await exit;
+  assert.equal(result.code, 0);
+  assert.equal(result.signal, null);
+  assertReply(Buffer.concat(chunks), true);
+  assertCleanStderr(Buffer.concat(errors));
+  assert.equal(countRows(databasePath, "tool_activity"), 1);
 });

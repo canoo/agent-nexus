@@ -7,8 +7,11 @@ accepted span only through the shared `ObservabilityStore.recordToolActivity`
 API.
 
 It does not capture browser content, URLs, titles, prompts, responses,
-metadata, account identifiers, or any arbitrary browser data. Invalid frames
-and envelopes produce no stdout/stderr host diagnostics and are never persisted.
+arbitrary metadata, account identifiers, or arbitrary browser data. Invalid
+frames and envelopes are never persisted. Stdout contains only one length-prefixed
+acknowledgement: `{"schema_version":1,"ok":true}` for acceptance or the same shape
+with `ok:false` for rejection. No activity fields, internal codes, or error text
+are returned or logged.
 
 ## Current foundation status
 
@@ -79,3 +82,17 @@ privacy rejection, consent/collection boundaries, fixed browser adapters,
 framing limits, and separation from MCP tasks and legacy JSONL.
 Live browser permission, host registration and response-lifecycle checks remain
 release gates; subprocess tests do not establish published-extension support.
+
+## One-shot response lifecycle
+
+The launchers implement `runtime.sendNativeMessage`: one request per process,
+one fixed acknowledgement, then close input only after the reply is flushed.
+Additional batched frames are ignored; persistent `connectNative` ports are not
+supported by these launchers. The extension validates both acknowledgement fields
+and rejects unexpected replies without logging, fallback, or a retry queue.
+
+This follows [Chrome's native-messaging response protocol](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging).
+An executable regression keeps the caller's stdin open until the host responds
+and exits, proving delivery does not depend on the caller closing its input first.
+Native-host cleanup runs at each start/ingestion; these one-shot hosts do not
+remain running between browser events. Use the explicit prune command when idle.

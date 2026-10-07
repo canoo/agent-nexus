@@ -40,6 +40,9 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Fixed
 
+- Companion one-shot native hosts flush a fixed acknowledgement and close input,
+  allowing the extension's `sendNativeMessage` call to complete. Replies contain
+  no activity data or error text; malformed replies fail closed in the extension.
 - Observability store construction rejects unknown options before a mistyped
   database-path option can silently fall back to the default local database.
 - Companion spans cannot include time before the latest explicit resume or tool

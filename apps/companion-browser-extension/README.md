@@ -54,3 +54,11 @@ Run the pure policy/envelope tests with:
 cd apps/companion-browser-extension
 npm test
 ```
+
+## Native acknowledgement
+
+A one-shot host replies only with `schema_version:1` and a boolean `ok`, never
+activity data or error text. Dispatch succeeds only for an exact positive reply;
+missing, negative or malformed replies fail closed without logs, fallback, or
+retry queues. Host executable tests cover this lifecycle, including a caller
+keeping stdin open, but live browser permission/registration tests remain open.

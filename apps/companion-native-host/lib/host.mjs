@@ -1,5 +1,5 @@
 import { createObservabilityStore, normalizeToolActivityEvent } from "../../../tools/mcp/lib/observability-store.mjs";
-import { NativeMessageDecoder } from "./native-messaging.mjs";
+import { NativeMessageDecoder, encodeNativeMessage } from "./native-messaging.mjs";
 
 const BROWSER_FAMILIES = new Set(["chrome", "edge"]);
 const SAFE_STORE_CODES = new Map([
@@ -47,9 +47,9 @@ export function validateHostActivityEnvelope(rawMessage, { browserFamily }) {
 }
 
 /**
- * One browser-specific host process. It emits no protocol response and writes
- * no diagnostics: extension events are one-way and rejected content is never
- * reflected back to a browser, terminal, or log.
+ * One browser-specific ingestion boundary. Diagnostics and rejected content
+ * are never reflected back to a browser, terminal, or log. The executable
+ * sends only a fixed acknowledgement, never these internal result codes.
  */
 export class CompanionNativeMessagingHost {
   constructor({ browserFamily, store = createObservabilityStore(), decoder } = {}) {
@@ -90,15 +90,27 @@ export function startCompanionRetentionMaintenance(store, {
   return () => cancel(timer);
 }
 
-/** Starts a silent stdio native-messaging process for one registered browser. */
+/** One-shot runtime.sendNativeMessage host; stdout contains only a fixed reply. */
 export function runNativeMessagingHost({ browserFamily, store } = {}) {
   const host = new CompanionNativeMessagingHost({ browserFamily, store });
   const stopMaintenance = startCompanionRetentionMaintenance(host.store);
+  let replied = false;
+  const close = () => { stopMaintenance(); process.stdin.destroy(); };
   process.stdin.once("end", stopMaintenance);
   process.stdin.once("close", stopMaintenance);
+  process.stdin.on("error", close);
+  process.stdout.on("error", close);
   process.stdin.on("data", (chunk) => {
-    host.ingest(chunk);
-    if (host.decoder.closed) process.stdin.pause();
+    if (replied) return;
+    const frame = host.decoder.push(chunk)[0];
+    if (!frame) return;
+    replied = true;
+    process.stdin.pause();
+    let accepted = false;
+    try { accepted = frame.ok && host.handleMessage(frame.message).ok === true; } catch {}
+    // Flush the reply before closing input. Never return fields from the event
+    // or internal store errors, and never ingest a second request in this host.
+    process.stdout.write(encodeNativeMessage({ schema_version: 1, ok: accepted }), close);
   });
   return host;
 }
