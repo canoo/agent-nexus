@@ -61,6 +61,10 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Fixed
 
+- MCP and shell delegation check the selected Ollama model before inference,
+  with bounded requests and a clear missing-model recovery message. No automatic
+  downloads, retries or cloud fallback are introduced (#43).
+
 - MCP startup rejects empty or malformed band/per-task model overrides with a
   setting-specific stderr diagnostic before opening storage; defaults and valid
   override precedence are preserved (#35).
