@@ -26,7 +26,7 @@ test("Companion upgrades a v0.2.2 database without losing tasks or import marker
   let task;
   try {
     task = { ...before.prepare("SELECT * FROM tasks WHERE id = ?").get(recorded.id) };
-    before.prepare("INSERT INTO store_meta (key, value) VALUES (?, ?)").run("legacy_jsonl_import_done", "1");
+    before.prepare("INSERT INTO store_meta (key, value) VALUES (?, ?)").run("legacy_jsonl_imported", "1");
     assert.deepEqual(before.prepare("SELECT version FROM schema_migrations ORDER BY version").all().map(row => row.version), [1, 2, 3]);
   } finally { before.close(); }
 
@@ -37,7 +37,7 @@ test("Companion upgrades a v0.2.2 database without losing tasks or import marker
   try {
     assert.deepEqual(after.prepare("SELECT version FROM schema_migrations ORDER BY version").all().map(row => row.version), [1, 2, 3, 4]);
     assert.deepEqual({ ...after.prepare("SELECT * FROM tasks WHERE id = ?").get(recorded.id) }, task);
-    assert.equal(after.prepare("SELECT value FROM store_meta WHERE key = ?").get("legacy_jsonl_import_done").value, "1");
+    assert.equal(after.prepare("SELECT value FROM store_meta WHERE key = ?").get("legacy_jsonl_imported").value, "1");
     assert.equal(after.prepare("SELECT collection_enabled FROM companion_settings WHERE id = 1").get().collection_enabled, 0);
     assert.equal(after.prepare("SELECT COUNT(*) AS count FROM companion_tool_consents").get().count, 0);
     assert.equal(after.prepare("SELECT COUNT(*) AS count FROM tool_activity").get().count, 0);
