@@ -61,6 +61,10 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Fixed
 
+- MCP startup rejects empty or malformed band/per-task model overrides with a
+  setting-specific stderr diagnostic before opening storage; defaults and valid
+  override precedence are preserved (#35).
+
 - Companion setup, dashboard reads, consent and data controls run on background
   workers; startup and tray disable actions also avoid waiting on SQLite or
   helper subprocesses on the GUI event thread.
