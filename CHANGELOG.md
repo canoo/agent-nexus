@@ -6,6 +6,15 @@ All notable changes to NEXUS are documented here. Releases use
 
 ## [Unreleased]
 
+### Added
+
+- Shared routing settings and a deterministic CLI prompt router with explicit
+  opt-in before a failed local route falls back to `agy` (#102/#103).
+- Desktop Companion foundation: disabled-by-default activity storage,
+  Chrome/Edge extension, bounded native host, separate TUI Tool Activity view,
+  and a Tauri privacy-status window. This is development work for the v0.3.0
+  private preview; packaging and end-to-end release gates remain outstanding.
+
 ### Changed
 
 - `~/.kiro/steering/nexus-orchestrator.md` is now installed as a copy instead
@@ -13,6 +22,14 @@ All notable changes to NEXUS are documented here. Releases use
   files. Re-run `setup-nexus.sh` after editing `core/kiro-nexus-steering.md`.
   Setup upgrades an existing symlink in place, and teardown removes only a copy
   carrying the NEXUS marker. The TUI health check reports a stale copy.
+
+### Fixed
+
+- Task Log reports route bands and subtracts actual local cost when calculating
+  estimated cloud savings (#113).
+- Companion upgrades preserve v0.2.2 tasks and import bookkeeping; its new
+  schema uses migration 004 after the shipped store-metadata migration.
+- Desktop builds include the window icon required by Tauri.
 
 ## [0.2.2] - 2026-10-06
 
