@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 assert.equal(process.argv.length, 3);
@@ -84,5 +85,12 @@ try {
   const repeated = spawnSync(process.execPath, [join(root, "host/tools/mcp/companion-data.mjs"), "initialize", "--confirm"], { env, encoding: "utf8", timeout: 10000 });
   assert.equal(repeated.status, 1);
   assert.equal(JSON.parse(repeated.stdout).error, "companion_store_exists");
-  process.stdout.write("Preview hashes/modes, packaged executable, runtime binding, fail-closed host/helper and confirmed fresh setup checks passed; GUI not launched.\n");
+  // Run the same old-store process regressions against this exact archived host,
+  // rather than staging another copy from the checkout.
+  const upgradeTests = new URL('../../apps/companion-native-host/test/packaged-upgrade.test.mjs', import.meta.url);
+  const upgrade = spawnSync(process.execPath, ['--test', fileURLToPath(upgradeTests)], {
+    env: {...env, NEXUS_TEST_HOST_PAYLOAD: join(root, 'host')}, encoding: 'utf8', timeout: 30000, maxBuffer: 65536,
+  });
+  assert.equal(upgrade.status, 0, upgrade.stdout + upgrade.stderr);
+  process.stdout.write("Preview hashes/modes, packaged executable, runtime binding, fail-closed host/helper and confirmed fresh setup and old-store upgrade checks passed; GUI not launched.\n");
 } finally { rmSync(directory, { recursive: true, force: true }); }

@@ -97,3 +97,14 @@ paths. The native artifact verifier also exercises packaged initialization in an
 isolated HOME. Dashboard reads remain non-mutating. This implements the setup
 operation; it does not establish a live GUI/browser installation result. Runtime
 binding is still explicit and Node remains external.
+
+## Packaged upgrade evidence
+
+Both Chrome/Edge packaged executables are tested against schema 003 (v0.2.2)
+and schema 004 (older Companion preview). Tests preserve tasks, sessions, import
+receipts/markers, grants and retained activity, while schema 005 pauses an older
+enabled preview once. Read-only status and refused initialization do not upgrade
+or replace existing stores. Subsequent starts preserve an explicitly resumed
+boundary. The native artifact verifier repeats the cases against its exact host
+payload in temporary homes. Source and local Linux artifact checks pass, including
+minimum Node 22.13; live installed GUI/browser upgrade checks remain outstanding.
