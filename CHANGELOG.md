@@ -6,6 +6,10 @@ All notable changes to NEXUS are documented here. Releases use
 
 ## [Unreleased]
 
+### Fixed
+
+- Gate release publication on successful execution of CI checks on the tagged commit (#49).
+
 ## [0.2.2] - 2026-10-06
 
 ### Added
