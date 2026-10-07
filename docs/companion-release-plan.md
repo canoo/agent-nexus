@@ -38,12 +38,52 @@ decision capture, synchronization, or GUI memory view exists yet).
    desktop/browser matrix before advertising those combinations
    ([#109](https://github.com/canoo/agent-nexus/issues/109)).
 
+## Desktop product direction
+
+The desktop application should make NEXUS useful without requiring terminal
+knowledge. The user experience standard is a polished application such as
+1Password: clear onboarding, understandable status, explicit actions, and
+consistent behavior across desktop and CLI interfaces. This does not imply
+that NEXUS uses the same desktop framework as 1Password.
+
+Deliver the workflows incrementally:
+
+| Workflow | Existing foundation | Desktop work |
+|---|---|---|
+| Privacy and browser integration | Shared consent store and native host | Explicit consent, pause/resume, retention and data controls; first preview gate |
+| Project memory | Local Markdown CLI and TUI in `a914ae7` | Project selection, search, reading and explicit saving through the same Go operations |
+| Readiness and setup | TUI configuration and health checks | Guided readiness view and clear remediation; model checks from #35/#43 |
+| Tasks and cost | SQLite task log and #113 cost summary | Read-only summaries with routing costs separate from Companion activity |
+| Prompt routing | #102/#103 router and shared settings | Visible local/cloud destination and explicit execution; cloud fallback remains an explicit choice |
+
+These are desktop delivery steps, not a claim that every workflow is already
+implemented or a commitment to full CLI parity in the first preview. Confirm
+usable scope and tests before advertising a workflow in the release.
+Project memory is intentional user-authored content; the prohibition on project
+names and arbitrary browser content applies to Companion activity collection,
+not to a separate memory screen explicitly opened by the user.
+
+Keep the Go CLI/TUI operations as the source of behavior for their workflows;
+the Tauri shell can invoke narrow typed interfaces. The complete #100 command
+and internal-package extraction is recommended for v0.3.1, after these
+interfaces are exercised. Small interface changes needed by a v0.3.0 workflow
+can ship with that workflow without attempting the full reorganization.
+This recommendation does not change GitHub milestones without approval.
+
+CLI access remains a supported interface for AI agents and scripts. Existing
+`nexus status --json`, routing dry-run JSON, and project-memory commands remain
+available as desktop workflows are added. Shared operations should expose
+structured input/output and meaningful exit codes, with explicit consent for
+side effects; the GUI must not become the only way to operate NEXUS. Memory
+currently returns text, so its future desktop bridge needs structured output.
+
 ## Release gates
 
 - Collection starts disabled and can only be enabled by explicit per-tool
   consent. Pausing and revoking consent stop collection immediately.
-- No URL, title, DOM, prompt, response, account, project name, or arbitrary
-  browser payload is stored, logged, displayed, or exported.
+- Companion activity never stores, logs, displays, or exports URLs, titles,
+  DOM content, prompts, responses, accounts, project names, or arbitrary browser
+  payloads. User-authored project memory remains a separate explicit workflow.
 - Negative tests cover unknown senders, malformed or oversized messages,
   unsupported origins, and disabled/paused states.
 - Linux and macOS install, status, pause, quit, and uninstall paths are tested.
