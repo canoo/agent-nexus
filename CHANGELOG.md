@@ -6,6 +6,16 @@ All notable changes to NEXUS are documented here. Releases use
 
 ## [Unreleased]
 
+### Changed
+
+- Split the TUI into screen and helper files within the existing Go package,
+  preserving its behavior and CLI entrypoint (#56).
+
+### Fixed
+
+- TUI configuration editor Backspace removes a complete UTF-8 character,
+  preserving accented text, CJK, and emoji (#53).
+
 ## [0.2.2] - 2026-10-06
 
 ### Added
