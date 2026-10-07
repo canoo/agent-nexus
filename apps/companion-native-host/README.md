@@ -96,3 +96,49 @@ An executable regression keeps the caller's stdin open until the host responds
 and exits, proving delivery does not depend on the caller closing its input first.
 Native-host cleanup runs at each start/ingestion; these one-shot hosts do not
 remain running between browser events. Use the explicit prune command when idle.
+
+## Stage the separate host payload
+
+From a source checkout, create a new directory outside the checkout:
+
+```sh
+node apps/companion-native-host/bin/nexus-companion-native-host-package.mjs \
+  --version 0.3.0-dev.1 --output /absolute/new/path/nexus-companion-host
+```
+
+The output preserves the host/store relative layout and includes all owned SQL
+migrations, the shared data helper, license and supporting docs. It needs no npm
+install and includes no Node runtime, desktop binary or browser extension.
+`package-manifest.json` records the supplied version, sorted file paths, SHA-256
+hashes and modes; staging identical source produces identical payload/manifest
+bytes. This is a staged directory, not a signed archive or published release.
+The private npm package metadata retains its source development version; the
+manifest records the requested staging version.
+
+The command requires a new absolute destination outside the source root. It
+rejects missing, unexpected or symlinked source files before creating output.
+It never replaces existing output, reads a user database, registers a browser
+host or changes consent. A failed write may leave a partial output directory;
+use a new destination after correcting the failure. It emits a fixed JSON
+summary or error code, without filesystem diagnostics.
+
+Keep the entire staged directory at a stable location. Register the matching
+executable explicitly using its packaged registration helper:
+
+```sh
+node /absolute/path/nexus-companion-host/apps/companion-native-host/bin/nexus-companion-native-host-registration.mjs install \
+  --browser chrome --extension-id <published-extension-id> \
+  --host-path /absolute/path/nexus-companion-host/apps/companion-native-host/bin/nexus-companion-native-host-chrome.mjs
+```
+
+Use the Edge launcher and `--browser edge` for Edge. The launchers use
+`/usr/bin/env node`; the browser's launch environment must find Node.js 22.13+.
+Moving or deleting the staged directory invalidates existing registrations.
+Removal of the exact manifest through the helper leaves local history intact.
+Source tests execute both packaged launchers, packaged migrations/helper and
+registration/uninstall against isolated HOME directories, including a package
+path containing spaces. They do not establish live browser compatibility.
+
+See [platform evidence](../../docs/companion-support-matrix.md). Desktop data
+controls can find the staged shared helper via `NEXUS_REPO` set to its absolute
+root; live desktop invocation and installer configuration remain release gates.

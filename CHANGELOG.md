@@ -8,6 +8,11 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Added
 
+- Separate Companion native-host staging with an allowlisted payload, owned
+  migrations, shared data helper and deterministic SHA-256/mode manifest.
+  Relocated executable and explicit registration/uninstall tests run in
+  Linux/macOS CI; live browser and distributable desktop packaging gates remain.
+
 - Shared routing settings and a deterministic CLI prompt router with explicit
   opt-in before a failed local route falls back to `agy` (#102/#103).
 - Desktop Companion foundation: disabled-by-default activity storage,
