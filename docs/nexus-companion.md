@@ -148,9 +148,9 @@ browser-specific and does not change collection or browser permissions.
 
 ## Delivery sequence
 
-1. Complete v0.2.1's Tokscale ingestion and introduce one migration-owned
-   observability ingestion/store boundary. The current JSONL writer and reader
-   must not be bypassed by a second Companion store.
+1. Build on the shipped v0.2.2 migration-owned SQLite observability store.
+   Companion uses that same database and migration boundary; the legacy JSONL
+   file is import-only and must never become a second activity store.
 2. Migrate the documented SQLite schema, add `tool_activity`, retention, and
    consent configuration.
 3. Build the Chrome/Edge extension and strict native host; add contract tests
