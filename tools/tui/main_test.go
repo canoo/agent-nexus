@@ -571,6 +571,55 @@ func TestConfigureToggleLocalAI(t *testing.T) {
 	}
 }
 
+func TestUpdateConfigureBackspace(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "ASCII",
+			input:    "abc",
+			expected: "ab",
+		},
+		{
+			name:     "accented",
+			input:    "café",
+			expected: "caf",
+		},
+		{
+			name:     "CJK",
+			input:    "你好世界",
+			expected: "你好世",
+		},
+		{
+			name:     "emoji",
+			input:    "hello👋",
+			expected: "hello",
+		},
+		{
+			name:     "empty input",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := initialModel()
+			m.screen = screenConfigure
+			m.configEditing = true
+			m.editBuf = tc.input
+
+			updated, _ := updateConfigure(tea.KeyPressMsg{Code: tea.KeyBackspace, Text: "backspace"}, m)
+			got := updated.(model).editBuf
+			if got != tc.expected {
+				t.Errorf("editBuf after backspace = %q, want %q", got, tc.expected)
+			}
+		})
+	}
+}
+
 func TestViewsDoNotPanic(t *testing.T) {
 	m := initialModel()
 

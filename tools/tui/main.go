@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
@@ -1371,7 +1372,8 @@ func updateConfigure(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				m.configEditing = false
 			case "backspace":
 				if len(m.editBuf) > 0 {
-					m.editBuf = m.editBuf[:len(m.editBuf)-1]
+					_, size := utf8.DecodeLastRuneInString(m.editBuf)
+					m.editBuf = m.editBuf[:len(m.editBuf)-size]
 				}
 			case "esc":
 				m.configEditing = false
