@@ -14,6 +14,12 @@ All notable changes to NEXUS are documented here. Releases use
   Chrome/Edge extension, bounded native host, separate TUI Tool Activity view,
   and a Tauri privacy-status window. This is development work for the v0.3.0
   private preview; packaging and end-to-end release gates remain outstanding.
+- Project memory CLI and interactive TUI screen for user-authored Markdown
+  notes (`~/.config/nexus/agent-memory/<project>/`), including `nexus memory list`,
+  `show`, `save`, `search`, and `init` commands alongside a two-pane TUI browser.
+  Memory is user-authored project context separate from consent-gated Desktop
+  Companion activity; no automatic decision capture, synchronization, or GUI
+  memory view exists yet.
 
 ### Changed
 

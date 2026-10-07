@@ -114,7 +114,25 @@ before delegating tasks to it.
 
 ### 5. TUI for setup and health
 
-An interactive terminal UI handles installation, configuration, health checks, and updates. No config file editing required to get started.
+An interactive terminal UI handles installation, configuration, health checks, updates, task logs, and project memory. No config file editing required to get started.
+
+### 6. Project memory (planned for v0.3.0)
+
+The v0.3.0 development branch adds project memory for user-authored Markdown notes (decisions, preferences, blockers) stored locally at `~/.config/nexus/agent-memory/<project>/`.
+
+Memory is explicit user-authored context, separate from consent-gated Desktop Companion activity; no automatic decision capture, synchronization, or GUI memory view exists yet.
+
+```bash
+nexus memory init my-project
+nexus memory save my-project --title "Architecture Decision" --body "Keep project decisions in local Markdown." --tags "arch,db"
+nexus memory list
+nexus memory show my-project
+# Use a filename printed by the preceding command:
+nexus memory show my-project "filename-from-project-list.md"
+nexus memory search "decisions"
+```
+
+You can also browse and manage project memories interactively via the **Project Memory** screen in the TUI (`nexus`).
 
 ### Usage data attribution
 
@@ -216,8 +234,10 @@ See [docs/model-configuration.md](docs/model-configuration.md) for hardware-spec
   Health Check
   Task Log
   Usage & Cost Dashboard
+  Companion Tool Activity
   Update NEXUS
   Uninstall NEXUS
+  Project Memory
 
 j/k: navigate • enter: select • q: quit
 ```
@@ -240,8 +260,10 @@ nexus "design authentication for a private Hub"
 | **Health Check** | Verifies Ollama reachability, symlink integrity, MCP server status |
 | **Task Log** | Read recent MCP tasks from SQLite: model, route band, latency, status, and cloud-equivalent versus actual local cost |
 | **Usage & Cost Dashboard** | NEXUS-native task routing stats and cloud-cost savings, plus Tokscale CLI usage aggregates (shown separately) |
+| **Companion Tool Activity** | Read privacy-preserving tool activity from SQLite with independent disabled states |
 | **Update** | Checks latest release and self-updates with checksum verification |
 | **Uninstall** | Removes all symlinks and binary with confirmation |
+| **Project Memory** | Browse, read, create, search, and delete local user-authored project Markdown notes |
 
 ### Maintenance
 

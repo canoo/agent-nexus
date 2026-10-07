@@ -9,8 +9,12 @@ router foundation. Companion becomes its headline; routing is supporting work.
 This is a plan, not a claim that Companion is available in a release.
 Implementation evidence and remaining gates are tracked in
 [v0.3.0-work-tracker.md](v0.3.0-work-tracker.md).
-[PR #110](https://github.com/canoo/agent-nexus/pull/110) is the proposed
-privacy/storage foundation and remains under review.
+[PR #115](https://github.com/canoo/agent-nexus/pull/115) integrates the rebased PR #110
+privacy/storage foundation and remains under review. Shared project memory is scoped
+in v0.3.0 as CLI/TUI now, with a possible typed CLI JSON bridge for desktop later; #100
+internal-package extraction is a separate follow-up, not required for the existing memory feature.
+Memory is user-authored context, separate from consent-gated Companion activity (no automatic
+decision capture, synchronization, or GUI memory view exists yet).
 
 ## Private-preview scope
 
