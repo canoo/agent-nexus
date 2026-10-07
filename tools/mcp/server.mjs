@@ -15,6 +15,7 @@ import { taskLogEntry } from "./lib/task-event.mjs";
 
 import { loadSettings, ollamaFetch } from "./settings.mjs";
 import { createModelRoutes } from "./model-routes.mjs";
+import { ensureModelAvailable } from "./model-readiness.mjs";
 
 const settings = loadSettings();
 // Reject invalid explicit overrides before store construction or MCP startup.
@@ -168,6 +169,7 @@ const STRUCTURED_SCHEMAS = {
 };
 
 async function callOllama(model, prompt, task) {
+  await ensureModelAvailable(settings, model, CONNECT_TIMEOUT_MS);
   const body = {
     model,
     prompt,
