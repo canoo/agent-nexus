@@ -89,7 +89,7 @@ and a `nexus sync` command are planned for the Universal Sync Layer.
 
 ### 4. MCP server for local model delegation
 
-The `nexus-ollama` MCP server exposes local Ollama delegation as standard MCP tools. Any MCP-capable tool (Claude Code, Cursor, Windsurf, Cline, Continue.dev, Kiro) can route tasks locally without custom integration.
+The `nexus-ollama` MCP server exposes local Ollama delegation as standard MCP tools. Any MCP-capable client can route tasks locally when configured with the server entry below, though installer and automatic registration support varies by tool.
 
 ```json
 {
@@ -146,21 +146,54 @@ Thank you to the Tokscale maintainers and contributors for their upstream work.
 
 ## Tool Compatibility
 
-| Tool | Config format | MCP support | NEXUS status |
+### Shipped integrations (v0.2.2)
+
+Automated tests in v0.2.2 cover installer setup, configuration projection, and MCP registration on Linux and macOS for the tools below. Installer CI validates CLI setup using a stubbed Claude CLI environment rather than live vendor E2E sessions. Ollama compute delegates are verified via MCP and shell contract tests.
+
+| Tool | Config format | MCP registration | Test coverage & status |
 |---|---|---|---|
-| Claude Code | `AGENTS.md`, `CLAUDE.md` | ✓ | ✅ Full |
-| Antigravity CLI (`agy`) | `AGENTS.md`, `.agents/skills/` | ✓ | ✅ Full |
-| Gemini CLI | `AGENTS.md` | ✓ | ✅ Full (Transitioning to `agy`) |
-| Kiro | `.kiro/steering/*.md` | ✓ | ✅ Full |
-| Cursor | `.cursor/rules/*.mdc` | ✓ | 🔄 Planned — Universal Sync |
-| Copilot | `.github/copilot-instructions.md` | GitHub-managed | 🔄 Planned — Universal Sync |
-| Windsurf | `.windsurfrules` | ✓ | 🔄 Planned — Universal Sync |
-| Cline | `.clinerules` | VS Code shared | 🔄 Planned — Universal Sync |
-| Continue.dev | `.continuerc.json` | ✓ | 🔄 Planned — Universal Sync |
-| Amazon Q | `.qrules` | ✓ | 📋 Backlog |
-| Crush | Agent Skills | ✓ | 📋 Backlog |
-| Aider | `.aider.conf.yml` | — | 📋 Backlog |
-| Zed | `.zed/settings.json` | ✓ | 📋 Backlog |
+| <img src="docs/assets/tools/claude.svg" alt="Claude Code" width="24" /> Claude Code | `~/.claude/CLAUDE.md`, agents | ✓ Automatic | ✅ Shipped — installer & MCP tests pass (CI uses stub Claude CLI) |
+| Antigravity CLI (`agy`) | Shared `~/.gemini/GEMINI.md` | ✓ Automatic | ✅ Shipped — installer & config tests pass (shared Gemini CLI config) |
+| <img src="docs/assets/tools/googlegemini.svg" alt="Gemini CLI" width="24" /> Gemini CLI | `~/.gemini/GEMINI.md` | ✓ Automatic | ✅ Shipped — installer & config tests pass (shares config with `agy`) |
+| <img src="docs/assets/tools/kiro.svg" alt="Kiro" width="24" /> Kiro | `.kiro/steering/*.md` | ✓ Automatic | ✅ Shipped — installer & steering config tests pass |
+| <img src="docs/assets/tools/ollama.svg" alt="Ollama" width="24" /> Ollama | `.env` / TUI config | N/A (Compute host) | ✅ Shipped — compute MCP & shell contracts tested |
+
+### Companion browser surfaces (unreleased v0.3.0 preview)
+
+> [!NOTE]
+> The Desktop Companion is currently an **unreleased v0.3.0 preview**. Browser adapters and provider mappings are verified under unit, protocol, and privacy contract suites; real browser extension host environments, GUI runtimes, and desktop packages are **not** yet validated. Note that Microsoft Copilot web companion integration is distinct from GitHub Copilot developer tooling.
+
+| Component / Service | Type | Scope | Test status |
+|---|---|---|---|
+| <img src="docs/assets/tools/googlechrome.svg" alt="Google Chrome" width="24" /> Google Chrome | Browser Adapter | Manifest V3 / native host | ⚠️ Preview — unit, protocol & privacy tested; browser runtime pending |
+| <img src="docs/assets/tools/microsoftedge.svg" alt="Microsoft Edge" width="24" /> Microsoft Edge | Browser Adapter | Manifest V3 / native host | ⚠️ Preview — unit, protocol & privacy tested; browser runtime pending |
+| <img src="docs/assets/tools/openai.svg" alt="ChatGPT" width="24" /> ChatGPT | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
+| <img src="docs/assets/tools/claude.svg" alt="Claude" width="24" /> Claude (Web) | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
+| <img src="docs/assets/tools/googlegemini.svg" alt="Gemini" width="24" /> Gemini (Web) | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
+| Microsoft Copilot (`copilot.microsoft.com`) | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested (distinct from GitHub Copilot) |
+| <img src="docs/assets/tools/perplexity.svg" alt="Perplexity" width="24" /> Perplexity | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
+
+### Planned Developer Tools (Universal Sync Layer Projections)
+
+The following coding tools are planned unverified targets for future Universal Sync Layer projections; live installer integration and sync are not yet active or verified:
+
+| Tool | Target config format | Target status |
+|---|---|---|
+| <img src="docs/assets/tools/openai.svg" alt="OpenAI" width="24" /> Codex | `AGENTS.md` projection | 🔄 Planned — unverified projection |
+| <img src="docs/assets/tools/cursor.svg" alt="Cursor" width="24" /> Cursor | `.cursor/rules/*.mdc` | 🔄 Planned — unverified projection |
+| <img src="docs/assets/tools/githubcopilot.svg" alt="GitHub Copilot" width="24" /> GitHub Copilot | `.github/copilot-instructions.md` | 🔄 Planned — unverified projection (distinct from Companion web Copilot) |
+| <img src="docs/assets/tools/windsurf.svg" alt="Windsurf" width="24" /> Windsurf | `.windsurfrules` | 🔄 Planned — unverified projection |
+| Cline | `.clinerules` | 🔄 Planned — unverified projection |
+| Continue.dev | `.continuerc.json` / `config.yaml` | 🔄 Planned — unverified projection |
+
+### Additional Tool Backlog
+
+Other developer environments remain in our backlog for future evaluation:
+
+- Amazon Q (`.qrules`)
+- Crush (Agent Skills)
+- Aider (`.aider.conf.yml`)
+- Zed (`.zed/settings.json`)
 
 ---
 
@@ -374,6 +407,10 @@ NEXUS is an early open-source project and is actively looking for a few steady c
 | **Integrator** | Connecting tools, MCP servers, CLIs, and config formats | Help test NEXUS across Claude Code, Gemini CLI, Kiro, Cursor, Windsurf, Cline, Continue.dev, and local Ollama setups |
 | **Developer** | Go, Node.js, terminal UX, automation, or local AI workflows | Help with observability, tool sync, routing, tests, cross-platform support, and release polish |
 | **Documentation/discussion contributor** | Explaining workflows clearly and asking good product questions | Help write guides, forum posts, dependency proposals, and milestone summaries |
+
+Special thanks to Blake Saunders ([@blakesaunders](https://github.com/blakesaunders)) in [PR #111](https://github.com/canoo/agent-nexus/pull/111) for implementing Claude Code NEXUS loading and fresh-install MCP support.
+
+We welcome focused integration pull requests as well as compatibility reports. When submitting compatibility results or bug reports, please include your OS, tool version, and reproduction steps as outlined in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 If any of that sounds useful, [join the Discord](https://discord.gg/qCdkHVkRHP), open a GitHub Discussion, or pick up an issue from the current milestones. Small, focused contributions are welcome.
 
