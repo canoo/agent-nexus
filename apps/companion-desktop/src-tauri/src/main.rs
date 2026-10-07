@@ -543,69 +543,105 @@ struct RetentionRequest {
 struct ConfirmationRequest {
     confirmed: bool,
 }
+// SQLite and helper subprocesses must never wait on the GUI event thread.
+async fn run_background<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|_| companion_data::DATA_ERROR.to_owned())?
+}
+
 #[tauri::command]
-fn initialize_companion_store(
+async fn initialize_companion_store(
     request: ConfirmationRequest,
     app: tauri::AppHandle,
 ) -> Result<DashboardStatus, String> {
-    companion_data::initialize(request.confirmed)?;
-    refresh_tray_status(&app);
-    Ok(dashboard_status())
-}
-#[tauri::command]
-fn set_companion_retention(request: RetentionRequest) -> Result<DashboardStatus, String> {
-    companion_data::set_retention(request.days)?;
-    Ok(dashboard_status())
-}
-#[tauri::command]
-fn prune_companion_history() -> Result<DashboardStatus, String> {
-    companion_data::prune()?;
-    Ok(dashboard_status())
-}
-#[tauri::command]
-fn clear_companion_history(request: ConfirmationRequest) -> Result<DashboardStatus, String> {
-    companion_data::clear(request.confirmed)?;
-    Ok(dashboard_status())
+    run_background(move || {
+        companion_data::initialize(request.confirmed)?;
+        refresh_tray_status(&app);
+        Ok(dashboard_status())
+    })
+    .await
 }
 
 #[tauri::command]
-fn get_companion_dashboard() -> DashboardStatus {
-    dashboard_status()
+async fn set_companion_retention(request: RetentionRequest) -> Result<DashboardStatus, String> {
+    run_background(move || {
+        companion_data::set_retention(request.days)?;
+        Ok(dashboard_status())
+    })
+    .await
 }
 
 #[tauri::command]
-fn disable_companion_collection(app: tauri::AppHandle) -> Result<DashboardStatus, String> {
-    disable_collection().map_err(safe_error)?;
-    refresh_tray_status(&app);
-    Ok(dashboard_status())
+async fn prune_companion_history() -> Result<DashboardStatus, String> {
+    run_background(move || {
+        companion_data::prune()?;
+        Ok(dashboard_status())
+    })
+    .await
 }
 
 #[tauri::command]
-fn pause_companion_collection(app: tauri::AppHandle) -> Result<DashboardStatus, String> {
-    let mut database = open_existing_database().map_err(safe_error)?;
-    pause_collection_in_database(&mut database).map_err(safe_error)?;
-    refresh_tray_status(&app);
-    Ok(dashboard_status())
+async fn clear_companion_history(request: ConfirmationRequest) -> Result<DashboardStatus, String> {
+    run_background(move || {
+        companion_data::clear(request.confirmed)?;
+        Ok(dashboard_status())
+    })
+    .await
 }
 
 #[tauri::command]
-fn resume_companion_collection(app: tauri::AppHandle) -> Result<DashboardStatus, String> {
-    let mut database = open_existing_database().map_err(safe_error)?;
-    resume_collection_in_database(&mut database).map_err(safe_error)?;
-    refresh_tray_status(&app);
-    Ok(dashboard_status())
+async fn get_companion_dashboard() -> Result<DashboardStatus, String> {
+    run_background(move || Ok(dashboard_status())).await
 }
 
 #[tauri::command]
-fn set_companion_consent(
+async fn disable_companion_collection(app: tauri::AppHandle) -> Result<DashboardStatus, String> {
+    run_background(move || {
+        disable_collection().map_err(safe_error)?;
+        refresh_tray_status(&app);
+        Ok(dashboard_status())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn pause_companion_collection(app: tauri::AppHandle) -> Result<DashboardStatus, String> {
+    run_background(move || {
+        let mut database = open_existing_database().map_err(safe_error)?;
+        pause_collection_in_database(&mut database).map_err(safe_error)?;
+        refresh_tray_status(&app);
+        Ok(dashboard_status())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn resume_companion_collection(app: tauri::AppHandle) -> Result<DashboardStatus, String> {
+    run_background(move || {
+        let mut database = open_existing_database().map_err(safe_error)?;
+        resume_collection_in_database(&mut database).map_err(safe_error)?;
+        refresh_tray_status(&app);
+        Ok(dashboard_status())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn set_companion_consent(
     app: tauri::AppHandle,
     request: SetConsentRequest,
 ) -> Result<DashboardStatus, String> {
-    validate_consent_request(&request).map_err(safe_error)?;
-    let mut database = open_existing_database().map_err(safe_error)?;
-    set_consent_in_database(&mut database, &request).map_err(safe_error)?;
-    refresh_tray_status(&app);
-    Ok(dashboard_status())
+    run_background(move || {
+        validate_consent_request(&request).map_err(safe_error)?;
+        let mut database = open_existing_database().map_err(safe_error)?;
+        set_consent_in_database(&mut database, &request).map_err(safe_error)?;
+        refresh_tray_status(&app);
+        Ok(dashboard_status())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -669,7 +705,19 @@ fn main() {
             unregister_native_host
         ])
         .setup(|app| {
-            let status = dashboard_status();
+            // Start with an unavailable indicator; resolve local status on a worker.
+            let status = DashboardStatus {
+                setup_control: "unavailable",
+                collection: "disabled",
+                store: "unavailable",
+                consents: fixed_consents("unavailable"),
+                native_host: NativeHostStatus {
+                    chrome: "unavailable",
+                    edge: "unavailable",
+                    registration_control: "unavailable",
+                },
+                data_controls: companion_data::DataControls::unavailable(),
+            };
             let open_dashboard =
                 MenuItem::with_id(app, "open-dashboard", "Open Dashboard", true, None::<&str>)?;
             let collection_status = MenuItem::with_id(
@@ -702,8 +750,11 @@ fn main() {
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open-dashboard" => show_dashboard(app),
                     "disable-collection" => {
-                        let _ = disable_collection();
-                        refresh_tray_status(app);
+                        let app = app.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            let _ = disable_collection();
+                            refresh_tray_status(&app);
+                        });
                     }
                     "quit" => app.exit(0),
                     _ => {}
@@ -713,6 +764,8 @@ fn main() {
             if tray_result.is_err() {
                 eprintln!("Tray is unavailable; the dashboard remains usable.");
             }
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn_blocking(move || refresh_tray_status(&handle));
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -722,6 +775,42 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blocked_control_keeps_other_background_work_runnable() {
+        use std::sync::mpsc;
+        let caller = std::thread::current().id();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let slow = tauri::async_runtime::spawn(async move {
+            run_background(move || {
+                started_tx.send(std::thread::current().id()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                Ok(7)
+            })
+            .await
+        });
+        assert_ne!(
+            started_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
+            caller
+        );
+        let (finished_tx, finished_rx) = mpsc::channel();
+        tauri::async_runtime::spawn(async move {
+            let result = run_background(|| Ok(11)).await;
+            finished_tx.send(result).unwrap();
+        });
+        // Check another operation before releasing the deliberately stalled worker.
+        let fast = finished_rx.recv_timeout(Duration::from_secs(2));
+        release_tx.send(()).unwrap();
+        assert_eq!(fast.unwrap().unwrap(), 11);
+        assert_eq!(tauri::async_runtime::block_on(slow).unwrap().unwrap(), 7);
+        assert_eq!(
+            tauri::async_runtime::block_on(run_background(|| Err::<(), _>(
+                companion_data::DATA_ERROR.to_owned()
+            ))),
+            Err(companion_data::DATA_ERROR.to_owned())
+        );
+    }
 
     const COMPANION_MIGRATIONS: &str = concat!(
         include_str!("../../../../tools/mcp/migrations/004_companion-activity.sql"),

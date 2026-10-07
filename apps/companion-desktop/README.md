@@ -265,3 +265,13 @@ fixed helper arguments. The UI serializes actions and refreshes after failure.
 Rust executable tests use isolated profiles and a migration-owned database;
 frontend VM tests cover selection, gating, serialization and safe errors.
 Actual installed GUI/browser validation is still required.
+
+### Background local operations
+
+Dashboard reads, confirmed setup, retention/prune/clear, consent and collection
+commands execute on Tauri blocking workers. Startup shows an unavailable tray
+status until the background read completes; tray disable also runs on a worker.
+The helper deadlines and fixed errors remain in effect. Frontend actions still
+serialize and disable controls while pending. A Rust regression verifies a
+stalled worker does not prevent independent background work from completing.
+Live window/tray responsiveness still requires installed GUI validation.

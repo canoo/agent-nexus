@@ -61,6 +61,10 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Fixed
 
+- Companion setup, dashboard reads, consent and data controls run on background
+  workers; startup and tray disable actions also avoid waiting on SQLite or
+  helper subprocesses on the GUI event thread.
+
 - Desktop register/remove helpers run outside the GUI thread with a 15-second
   deadline and suppressed subprocess output; failures return a fixed safe error.
 
