@@ -70,3 +70,12 @@ milestone. Flatpak registration is not implemented or implied by this project.
 cd apps/companion-native-host
 npm test
 ```
+
+## Executable integration tests
+
+`npm test` also sends envelopes built by the actual extension module through
+the Chrome and Edge launchers into isolated SQLite stores. These tests verify
+privacy rejection, consent/collection boundaries, fixed browser adapters,
+framing limits, and separation from MCP tasks and legacy JSONL.
+Live browser permission, host registration and response-lifecycle checks remain
+release gates; subprocess tests do not establish published-extension support.
