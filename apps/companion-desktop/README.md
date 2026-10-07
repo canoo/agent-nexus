@@ -63,9 +63,26 @@ Required toolchains:
   development stack on Linux and Xcode command-line tools on macOS.
 
 Use `npm test` to run the frontend unit tests, and `npm run check` for
-the Rust formatting check. `cargo test` additionally covers fixed
-extension-ID validation and the unavailable-store fail-closed state. Full
-compilation requires the Tauri and bundled SQLite crates to be available
+the Rust formatting check. `cargo test --manifest-path src-tauri/Cargo.toml --locked`
+additionally covers fixed extension-ID validation and the unavailable-store
+fail-closed state. To run the full Companion test suite locally:
+
+```sh
+# Browser extension unit tests
+cd apps/companion-browser-extension && npm test
+
+# Native host unit tests
+cd apps/companion-native-host && npm test
+
+# Desktop frontend tests & security audit
+cd apps/companion-desktop && npm ci && npm audit && npm test
+
+# Desktop Rust format check & tests (requires Rust stable and platform prerequisites)
+cd apps/companion-desktop && cargo +stable fmt --manifest-path src-tauri/Cargo.toml -- --check
+cd apps/companion-desktop && cargo +stable test --manifest-path src-tauri/Cargo.toml --locked
+```
+
+Full compilation requires the Tauri and bundled SQLite crates to be available
 locally.
 
 ## Linux behavior
