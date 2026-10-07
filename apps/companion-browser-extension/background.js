@@ -7,7 +7,7 @@ import {
   transitionSelectedTab,
 } from "./lib/activity.js";
 import { createEventQueue } from "./lib/event-queue.js";
-import { TOOL_DEFINITIONS, TOOL_IDS, originForUrl, sanitizeConsents } from "./lib/policy.js";
+import { TOOL_DEFINITIONS, TOOL_IDS, definitionForTool, isToolId, originForUrl, sanitizeConsents } from "./lib/policy.js";
 
 const ACTIVE_SPANS_KEY = "activeSpans";
 const CONSENTS_KEY = "toolConsents";
@@ -159,11 +159,60 @@ chrome.permissions.onRemoved.addListener((permissions) => {
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || !Object.hasOwn(changes, CONSENTS_KEY)) return;
   const snapshot = sanitizeConsents(changes[CONSENTS_KEY].newValue);
+  const previous = sanitizeConsents(changes[CONSENTS_KEY].oldValue);
   const revisions = {};
   for (const id of TOOL_IDS) {
-    consentRevisions[id] += 1;
+    if (snapshot[id] !== previous[id]) consentRevisions[id] += 1;
     revisions[id] = consentRevisions[id];
     if (!snapshot[id]) blockedTools.add(id);
   }
   schedule(() => reconcileConsentSnapshot(snapshot, revisions));
+});
+
+async function consentResponse(applied) {
+  const local = await chrome.storage.local.get(CONSENTS_KEY);
+  return { applied, consents: sanitizeConsents(local[CONSENTS_KEY]) };
+}
+
+async function setToolConsent(toolId, enabled, revision) {
+  if (enabled) {
+    const granted = await chrome.permissions.contains({ origins: [...definitionForTool(toolId).origins] });
+    if (!granted || consentRevisions[toolId] !== revision) return consentResponse(false);
+  }
+  // All UI mutations merge one tool against current state inside this queue.
+  const local = await chrome.storage.local.get(CONSENTS_KEY);
+  if (enabled && consentRevisions[toolId] !== revision) return consentResponse(false);
+  const consents = { ...sanitizeConsents(local[CONSENTS_KEY]), [toolId]: enabled };
+  await chrome.storage.local.set({ [CONSENTS_KEY]: consents });
+  // A disable must discard spans even if the storage event is delayed.
+  if (!enabled) {
+    const session = await chrome.storage.session.get(ACTIVE_SPANS_KEY);
+    await saveSpans(discardUnconsentedSpans(session[ACTIVE_SPANS_KEY], consents));
+  }
+  return consentResponse(true);
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const allowedPages = [chrome.runtime.getURL("popup.html"), chrome.runtime.getURL("options.html")];
+  if (!sender || sender.id !== chrome.runtime.id || !allowedPages.includes(sender.url)
+      || !message || typeof message !== "object" || Array.isArray(message)
+      || Object.keys(message).length !== 3
+      || !["kind", "toolId", "enabled"].every((key) => Object.hasOwn(message, key))
+      || message.kind !== "set-tool-consent" || !isToolId(message.toolId)
+      || typeof message.enabled !== "boolean") return false;
+  const { toolId, enabled } = message;
+  if (!enabled) {
+    blockedTools.add(toolId);
+    consentRevisions[toolId] += 1;
+  }
+  const revision = consentRevisions[toolId];
+  void queue.enqueue(() => setToolConsent(toolId, enabled, revision)).then(
+    sendResponse,
+    async () => {
+      const response = await consentResponse(false).catch(() => ({ applied: false, consents: sanitizeConsents({}) }));
+      sendResponse(response);
+    },
+  ).catch(() => undefined);
+  // Keep the response channel open without relying on Promise-return support.
+  return true;
 });

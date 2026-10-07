@@ -8,16 +8,63 @@ async function readConsents() {
   return sanitizeConsents(stored[CONSENTS_KEY]);
 }
 
-async function writeConsent(toolId, enabled) {
+function isValidWorkerResponse(response) {
+  if (!response || typeof response !== "object" || Array.isArray(response)) {
+    return false;
+  }
+  const keys = Object.keys(response);
+  if (keys.length !== 2 || !keys.includes("applied") || !keys.includes("consents")) {
+    return false;
+  }
+  if (typeof response.applied !== "boolean") {
+    return false;
+  }
+  const consents = response.consents;
+  if (!consents || typeof consents !== "object" || Array.isArray(consents)) {
+    return false;
+  }
+  const consentKeys = Object.keys(consents);
+  if (consentKeys.length !== TOOL_DEFINITIONS.length) {
+    return false;
+  }
+  for (const tool of TOOL_DEFINITIONS) {
+    if (!Object.prototype.hasOwnProperty.call(consents, tool.id) || typeof consents[tool.id] !== "boolean") {
+      return false;
+    }
+  }
+  return true;
+}
+
+export async function writeConsent(toolId, enabled) {
+  if (typeof enabled !== "boolean") return { applied: false, consents: await readConsents() };
   const result = await changeToolConsent({
     toolId,
     enabled,
-    rawConsents: await readConsents(),
+    // Request permission synchronously from the checkbox gesture. The worker
+    // merges consent against current storage; this snapshot is never persisted.
+    rawConsents: {},
     requestOrigins: (origins) => chrome.permissions.request({ origins }),
     removeOrigins: (origins) => chrome.permissions.remove({ origins }),
   });
-  if (result.applied) await chrome.storage.local.set({ [CONSENTS_KEY]: result.consents });
-  return result;
+
+  if (!result.applied) {
+    return { applied: false, consents: await readConsents() };
+  }
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      kind: "set-tool-consent",
+      toolId,
+      enabled,
+    });
+    if (isValidWorkerResponse(response)) {
+      return response;
+    }
+  } catch {
+    // sendMessage failure falls through
+  }
+
+  return { applied: false, consents: await readConsents() };
 }
 
 export async function renderToolToggles(container) {
@@ -34,9 +81,9 @@ export async function renderToolToggles(container) {
     checkbox.addEventListener("change", async () => {
       checkbox.disabled = true;
       const requestedEnabled = checkbox.checked;
-      const result = await writeConsent(tool.id, requestedEnabled).catch(() => ({
+      const result = await writeConsent(tool.id, requestedEnabled).catch(async () => ({
         applied: false,
-        consents,
+        consents: await readConsents().catch(() => sanitizeConsents({})),
       }));
       checkbox.checked = result.consents[tool.id];
       if (!result.applied) {
@@ -44,8 +91,8 @@ export async function renderToolToggles(container) {
         status.className = "permission-status";
         status.setAttribute("role", "status");
         status.textContent = requestedEnabled
-          ? `Could not enable ${tool.label}; browser permission was not granted.`
-          : `Could not disable ${tool.label}; its browser permission is still active.`;
+          ? `Could not enable ${tool.label}; browser permission was not granted or saving failed.`
+          : `Could not disable ${tool.label}; browser permission could not be removed or saving failed.`;
         row.append(status);
       }
       checkbox.disabled = false;

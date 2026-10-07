@@ -75,5 +75,12 @@ Native delivery runs outside that queue, with at most four calls in flight.
 Further deliveries are dropped while those calls remain pending, without retries
 or payload storage. A stalled host therefore cannot block consent cleanup.
 Automated worker tests use synthetic browser APIs; they do not verify real
-Chrome/Edge service-worker suspension or permission prompts. Popup/options
-consent writes still need coordination across simultaneous UI instances.
+Chrome/Edge service-worker suspension or permission prompts. Popup/options submit one-tool consent changes to this worker queue, so
+concurrent UI instances cannot overwrite each other's unrelated settings.
+
+The worker accepts only a fixed consent message from its own popup/options pages,
+rechecks required origin permissions before granting, and returns only the five
+consent booleans and an applied flag. UI pages never write shared consent objects
+directly. Optional permission requests start from the checkbox gesture before any
+storage await. The worker uses the explicit asynchronous response channel
+described in Chrome's [message-passing documentation](https://developer.chrome.com/docs/extensions/develop/concepts/messaging).

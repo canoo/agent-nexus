@@ -40,6 +40,10 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Fixed
 
+- Companion popup/options merge one-tool consent changes through the worker,
+  preserving simultaneous edits and keeping permission requests tied to user
+  gestures. Pending grants fail closed after newer revocations.
+
 - Serialize Companion browser state events, preserve revocation boundaries during
   asynchronous work, and keep stalled native delivery from blocking consent cleanup.
 - Companion one-shot native hosts flush a fixed acknowledgement and close input,

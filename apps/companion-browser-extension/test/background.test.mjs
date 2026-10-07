@@ -16,7 +16,7 @@ function deferred() {
 }
 function event() {
   const listeners = [];
-  return { addListener(listener) { listeners.push(listener); }, emit(...args) { for (const listener of listeners) listener(...args); } };
+  return { addListener(listener) { listeners.push(listener); }, emit(...args) { return listeners.map((listener) => listener(...args)); } };
 }
 let instance = 0;
 async function fixture({ spans = {}, send = async () => ({ schema_version: 1, ok: true }) } = {}) {
@@ -69,12 +69,22 @@ async function fixture({ spans = {}, send = async () => ({ schema_version: 1, ok
     },
     windows: { onFocusChanged: event(), onRemoved: event(), WINDOW_ID_NONE: -1, async get() { return { focused: true }; } },
     permissions: { onRemoved: event(), async contains({ origins }) { return origins.every((origin) => allowed.has(origin)); } },
-    runtime: { sendNativeMessage(host, payload) { deliveries.push(structuredClone(payload)); return send(host, payload); } },
+    runtime: {
+      id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", onMessage: event(),
+      getURL(path) { return `chrome-extension://${this.id}/${path}`; },
+      sendNativeMessage(host, payload) { deliveries.push(structuredClone(payload)); return send(host, payload); },
+    },
   };
   Object.defineProperty(globalThis, "chrome", { configurable: true, value: chrome });
   const worker = await import(`../background.js?fixture=${++instance}`);
   return {
     chrome, session, local, deliveries, tabs, allowed,
+    message(request, sender = { id: chrome.runtime.id, url: chrome.runtime.getURL("popup.html") }) {
+      const reply = deferred();
+      const responses = chrome.runtime.onMessage.emit(request, sender, reply.resolve);
+      if (!responses.includes(true)) reply.resolve(undefined);
+      return reply.promise;
+    },
     holdRead() { const held = deferred(); nextRead = held; return held; },
     get readCount() { return readCount; },
     activate(tabId) { chrome.tabs.onActivated.emit({ tabId, windowId: 1 }); },
@@ -195,4 +205,73 @@ test("updated tabs, window focus and removal use the serialized lifecycle", asyn
   await f.flush();
   assert.equal(f.deliveries.length, 1);
   assert.equal(f.session.activeSpans[1].tool_id, "chatgpt");
+});
+
+
+test("simultaneous one-tool grants preserve each other's settings", async () => {
+  const f = await fixture();
+  f.consent("chatgpt", false);
+  f.consent("claude", false);
+  await f.flush();
+  const checking = deferred(), held = deferred();
+  const contains = f.chrome.permissions.contains;
+  let first = true;
+  f.chrome.permissions.contains = async (request) => {
+    if (first) { first = false; checking.resolve(); await held.promise; }
+    return contains(request);
+  };
+  const chatgpt = f.message({ kind: "set-tool-consent", toolId: "chatgpt", enabled: true });
+  await checking.promise;
+  const claude = f.message({ kind: "set-tool-consent", toolId: "claude", enabled: true }, {
+    id: f.chrome.runtime.id, url: f.chrome.runtime.getURL("options.html"),
+  });
+  held.resolve();
+  assert.equal((await chatgpt).applied, true);
+  assert.equal((await claude).applied, true);
+  await f.flush();
+  assert.equal(f.local.toolConsents.chatgpt, true);
+  assert.equal(f.local.toolConsents.claude, true);
+});
+
+test("disable arriving during a grant check wins and discards old activity", async () => {
+  const f = await fixture({ spans: { 1: oldSpan } });
+  const checking = deferred(), held = deferred();
+  f.chrome.permissions.contains = async () => { checking.resolve(); return held.promise; };
+  const grant = f.message({ kind: "set-tool-consent", toolId: "chatgpt", enabled: true });
+  await checking.promise;
+  const disable = f.message({ kind: "set-tool-consent", toolId: "chatgpt", enabled: false });
+  held.resolve(true);
+  assert.equal((await grant).applied, false);
+  assert.equal((await disable).applied, true);
+  await f.flush();
+  assert.equal(f.local.toolConsents.chatgpt, false);
+  assert.deepEqual(f.session.activeSpans, {});
+  assert.deepEqual(f.deliveries, []);
+});
+
+test("worker rejects malformed requests and senders outside its own UI pages", async () => {
+  const f = await fixture();
+  const valid = { kind: "set-tool-consent", toolId: "chatgpt", enabled: false };
+  for (const request of [null, {}, [], { ...valid, toolId: "unknown" }, { ...valid, enabled: 1 }, { ...valid, url: "private" }]) {
+    assert.equal(await f.message(request), undefined);
+  }
+  for (const sender of [null, { id: "other", url: f.chrome.runtime.getURL("popup.html") },
+    { id: f.chrome.runtime.id, url: "https://chatgpt.com/" },
+    { id: f.chrome.runtime.id, url: f.chrome.runtime.getURL("popup.html?extra=true") }]) {
+    assert.equal(await f.message(valid, sender), undefined);
+  }
+  assert.equal(f.local.toolConsents.chatgpt, true);
+  assert.equal(f.readCount, 0);
+});
+
+test("worker refuses grants without permissions and sanitizes storage errors", async () => {
+  const f = await fixture();
+  f.allowed.clear();
+  const denied = await f.message({ kind: "set-tool-consent", toolId: "chatgpt", enabled: true });
+  assert.equal(denied.applied, false);
+  f.chrome.storage.local.set = async () => { throw new Error("private-storage-path"); };
+  const failure = await f.message({ kind: "set-tool-consent", toolId: "chatgpt", enabled: false });
+  assert.equal(failure.applied, false);
+  assert.deepEqual(Object.keys(failure).sort(), ["applied", "consents"]);
+  assert.doesNotMatch(JSON.stringify(failure), /private-storage-path/);
 });
