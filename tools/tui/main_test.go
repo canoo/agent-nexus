@@ -685,7 +685,7 @@ func writeCompanionTestDatabase(t *testing.T, collectionEnabled, consentEnabled 
 		t.Fatalf("open test database: %v", err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	migration, err := os.ReadFile(filepath.Join("..", "mcp", "migrations", "003_companion-activity.sql"))
+	migration, err := os.ReadFile(filepath.Join("..", "mcp", "migrations", "004_companion-activity.sql"))
 	if err != nil {
 		t.Fatalf("read Companion migration: %v", err)
 	}
