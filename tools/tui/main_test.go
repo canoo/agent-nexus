@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1698,4 +1700,93 @@ func TestSharedMCPRemoveScriptConformance(t *testing.T) {
 			t.Errorf("file was deleted on refusal: %v", err)
 		}
 	})
+}
+
+type trackingCloserBody struct {
+	io.Reader
+	closed  bool
+	onClose func()
+}
+
+func (b *trackingCloserBody) Close() error {
+	b.closed = true
+	if b.onClose != nil {
+		b.onClose()
+	}
+	return nil
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestInstallStepPullOllamaModels_ClosesResponseBody(t *testing.T) {
+	binDir := t.TempDir()
+	logFile := filepath.Join(binDir, "ollama.log")
+	fakeOllama := filepath.Join(binDir, "ollama")
+	script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\nexit 0\n", logFile)
+	if err := os.WriteFile(fakeOllama, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+origPath)
+
+	closedBeforeCommand := false
+	body := &trackingCloserBody{
+		Reader: strings.NewReader("Ollama is running"),
+		onClose: func() {
+			_, err := os.Stat(logFile)
+			closedBeforeCommand = os.IsNotExist(err)
+		},
+	}
+
+	origTransport := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       body,
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = origTransport
+	})
+
+	m := initialModel()
+	m.configVals[1] = "http://fake-ollama-host:11434"
+
+	msg := installStepPullOllamaModels(5, m)
+	if !msg.ok {
+		t.Fatalf("expected ok=true, got ok=false")
+	}
+	if !body.closed {
+		t.Fatalf("expected response body to be closed, but it was not closed")
+	}
+	if !closedBeforeCommand {
+		t.Fatalf("expected response body to be closed before ollama command executed")
+	}
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read fake ollama log: %v", err)
+	}
+	if !strings.Contains(string(data), "pull qwen2.5-coder:1.5b") || !strings.Contains(string(data), "pull llama3.2:3b") {
+		t.Fatalf("unexpected ollama pull invocations: %s", string(data))
+	}
+	if msg.detail != "qwen2.5-coder:1.5b, llama3.2:3b" {
+		t.Fatalf("unexpected detail: %q", msg.detail)
+	}
+
+	// A connection failure must still skip pulls without changing their log.
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, errors.New("connection refused")
+	})
+	skipMsg := installStepPullOllamaModels(5, m)
+	if !skipMsg.ok || skipMsg.detail != "skipped (ollama not running)" {
+		t.Fatalf("unexpected skip outcome: ok=%t detail=%q", skipMsg.ok, skipMsg.detail)
+	}
 }

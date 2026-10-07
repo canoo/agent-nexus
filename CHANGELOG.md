@@ -23,6 +23,7 @@ All notable changes to NEXUS are documented here. Releases use
 ### Fixed
 
 - Release publication waits for successful CI checks on the tagged commit (#49).
+- TUI installer closes Ollama reachability HTTP response body before running model pulls (#50).
 - TUI configuration editor Backspace removes a complete UTF-8 character,
   preserving accented text, CJK, and emoji (#53).
 

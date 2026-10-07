@@ -196,9 +196,11 @@ func installStepPullOllamaModels(idx int, m model) stepDoneMsg {
 	if ollamaURL == "" {
 		ollamaURL = "http://localhost:11434"
 	}
-	if _, err := client.Get(ollamaURL); err != nil {
+	resp, err := client.Get(ollamaURL)
+	if err != nil {
 		return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not running)"}
 	}
+	resp.Body.Close()
 	models := []string{"qwen2.5-coder:1.5b", "llama3.2:3b"}
 	var pulled []string
 	for _, name := range models {
