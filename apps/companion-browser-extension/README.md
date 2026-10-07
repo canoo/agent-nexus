@@ -48,7 +48,7 @@ automatic registration and accepts only a manifest's supplied published
 extension IDs. This directory still does not implement desktop collection,
 arbitrary capture, publishing, or store writes.
 
-Run the pure policy/envelope tests with:
+Run the policy/envelope and mocked browser-worker tests with:
 
 ```sh
 cd apps/companion-browser-extension
@@ -62,3 +62,18 @@ activity data or error text. Dispatch succeeds only for an exact positive reply;
 missing, negative or malformed replies fail closed without logs, fallback, or
 retry queues. Host executable tests cover this lifecycle, including a caller
 keeping stdin open, but live browser permission/registration tests remain open.
+
+## Concurrent browser events
+
+Tab, focus, window, consent and permission changes share one asynchronous state
+queue. Event timestamps are taken when the event arrives. A disabled-consent
+snapshot discards its in-progress spans even if the user immediately grants
+consent again. Revocations block new dispatch immediately; an older pending
+permission check cannot restore consent after a newer revocation.
+
+Native delivery runs outside that queue, with at most four calls in flight.
+Further deliveries are dropped while those calls remain pending, without retries
+or payload storage. A stalled host therefore cannot block consent cleanup.
+Automated worker tests use synthetic browser APIs; they do not verify real
+Chrome/Edge service-worker suspension or permission prompts. Popup/options
+consent writes still need coordination across simultaneous UI instances.

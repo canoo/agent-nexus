@@ -40,6 +40,8 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Fixed
 
+- Serialize Companion browser state events, preserve revocation boundaries during
+  asynchronous work, and keep stalled native delivery from blocking consent cleanup.
 - Companion one-shot native hosts flush a fixed acknowledgement and close input,
   allowing the extension's `sendNativeMessage` call to complete. Replies contain
   no activity data or error text; malformed replies fail closed in the extension.
