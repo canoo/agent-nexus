@@ -14,6 +14,9 @@ All notable changes to NEXUS are documented here. Releases use
   Setup upgrades an existing symlink in place, and teardown removes only a copy
   carrying the NEXUS marker. The TUI health check reports a stale copy.
 
+- Split the TUI into screen and helper files within the existing Go package,
+  preserving its behavior and CLI entrypoint (#56).
+
 ### Fixed
 
 - TUI configuration editor Backspace removes a complete UTF-8 character,
