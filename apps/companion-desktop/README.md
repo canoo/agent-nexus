@@ -31,8 +31,8 @@ the shared Node observability store.
   `NEXUS_COMPANION_NATIVE_HOST_REGISTRATION_HELPER` to the helper script; when
   it is absent, the control is visibly unavailable. Registration does not
   enable collection or request browser access.
-- Uses a generated in-memory status icon, so no downloaded or packaged icon
-  asset is needed for this foundation.
+- Uses a generated in-memory tray status icon and a matching packaged PNG
+  window icon required by Tauri's compile-time context generation.
 - Never enables collection through the UI. There is no hidden or automatic
   collection mode.
 
@@ -41,13 +41,13 @@ activity view. The existing CLI and Go TUI remain independent of this app.
 
 ## Bootstrap and local development
 
-This project ships an audited Rust lockfile, but does not vendor JavaScript or
+This project ships Rust and npm lockfiles, but does not vendor JavaScript or
 Rust dependencies. After reviewing the dependency versions, install the
 JavaScript and Rust build requirements locally:
 
 ```sh
 cd apps/companion-desktop
-npm install
+npm ci
 npm run dev
 ```
 
