@@ -202,3 +202,32 @@ Migration 005 pauses older enabled preview stores once because they have no trus
 resume boundary; history and grants remain intact. Resume explicitly after upgrading.
 Automated tests cover the Rust desktop writes and actual Node ingestion against one
 isolated SQLite database. Live browser/GUI validation is still outstanding.
+
+## Native development preview artifacts
+
+After `npm ci` in this directory, build from the repository root:
+
+```sh
+node tools/automation/build-companion-preview.mjs \
+  --version 0.3.0-dev.1 --output /absolute/new/preview-directory
+```
+
+The builder copies a fixed source allowlist into an isolated temporary project,
+builds with the locked Cargo dependencies, and stages a Linux `.deb` or unsigned
+macOS `.app` alongside the separate host payload and launcher setup tools. It
+uses the development version only in the isolated build; source package versions
+remain unchanged. The output must not exist and must be outside the source repo.
+Its parent must exist. An optional `CARGO_TARGET_DIR` must be absolute. Failed
+staging may leave partial output; use a new destination after correcting errors.
+
+No Node runtime, browser extension, user database or configuration is packaged.
+The build neither opens the GUI nor installs/registers anything. The manifest
+records artifact hashes, platform/architecture and explicit unsigned/unverified
+status; it is not a publisher signature or a promise of byte-reproducible native
+binaries. CI preserves executable modes and macOS app layout in a tar archive,
+uploaded as a short-lived development artifact, not a GitHub Release.
+
+See the [preview installation guide](../../docs/companion-preview-install.md).
+Existing NEXUS setup/database and explicit external runtime binding are required;
+a standalone fresh-install GUI flow, live browser/desktop evidence and signed
+macOS distribution remain release gates.

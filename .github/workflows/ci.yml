@@ -151,3 +151,25 @@ jobs:
 
       - name: Run Rust tests
         run: cargo +stable test --manifest-path apps/companion-desktop/src-tauri/Cargo.toml --locked
+
+      - name: Install locked desktop build tooling
+        working-directory: apps/companion-desktop
+        run: npm ci --no-fund
+
+      - name: Build native development preview artifacts
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/apps/companion-desktop/src-tauri/target
+        run: |
+          node tools/automation/build-companion-preview.mjs \
+            --version 0.3.0-dev.1 --output "$RUNNER_TEMP/nexus-companion-preview"
+          node tools/automation/verify-companion-preview.mjs "$RUNNER_TEMP/nexus-companion-preview"
+          tar -czf "$RUNNER_TEMP/nexus-companion-preview-${RUNNER_OS}-${RUNNER_ARCH}.tar.gz" \
+            -C "$RUNNER_TEMP/nexus-companion-preview" .
+
+      - name: Upload unsigned development preview
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nexus-companion-preview-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/nexus-companion-preview-${{ runner.os }}-${{ runner.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14

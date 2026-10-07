@@ -69,3 +69,20 @@ for the desktop; this does not verify a real GUI installation. The generator
 bundles neither Node nor a desktop binary, performs no browser registration, and
 leaves history/consent unchanged. Signed packages and live platform/browser
 checks remain required.
+
+## Native development artifacts
+
+The development builder produces a Linux `.deb` or unsigned macOS `.app` beside
+the separate `host/` payload and `installer/` launcher generator. It builds in an
+isolated source copy with locked dependencies; source version metadata remains
+unchanged. Node is external. The manifest records hashes/modes and marks unsigned,
+non-live-verified output explicitly. Hashes do not establish publisher identity.
+
+Local Linux release packaging and archive verification pass: the verifier checks
+the packaged executable, binds the installed launcher tools to it and runs both
+browser wrappers against a missing store in a temporary HOME. It does not install
+or launch the GUI. CI adds equivalent native artifact builds and verification to
+both Linux/macOS Rust jobs. Build output does not establish GNOME/KDE/Wayland,
+real browser or macOS runtime support. See the
+[preview installation guide](companion-preview-install.md); fresh-install GUI
+initialization and signed/notarized distribution remain outstanding.
