@@ -142,3 +142,21 @@ path containing spaces. They do not establish live browser compatibility.
 See [platform evidence](../../docs/companion-support-matrix.md). Desktop data
 controls can find the staged shared helper via `NEXUS_REPO` set to its absolute
 root; live desktop invocation and installer configuration remain release gates.
+
+## Unsupported runtime environments
+
+The executable host and registration/removal helper support native Linux/macOS
+contexts only. A nonempty `FLATPAK_ID` or `/.flatpak-info` marker makes the host
+return a fixed negative acknowledgement before constructing the store, ingesting
+activity or pruning history. Registration/removal fail with
+`native_host_environment_unsupported` and leave existing manifests intact.
+Pure manifest generation remains available without writing anything.
+
+This gate does not make Flatpak browser combinations supported or prove that every
+external sandbox configuration is detectable. No sandbox escape, alternate host
+profile directory, permission expansion or native-messaging portal bridge exists.
+Use the separately staged host outside Flatpak, and verify the native browser
+combination before advertising support. Existing data-helper/CLI behavior is
+separate from this native-host runtime gate.
+The markers used by this gate are described in the official
+[Flatpak command reference](https://docs.flatpak.org/en/latest/flatpak-command-reference.html).

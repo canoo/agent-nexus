@@ -45,6 +45,10 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Fixed
 
+- Companion native hosts and registration/removal refuse detectable Flatpak
+  contexts and unsupported operating systems before activity, cleanup or
+  registration writes. Unsupported hosts return only a fixed negative reply.
+
 - Companion popup/options merge one-tool consent changes through the worker,
   preserving simultaneous edits and keeping permission requests tied to user
   gestures. Pending grants fail closed after newer revocations.

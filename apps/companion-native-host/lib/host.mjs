@@ -1,5 +1,6 @@
 import { createObservabilityStore, normalizeToolActivityEvent } from "../../../tools/mcp/lib/observability-store.mjs";
 import { NativeMessageDecoder, encodeNativeMessage } from "./native-messaging.mjs";
+import { nativeHostRuntimeSupported } from "./platform-support.mjs";
 
 const BROWSER_FAMILIES = new Set(["chrome", "edge"]);
 const SAFE_STORE_CODES = new Map([
@@ -92,6 +93,14 @@ export function startCompanionRetentionMaintenance(store, {
 
 /** One-shot runtime.sendNativeMessage host; stdout contains only a fixed reply. */
 export function runNativeMessagingHost({ browserFamily, store } = {}) {
+  if (!nativeHostRuntimeSupported()) {
+    // Refuse before constructing the store or starting retention maintenance.
+    const close = () => process.stdin.destroy();
+    process.stdin.on("error", close);
+    process.stdout.on("error", close);
+    process.stdout.write(encodeNativeMessage({ schema_version: 1, ok: false }), close);
+    return null;
+  }
   const host = new CompanionNativeMessagingHost({ browserFamily, store });
   const stopMaintenance = startCompanionRetentionMaintenance(host.store);
   let replied = false;

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
+import { nativeHostRuntimeSupported } from "./platform-support.mjs";
 
 export const NATIVE_HOST_NAME = "com.codelogiic.nexus.companion";
 const EXTENSION_ID = /^[a-p]{32}$/;
@@ -66,6 +67,7 @@ export function createNativeHostManifest({ browser, extensionIds, hostPath } = {
  * manifests; this explicit action is the sole writer of browser-owned paths.
  */
 export function installNativeHost(options) {
+  if (!nativeHostRuntimeSupported()) throw new Error("native_host_environment_unsupported");
   const path = manifestPath(options);
   const manifest = createNativeHostManifest(options);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -75,6 +77,7 @@ export function installNativeHost(options) {
 
 /** Uninstall removes only this exact browser-specific manifest, never history. */
 export function uninstallNativeHost(options) {
+  if (!nativeHostRuntimeSupported()) throw new Error("native_host_environment_unsupported");
   const path = manifestPath(options);
   if (existsSync(path)) rmSync(path);
   return path;

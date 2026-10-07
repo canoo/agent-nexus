@@ -17,6 +17,7 @@ const FIXED_FILES = [
   "apps/companion-native-host/bin/nexus-companion-native-host-registration.mjs",
   "apps/companion-native-host/lib/host.mjs",
   "apps/companion-native-host/lib/native-messaging.mjs",
+  "apps/companion-native-host/lib/platform-support.mjs",
   "apps/companion-native-host/lib/registration.mjs",
   "tools/mcp/companion-data.mjs",
   "tools/mcp/lib/observability-store.mjs",
