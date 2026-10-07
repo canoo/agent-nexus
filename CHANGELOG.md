@@ -40,6 +40,11 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Fixed
 
+- Companion spans cannot include time before the latest explicit resume or tool
+  consent: crossing spans are discarded whole, exact UTC boundaries are accepted,
+  and invalid/future timestamps fail closed. Migration 005 pauses older enabled
+  preview stores once while preserving history and grants; explicit resume is
+  required after upgrade. Live browser/desktop lifecycle verification remains open.
 - Release publication waits for successful CI checks on the tagged commit (#49).
 - TUI installer closes Ollama reachability HTTP response body before running model pulls (#50).
 - TUI configuration editor Backspace removes a complete UTF-8 character,

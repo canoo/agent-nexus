@@ -7,6 +7,9 @@ const SAFE_STORE_CODES = new Map([
   ["companion_tool_consent_missing", "companion_tool_consent_missing"],
   ["companion_retention_disabled", "companion_retention_disabled"],
   ["companion_activity_expired", "companion_activity_expired"],
+  ["companion_activity_crosses_boundary", "companion_activity_crosses_boundary"],
+  ["companion_activity_boundary_unavailable", "companion_activity_boundary_unavailable"],
+  ["companion_activity_future", "companion_activity_future"],
 ]);
 
 function safeFailure(code) {

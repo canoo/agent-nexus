@@ -35,7 +35,7 @@ function temporaryStore(t) {
 function enableChromeConsent(databasePath) {
   const database = new DatabaseSync(databasePath);
   try {
-    database.prepare("UPDATE companion_settings SET collection_enabled = 1 WHERE id = 1").run();
+    database.prepare("UPDATE companion_settings SET collection_enabled = 1, collection_started_at = '2026-10-02T18:00:00.000Z' WHERE id = 1").run();
     database.prepare(`INSERT INTO companion_tool_consents (
       adapter_id, tool_id, enabled, consent_policy_version, updated_at
     ) VALUES (?, ?, ?, ?, ?)`)

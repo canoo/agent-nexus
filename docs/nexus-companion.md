@@ -87,7 +87,12 @@ The shared local ingestion boundary fails closed even for a schema-valid
 envelope: it writes only when `companion_settings.collection_enabled` is on and
 the derived local adapter/tool pair has a current enabled row in
 `companion_tool_consents`. Missing, disabled, mismatched, or policy-version
-mismatched consent produces no activity row.
+mismatched consent produces no activity row. In v0.3.0 development, the span must
+also start at or after the latest explicit resume and the matching consent grant.
+Spans that cross a pause/resume or regrant boundary are discarded whole, as are
+future-dated spans. This avoids counting paused time without inferring a tail.
+An older enabled preview store is paused once on migration 005; history and grants
+are preserved and an explicit resume establishes the first trusted boundary.
 
 "Installed/configured" and "active" are distinct states. A background process
 or an allowlisted site open in a background tab is not active use.

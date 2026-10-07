@@ -19,7 +19,7 @@ function seed(conn,id,end,start=new Date(Date.parse(end)-1000).toISOString()) {
  VALUES (?,'chatgpt','browser',?,?,'selected-browser-tab','surface-active','chrome','linux',1,1)`).run(id,start,end);
 }
 function event(end=new Date(NOW).toISOString()){return {tool_id:'chatgpt',surface:'browser',started_at:new Date(Date.parse(end)-1000).toISOString(),ended_at:end,detector:'selected-browser-tab',confidence:'surface-active',browser_family:'chrome',platform:'linux',schema_version:1,consent_policy_version:1};}
-function enable(conn){conn.exec("UPDATE companion_settings SET collection_enabled=1; INSERT INTO companion_tool_consents VALUES ('browser-chrome','chatgpt',1,1,'before');");}
+function enable(conn){conn.exec("UPDATE companion_settings SET collection_enabled=1, collection_started_at='2026-09-01T00:00:00Z'; INSERT INTO companion_tool_consents VALUES ('browser-chrome','chatgpt',1,1,'2026-09-01T00:00:00Z');");}
 function ids(path){return db(path,c=>c.prepare('SELECT id FROM tool_activity ORDER BY id').all().map(r=>r.id));}
 test('UTC end cutoff is exact for whole-second and millisecond rows',t=>{
  const {store,databasePath}=fixture(t),cutoff=NOW-14*86400000;

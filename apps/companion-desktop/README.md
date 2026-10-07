@@ -65,7 +65,9 @@ This desktop shell is a preview control surface. Shipped release requires:
   cleanup lifecycle in distributable builds. Raw-span cleanup and CLI/GUI controls
   have automated tests; the aggregate-retention setting is reserved and no daily
   aggregates are generated yet.
-- **Pause-boundary spans**: verify resumed activity never counts time spent paused.
+- **Live pause/resume lifecycle**: store and cross-language tests verify that spans
+  cannot count time spanning a pause or a consent regrant. Verify real browser
+  focus/tab transitions and desktop behavior after resuming.
 - **Browser extension & native host integration**: end-to-end integration tests
   verifying extension-to-host messaging and store consent enforcement in real
   Chrome and Edge installations.
@@ -181,3 +183,15 @@ The native host prunes at startup, every 30 minutes while running, and before
 validated incoming spans. With no host running, use the prune command. Expiry uses
 UTC `ended_at`, retaining spans exactly at the cutoff. Daily aggregates and export
 are not implemented. Real browser/GUI and packaged runtime validation remain open.
+
+## Pause and consent boundaries
+
+Each explicit resume establishes a new UTC boundary separate from retention settings.
+The store rejects spans that began before this boundary or the current tool consent.
+It discards the whole span rather than guessing how much happened after resume.
+Switching tabs or returning focus to the browser starts a fresh observation.
+
+Migration 005 pauses older enabled preview stores once because they have no trusted
+resume boundary; history and grants remain intact. Resume explicitly after upgrading.
+Automated tests cover the Rust desktop writes and actual Node ingestion against one
+isolated SQLite database. Live browser/GUI validation is still outstanding.

@@ -239,11 +239,11 @@ fn set_consent_in_database(
         .execute(
             "INSERT INTO companion_tool_consents (
                 adapter_id, tool_id, enabled, consent_policy_version, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP)
+            ) VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
             ON CONFLICT(adapter_id, tool_id) DO UPDATE SET
                 enabled = excluded.enabled,
                 consent_policy_version = excluded.consent_policy_version,
-                updated_at = CURRENT_TIMESTAMP",
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
             params![
                 request.adapter_id,
                 request.tool_id,
@@ -263,7 +263,7 @@ fn pause_collection_in_database(database: &mut Connection) -> Result<(), StoreSt
     let setting_rows = transaction
         .execute(
             "UPDATE companion_settings
-             SET collection_enabled = 0, updated_at = CURRENT_TIMESTAMP
+             SET collection_enabled = 0, collection_started_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
              WHERE id = 1",
             [],
         )
@@ -308,7 +308,7 @@ fn resume_collection_in_database(database: &mut Connection) -> Result<(), StoreS
     let setting_rows = transaction
         .execute(
             "UPDATE companion_settings
-             SET collection_enabled = 1, updated_at = CURRENT_TIMESTAMP
+             SET collection_enabled = 1, collection_started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
              WHERE id = 1",
             [],
         )
@@ -327,7 +327,7 @@ fn disable_collection_in_database(database: &mut Connection) -> Result<(), Store
     let setting_rows = transaction
         .execute(
             "UPDATE companion_settings
-             SET collection_enabled = 0, updated_at = CURRENT_TIMESTAMP
+             SET collection_enabled = 0, collection_started_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
              WHERE id = 1",
             [],
         )
@@ -338,7 +338,7 @@ fn disable_collection_in_database(database: &mut Connection) -> Result<(), Store
     transaction
         .execute(
             "UPDATE companion_tool_consents
-             SET enabled = 0, updated_at = CURRENT_TIMESTAMP",
+             SET enabled = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
             [],
         )
         .map_err(|_| StoreState::Error)?;
@@ -447,7 +447,8 @@ fn dashboard_status() -> DashboardStatus {
         Err(state) => return unavailable_dashboard(state),
     };
     let collection_enabled = match database.query_row(
-        "SELECT collection_enabled FROM companion_settings WHERE id = 1",
+        "SELECT collection_enabled FROM companion_settings WHERE id = 1 AND
+         (collection_enabled = 0 OR julianday(collection_started_at) IS NOT NULL)",
         [],
         |row| row.get::<_, i64>(0),
     ) {
@@ -689,8 +690,93 @@ fn main() {
 mod tests {
     use super::*;
 
-    const MIGRATION_004: &str =
-        include_str!("../../../../tools/mcp/migrations/004_companion-activity.sql");
+    const COMPANION_MIGRATIONS: &str = concat!(
+        include_str!("../../../../tools/mcp/migrations/004_companion-activity.sql"),
+        "\n",
+        include_str!("../../../../tools/mcp/migrations/005_companion-collection-boundary.sql")
+    );
+
+    #[test]
+    fn desktop_resume_boundary_is_enforced_by_the_node_store() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let home = env::temp_dir().join(format!(
+            "nexus-desktop-boundary-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&home).unwrap();
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(home.clone());
+        let setup = Command::new("node").args(["--input-type=module", "-e", "import {createObservabilityStore} from './tools/mcp/lib/observability-store.mjs';createObservabilityStore().migrate();"])
+            .env("HOME", &home).current_dir(&root).output().unwrap();
+        assert!(setup.status.success());
+        let mut database =
+            Connection::open(home.join(".config/nexus/logs/observability.sqlite")).unwrap();
+        let grant = SetConsentRequest {
+            adapter_id: "browser-chrome".into(),
+            tool_id: "chatgpt".into(),
+            enabled: true,
+            policy_version: 1,
+        };
+        set_consent_in_database(&mut database, &grant).unwrap();
+        resume_collection_in_database(&mut database).unwrap();
+        let first: String = database
+            .query_row(
+                "SELECT collection_started_at FROM companion_settings",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let ingest = |start: &str, expect: &str| {
+            let script = "import {createObservabilityStore} from './tools/mcp/lib/observability-store.mjs';const start=process.argv[1],end=new Date(Date.parse(start)+1000).toISOString();const store=createObservabilityStore({now:()=>Date.parse(end)});const r=store.recordToolActivity({tool_id:'chatgpt',surface:'browser',started_at:start,ended_at:end,detector:'selected-browser-tab',confidence:'surface-active',browser_family:'chrome',platform:'linux',schema_version:1,consent_policy_version:1});process.stdout.write(r.sqlite.ok?'accepted':r.sqlite.error);";
+            let result = Command::new("node")
+                .args(["--input-type=module", "-e", script, start])
+                .env("HOME", &home)
+                .current_dir(&root)
+                .output()
+                .unwrap();
+            assert!(result.status.success());
+            assert_eq!(String::from_utf8(result.stdout).unwrap(), expect);
+        };
+        ingest(&first, "accepted");
+        pause_collection_in_database(&mut database).unwrap();
+        let paused: Option<String> = database
+            .query_row(
+                "SELECT collection_started_at FROM companion_settings",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(paused, None);
+        ingest(&first, "companion_collection_disabled");
+        std::thread::sleep(Duration::from_millis(5));
+        resume_collection_in_database(&mut database).unwrap();
+        let second: String = database
+            .query_row(
+                "SELECT collection_started_at FROM companion_settings",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(second > first);
+        ingest(&first, "companion_activity_crosses_boundary");
+        ingest(&second, "accepted");
+        std::thread::sleep(Duration::from_millis(5));
+        set_consent_in_database(&mut database, &grant).unwrap();
+        ingest(&second, "companion_activity_crosses_boundary");
+        let count: i64 = database
+            .query_row("SELECT COUNT(*) FROM tool_activity", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+    }
 
     #[test]
     fn extension_ids_must_be_published_chrome_ids() {
@@ -783,8 +869,8 @@ mod tests {
     fn test_grant_without_enabling_using_checked_in_migration() {
         let mut database = Connection::open_in_memory().expect("in-memory database");
         database
-            .execute_batch(MIGRATION_004)
-            .expect("apply migration 004");
+            .execute_batch(COMPANION_MIGRATIONS)
+            .expect("apply Companion migrations");
 
         let grant_req = SetConsentRequest {
             adapter_id: "browser-chrome".into(),
@@ -818,8 +904,8 @@ mod tests {
     fn test_pause_preserves_grant() {
         let mut database = Connection::open_in_memory().expect("in-memory database");
         database
-            .execute_batch(MIGRATION_004)
-            .expect("apply migration 004");
+            .execute_batch(COMPANION_MIGRATIONS)
+            .expect("apply Companion migrations");
 
         let grant_req = SetConsentRequest {
             adapter_id: "browser-chrome".into(),
@@ -860,8 +946,8 @@ mod tests {
     fn test_resume_rejects_absent_stale_unknown_and_revoked_consent() {
         let mut database = Connection::open_in_memory().expect("in-memory database");
         database
-            .execute_batch(MIGRATION_004)
-            .expect("apply migration 004");
+            .execute_batch(COMPANION_MIGRATIONS)
+            .expect("apply Companion migrations");
 
         // 1. Absent consent
         assert!(resume_collection_in_database(&mut database).is_err());
@@ -945,8 +1031,8 @@ mod tests {
     fn test_missing_settings_rollback() {
         let mut database = Connection::open_in_memory().expect("in-memory database");
         database
-            .execute_batch(MIGRATION_004)
-            .expect("apply migration 004");
+            .execute_batch(COMPANION_MIGRATIONS)
+            .expect("apply Companion migrations");
 
         database
             .execute(
@@ -991,8 +1077,8 @@ mod tests {
     fn test_explicit_disable_revokes_all_consents() {
         let mut database = Connection::open_in_memory().expect("in-memory database");
         database
-            .execute_batch(MIGRATION_004)
-            .expect("apply migration 004");
+            .execute_batch(COMPANION_MIGRATIONS)
+            .expect("apply Companion migrations");
 
         database
             .execute(
