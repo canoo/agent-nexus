@@ -408,7 +408,7 @@ NEXUS is an early open-source project and is actively looking for a few steady c
 | **Developer** | Go, Node.js, terminal UX, automation, or local AI workflows | Help with observability, tool sync, routing, tests, cross-platform support, and release polish |
 | **Documentation/discussion contributor** | Explaining workflows clearly and asking good product questions | Help write guides, forum posts, dependency proposals, and milestone summaries |
 
-Special thanks to Blake Saunders ([@blakesaunders](https://github.com/blakesaunders)) in [PR #111](https://github.com/canoo/agent-nexus/pull/111) for implementing Claude Code NEXUS loading and fresh-install MCP support.
+Thanks to Blake Saunders ([@blakesaunders](https://github.com/blakesaunders)) for improving Claude Code support.
 
 We welcome focused integration pull requests as well as compatibility reports. When submitting compatibility results or bug reports, please include your OS, tool version, and reproduction steps as outlined in [CONTRIBUTING.md](CONTRIBUTING.md).
 
