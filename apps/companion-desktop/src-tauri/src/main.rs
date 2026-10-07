@@ -2,9 +2,11 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::Mutex,
+    time::Duration,
 };
 
-use rusqlite::{params, Connection, OpenFlags};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{
@@ -32,7 +34,7 @@ const ADAPTERS: [(&str, &str); 3] = [
     ("desktop-foreground-app", "Desktop foreground adapter"),
 ];
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StoreState {
     Ready,
     Unavailable,
@@ -49,12 +51,23 @@ impl StoreState {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ConsentStatus {
+    adapter_id: &'static str,
     adapter: &'static str,
+    tool_id: &'static str,
     tool: &'static str,
     state: &'static str,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SetConsentRequest {
+    adapter_id: String,
+    tool_id: String,
+    enabled: bool,
+    policy_version: i64,
 }
 
 #[derive(Serialize)]
@@ -80,6 +93,10 @@ struct NativeHostRegistrationRequest {
     browser: String,
     extension_id: String,
     host_path: String,
+}
+
+struct TrayState {
+    status_item: Mutex<Option<MenuItem<tauri::Wry>>>,
 }
 
 fn collection_disabled_icon() -> Image<'static> {
@@ -120,19 +137,25 @@ fn open_existing_database() -> Result<Connection, StoreState> {
     if !database_path.is_file() {
         return Err(StoreState::Unavailable);
     }
-    Connection::open_with_flags(
+    let connection = Connection::open_with_flags(
         database_path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .map_err(|_| StoreState::Error)
+    .map_err(|_| StoreState::Error)?;
+    connection
+        .busy_timeout(Duration::from_millis(5000))
+        .map_err(|_| StoreState::Error)?;
+    Ok(connection)
 }
 
 fn fixed_consents(state: &'static str) -> Vec<ConsentStatus> {
     ADAPTERS
         .iter()
-        .flat_map(|(_, adapter)| {
-            TOOL_IDS.iter().map(move |(_, tool)| ConsentStatus {
+        .flat_map(|&(adapter_id, adapter)| {
+            TOOL_IDS.iter().map(move |&(tool_id, tool)| ConsentStatus {
+                adapter_id,
                 adapter,
+                tool_id,
                 tool,
                 state,
             })
@@ -160,13 +183,168 @@ fn read_consents(database: &Connection) -> Result<Vec<ConsentStatus>, StoreState
                 Ok(_) | Err(_) => return Err(StoreState::Error),
             };
             consents.push(ConsentStatus {
+                adapter_id,
                 adapter,
+                tool_id,
                 tool,
                 state,
             });
         }
     }
     Ok(consents)
+}
+
+fn validate_consent_request(request: &SetConsentRequest) -> Result<(), StoreState> {
+    if request.policy_version != COMPANION_POLICY_VERSION {
+        return Err(StoreState::Error);
+    }
+    if !matches!(
+        request.adapter_id.as_str(),
+        "browser-chrome" | "browser-edge"
+    ) {
+        return Err(StoreState::Error);
+    }
+    if !TOOL_IDS
+        .iter()
+        .any(|(id, _)| *id == request.tool_id.as_str())
+    {
+        return Err(StoreState::Error);
+    }
+    Ok(())
+}
+
+fn set_consent_in_database(
+    database: &mut Connection,
+    request: &SetConsentRequest,
+) -> Result<(), StoreState> {
+    validate_consent_request(request)?;
+    let transaction = database
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|_| StoreState::Error)?;
+    let setting: i64 = transaction
+        .query_row(
+            "SELECT collection_enabled FROM companion_settings WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|_| StoreState::Error)?;
+    if !matches!(setting, 0 | 1) {
+        return Err(StoreState::Error);
+    }
+    let enabled_val: i64 = if request.enabled { 1 } else { 0 };
+    transaction
+        .execute(
+            "INSERT INTO companion_tool_consents (
+                adapter_id, tool_id, enabled, consent_policy_version, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP)
+            ON CONFLICT(adapter_id, tool_id) DO UPDATE SET
+                enabled = excluded.enabled,
+                consent_policy_version = excluded.consent_policy_version,
+                updated_at = CURRENT_TIMESTAMP",
+            params![
+                request.adapter_id,
+                request.tool_id,
+                enabled_val,
+                request.policy_version,
+            ],
+        )
+        .map_err(|_| StoreState::Error)?;
+    transaction.commit().map_err(|_| StoreState::Error)?;
+    Ok(())
+}
+
+fn pause_collection_in_database(database: &mut Connection) -> Result<(), StoreState> {
+    let transaction = database
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|_| StoreState::Error)?;
+    let setting_rows = transaction
+        .execute(
+            "UPDATE companion_settings
+             SET collection_enabled = 0, updated_at = CURRENT_TIMESTAMP
+             WHERE id = 1",
+            [],
+        )
+        .map_err(|_| StoreState::Error)?;
+    if setting_rows != 1 {
+        return Err(StoreState::Error);
+    }
+    transaction.commit().map_err(|_| StoreState::Error)?;
+    Ok(())
+}
+
+fn resume_collection_in_database(database: &mut Connection) -> Result<(), StoreState> {
+    let transaction = database
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|_| StoreState::Error)?;
+    let setting_exists: bool = transaction
+        .query_row("SELECT 1 FROM companion_settings WHERE id = 1", [], |_| {
+            Ok(true)
+        })
+        .optional()
+        .map_err(|_| StoreState::Error)?
+        .unwrap_or(false);
+    if !setting_exists {
+        return Err(StoreState::Error);
+    }
+
+    let eligible_count: i64 = transaction
+        .query_row(
+            "SELECT COUNT(*) FROM companion_tool_consents
+             WHERE enabled = 1
+               AND consent_policy_version = ?1
+               AND adapter_id IN ('browser-chrome', 'browser-edge')
+               AND tool_id IN ('chatgpt', 'claude', 'gemini', 'copilot', 'perplexity')",
+            params![COMPANION_POLICY_VERSION],
+            |row| row.get(0),
+        )
+        .map_err(|_| StoreState::Error)?;
+    if eligible_count <= 0 {
+        return Err(StoreState::Error);
+    }
+
+    let setting_rows = transaction
+        .execute(
+            "UPDATE companion_settings
+             SET collection_enabled = 1, updated_at = CURRENT_TIMESTAMP
+             WHERE id = 1",
+            [],
+        )
+        .map_err(|_| StoreState::Error)?;
+    if setting_rows != 1 {
+        return Err(StoreState::Error);
+    }
+    transaction.commit().map_err(|_| StoreState::Error)?;
+    Ok(())
+}
+
+fn disable_collection_in_database(database: &mut Connection) -> Result<(), StoreState> {
+    let transaction = database
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|_| StoreState::Error)?;
+    let setting_rows = transaction
+        .execute(
+            "UPDATE companion_settings
+             SET collection_enabled = 0, updated_at = CURRENT_TIMESTAMP
+             WHERE id = 1",
+            [],
+        )
+        .map_err(|_| StoreState::Error)?;
+    if setting_rows != 1 {
+        return Err(StoreState::Error);
+    }
+    transaction
+        .execute(
+            "UPDATE companion_tool_consents
+             SET enabled = 0, updated_at = CURRENT_TIMESTAMP",
+            [],
+        )
+        .map_err(|_| StoreState::Error)?;
+    transaction.commit().map_err(|_| StoreState::Error)
+}
+
+fn disable_collection() -> Result<(), StoreState> {
+    let mut database = open_existing_database()?;
+    disable_collection_in_database(&mut database)
 }
 
 fn extension_id_is_valid(value: &str) -> bool {
@@ -290,35 +468,10 @@ fn dashboard_status() -> DashboardStatus {
     }
 }
 
-fn disable_collection() -> Result<(), StoreState> {
-    let mut database = open_existing_database()?;
-    disable_collection_in_database(&mut database)
-}
-
-fn disable_collection_in_database(database: &mut Connection) -> Result<(), StoreState> {
-    let transaction = database.transaction().map_err(|_| StoreState::Error)?;
-    let setting_rows = transaction
-        .execute(
-            "UPDATE companion_settings
-             SET collection_enabled = 0, updated_at = CURRENT_TIMESTAMP
-             WHERE id = 1",
-            [],
-        )
-        .map_err(|_| StoreState::Error)?;
-    if setting_rows != 1 {
-        return Err(StoreState::Error);
-    }
-    transaction
-        .execute(
-            "UPDATE companion_tool_consents
-             SET enabled = 0, updated_at = CURRENT_TIMESTAMP",
-            [],
-        )
-        .map_err(|_| StoreState::Error)?;
-    transaction.commit().map_err(|_| StoreState::Error)
-}
-
 fn tray_tooltip(status: &DashboardStatus) -> &'static str {
+    if status.store != "ready" {
+        return "NEXUS Companion — collection status unavailable";
+    }
     match status.collection {
         "enabled" => "NEXUS Companion — collection enabled",
         "disabled" => COLLECTION_DISABLED_TOOLTIP,
@@ -327,6 +480,9 @@ fn tray_tooltip(status: &DashboardStatus) -> &'static str {
 }
 
 fn collection_menu_label(status: &DashboardStatus) -> &'static str {
+    if status.store != "ready" {
+        return "Collection: Status unavailable";
+    }
     match status.collection {
         "enabled" => "Collection: Enabled",
         "disabled" => COLLECTION_DISABLED_LABEL,
@@ -335,9 +491,16 @@ fn collection_menu_label(status: &DashboardStatus) -> &'static str {
 }
 
 fn refresh_tray_status(app: &tauri::AppHandle) {
+    let status = dashboard_status();
     if let Some(tray) = app.tray_by_id("companion-status") {
-        let status = dashboard_status();
         let _ = tray.set_tooltip(Some(tray_tooltip(&status)));
+    }
+    if let Some(state) = app.try_state::<TrayState>() {
+        if let Ok(guard) = state.status_item.lock() {
+            if let Some(ref item) = *guard {
+                let _ = item.set_text(collection_menu_label(&status));
+            }
+        }
     }
 }
 
@@ -361,6 +524,34 @@ fn get_companion_dashboard() -> DashboardStatus {
 #[tauri::command]
 fn disable_companion_collection(app: tauri::AppHandle) -> Result<DashboardStatus, String> {
     disable_collection().map_err(safe_error)?;
+    refresh_tray_status(&app);
+    Ok(dashboard_status())
+}
+
+#[tauri::command]
+fn pause_companion_collection(app: tauri::AppHandle) -> Result<DashboardStatus, String> {
+    let mut database = open_existing_database().map_err(safe_error)?;
+    pause_collection_in_database(&mut database).map_err(safe_error)?;
+    refresh_tray_status(&app);
+    Ok(dashboard_status())
+}
+
+#[tauri::command]
+fn resume_companion_collection(app: tauri::AppHandle) -> Result<DashboardStatus, String> {
+    let mut database = open_existing_database().map_err(safe_error)?;
+    resume_collection_in_database(&mut database).map_err(safe_error)?;
+    refresh_tray_status(&app);
+    Ok(dashboard_status())
+}
+
+#[tauri::command]
+fn set_companion_consent(
+    app: tauri::AppHandle,
+    request: SetConsentRequest,
+) -> Result<DashboardStatus, String> {
+    validate_consent_request(&request).map_err(safe_error)?;
+    let mut database = open_existing_database().map_err(safe_error)?;
+    set_consent_in_database(&mut database, &request).map_err(safe_error)?;
     refresh_tray_status(&app);
     Ok(dashboard_status())
 }
@@ -404,6 +595,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_companion_dashboard,
             disable_companion_collection,
+            pause_companion_collection,
+            resume_companion_collection,
+            set_companion_consent,
             register_native_host
         ])
         .setup(|app| {
@@ -427,9 +621,12 @@ fn main() {
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu =
                 Menu::with_items(app, &[&open_dashboard, &collection_status, &disable, &quit])?;
-            let collection_status_for_events = collection_status.clone();
 
-            TrayIconBuilder::with_id("companion-status")
+            app.manage(TrayState {
+                status_item: Mutex::new(Some(collection_status)),
+            });
+
+            let tray_result = TrayIconBuilder::with_id("companion-status")
                 .icon(collection_disabled_icon())
                 .tooltip(tray_tooltip(&status))
                 .menu(&menu)
@@ -439,13 +636,15 @@ fn main() {
                     "disable-collection" => {
                         let _ = disable_collection();
                         refresh_tray_status(app);
-                        let _ = collection_status_for_events
-                            .set_text(collection_menu_label(&dashboard_status()));
                     }
                     "quit" => app.exit(0),
                     _ => {}
                 })
-                .build(app)?;
+                .build(app);
+
+            if tray_result.is_err() {
+                eprintln!("Tray is unavailable; the dashboard remains usable.");
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -455,6 +654,9 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MIGRATION_004: &str =
+        include_str!("../../../../tools/mcp/migrations/004_companion-activity.sql");
 
     #[test]
     fn extension_ids_must_be_published_chrome_ids() {
@@ -476,30 +678,97 @@ mod tests {
     }
 
     #[test]
-    fn explicit_disable_turns_off_the_shared_setting_and_fixed_consents() {
+    fn test_consent_request_validation_and_unknown_serde_fields() {
+        let valid_json = r#"{
+            "adapterId": "browser-chrome",
+            "toolId": "chatgpt",
+            "enabled": true,
+            "policyVersion": 1
+        }"#;
+        let req: Result<SetConsentRequest, _> = serde_json::from_str(valid_json);
+        assert!(req.is_ok());
+        let req = req.unwrap();
+        assert_eq!(validate_consent_request(&req), Ok(()));
+
+        let unknown_field_json = r#"{
+            "adapterId": "browser-chrome",
+            "toolId": "chatgpt",
+            "enabled": true,
+            "policyVersion": 1,
+            "extraField": "malicious"
+        }"#;
+        let rejected_serde: Result<SetConsentRequest, _> = serde_json::from_str(unknown_field_json);
+        assert!(rejected_serde.is_err());
+
+        let desktop_req = SetConsentRequest {
+            adapter_id: "desktop-foreground-app".into(),
+            tool_id: "chatgpt".into(),
+            enabled: true,
+            policy_version: 1,
+        };
+        assert_eq!(
+            validate_consent_request(&desktop_req),
+            Err(StoreState::Error)
+        );
+
+        let unknown_adapter = SetConsentRequest {
+            adapter_id: "browser-firefox".into(),
+            tool_id: "chatgpt".into(),
+            enabled: true,
+            policy_version: 1,
+        };
+        assert_eq!(
+            validate_consent_request(&unknown_adapter),
+            Err(StoreState::Error)
+        );
+
+        let unknown_tool = SetConsentRequest {
+            adapter_id: "browser-chrome".into(),
+            tool_id: "unknown_ai".into(),
+            enabled: true,
+            policy_version: 1,
+        };
+        assert_eq!(
+            validate_consent_request(&unknown_tool),
+            Err(StoreState::Error)
+        );
+
+        let invalid_policy = SetConsentRequest {
+            adapter_id: "browser-chrome".into(),
+            tool_id: "chatgpt".into(),
+            enabled: true,
+            policy_version: 2,
+        };
+        assert_eq!(
+            validate_consent_request(&invalid_policy),
+            Err(StoreState::Error)
+        );
+    }
+
+    #[test]
+    fn test_grant_without_enabling_using_checked_in_migration() {
         let mut database = Connection::open_in_memory().expect("in-memory database");
         database
-            .execute_batch(
-                "CREATE TABLE companion_settings (
-                    id INTEGER PRIMARY KEY,
-                    collection_enabled INTEGER NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-                CREATE TABLE companion_tool_consents (
-                    adapter_id TEXT NOT NULL,
-                    tool_id TEXT NOT NULL,
-                    enabled INTEGER NOT NULL,
-                    consent_policy_version INTEGER NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-                INSERT INTO companion_settings VALUES (1, 1, 'before');
-                INSERT INTO companion_tool_consents VALUES
-                    ('browser-chrome', 'chatgpt', 1, 1, 'before'),
-                    ('browser-edge', 'claude', 1, 1, 'before');",
-            )
-            .expect("test schema");
+            .execute_batch(MIGRATION_004)
+            .expect("apply migration 004");
 
-        disable_collection_in_database(&mut database).expect("disable collection");
+        let grant_req = SetConsentRequest {
+            adapter_id: "browser-chrome".into(),
+            tool_id: "chatgpt".into(),
+            enabled: true,
+            policy_version: 1,
+        };
+
+        set_consent_in_database(&mut database, &grant_req).expect("grant consent");
+
+        let enabled: i64 = database
+            .query_row(
+                "SELECT enabled FROM companion_tool_consents WHERE adapter_id = 'browser-chrome' AND tool_id = 'chatgpt'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query consent");
+        assert_eq!(enabled, 1);
 
         let collection: i64 = database
             .query_row(
@@ -507,14 +776,221 @@ mod tests {
                 [],
                 |row| row.get(0),
             )
-            .expect("collection setting");
+            .expect("query collection");
+        assert_eq!(collection, 0);
+    }
+
+    #[test]
+    fn test_pause_preserves_grant() {
+        let mut database = Connection::open_in_memory().expect("in-memory database");
+        database
+            .execute_batch(MIGRATION_004)
+            .expect("apply migration 004");
+
+        let grant_req = SetConsentRequest {
+            adapter_id: "browser-chrome".into(),
+            tool_id: "chatgpt".into(),
+            enabled: true,
+            policy_version: 1,
+        };
+        set_consent_in_database(&mut database, &grant_req).expect("grant consent");
+        database
+            .execute(
+                "UPDATE companion_settings SET collection_enabled = 1 WHERE id = 1",
+                [],
+            )
+            .expect("enable collection");
+
+        pause_collection_in_database(&mut database).expect("pause collection");
+
+        let collection: i64 = database
+            .query_row(
+                "SELECT collection_enabled FROM companion_settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query collection");
+        assert_eq!(collection, 0);
+
+        let enabled: i64 = database
+            .query_row(
+                "SELECT enabled FROM companion_tool_consents WHERE adapter_id = 'browser-chrome' AND tool_id = 'chatgpt'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query consent");
+        assert_eq!(enabled, 1);
+    }
+
+    #[test]
+    fn test_resume_rejects_absent_stale_unknown_and_revoked_consent() {
+        let mut database = Connection::open_in_memory().expect("in-memory database");
+        database
+            .execute_batch(MIGRATION_004)
+            .expect("apply migration 004");
+
+        // 1. Absent consent
+        assert!(resume_collection_in_database(&mut database).is_err());
+        let col: i64 = database
+            .query_row(
+                "SELECT collection_enabled FROM companion_settings WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(col, 0);
+
+        // 2. Revoked consent (enabled = 0)
+        database
+            .execute(
+                "INSERT INTO companion_tool_consents (adapter_id, tool_id, enabled, consent_policy_version, updated_at)
+                 VALUES ('browser-chrome', 'chatgpt', 0, 1, '2026-10-06T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        assert!(resume_collection_in_database(&mut database).is_err());
+
+        // 3. Stale policy version
+        database
+            .execute(
+                "UPDATE companion_tool_consents SET enabled = 1, consent_policy_version = 2 WHERE adapter_id = 'browser-chrome'",
+                [],
+            )
+            .unwrap();
+        assert!(resume_collection_in_database(&mut database).is_err());
+
+        // 4. Desktop-only consent
+        database
+            .execute("DELETE FROM companion_tool_consents", [])
+            .unwrap();
+        database
+            .execute(
+                "INSERT INTO companion_tool_consents (adapter_id, tool_id, enabled, consent_policy_version, updated_at)
+                 VALUES ('desktop-foreground-app', 'chatgpt', 1, 1, '2026-10-06T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        assert!(resume_collection_in_database(&mut database).is_err());
+
+        // 5. Unknown tool or adapter
+        database
+            .execute("DELETE FROM companion_tool_consents", [])
+            .unwrap();
+        database
+            .execute(
+                "INSERT INTO companion_tool_consents (adapter_id, tool_id, enabled, consent_policy_version, updated_at)
+                 VALUES ('browser-firefox', 'chatgpt', 1, 1, '2026-10-06T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        assert!(resume_collection_in_database(&mut database).is_err());
+
+        // 6. Valid current browser consent enables resume
+        database
+            .execute("DELETE FROM companion_tool_consents", [])
+            .unwrap();
+        database
+            .execute(
+                "INSERT INTO companion_tool_consents (adapter_id, tool_id, enabled, consent_policy_version, updated_at)
+                 VALUES ('browser-edge', 'claude', 1, 1, '2026-10-06T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        assert!(resume_collection_in_database(&mut database).is_ok());
+        let col: i64 = database
+            .query_row(
+                "SELECT collection_enabled FROM companion_settings WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(col, 1);
+    }
+
+    #[test]
+    fn test_missing_settings_rollback() {
+        let mut database = Connection::open_in_memory().expect("in-memory database");
+        database
+            .execute_batch(MIGRATION_004)
+            .expect("apply migration 004");
+
+        database
+            .execute(
+                "INSERT INTO companion_tool_consents (adapter_id, tool_id, enabled, consent_policy_version, updated_at)
+                 VALUES ('browser-chrome', 'chatgpt', 1, 1, '2026-10-06T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+
+        database
+            .execute("DELETE FROM companion_settings WHERE id = 1", [])
+            .unwrap();
+
+        assert!(resume_collection_in_database(&mut database).is_err());
+        assert!(pause_collection_in_database(&mut database).is_err());
+        assert!(disable_collection_in_database(&mut database).is_err());
+        let grant = SetConsentRequest {
+            adapter_id: "browser-edge".into(),
+            tool_id: "claude".into(),
+            enabled: true,
+            policy_version: 1,
+        };
+        assert!(set_consent_in_database(&mut database, &grant).is_err());
+        let count: i64 = database
+            .query_row("SELECT COUNT(*) FROM companion_tool_consents", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let consent_enabled: i64 = database
+            .query_row(
+                "SELECT enabled FROM companion_tool_consents WHERE tool_id = 'chatgpt'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(consent_enabled, 1);
+    }
+
+    #[test]
+    fn test_explicit_disable_revokes_all_consents() {
+        let mut database = Connection::open_in_memory().expect("in-memory database");
+        database
+            .execute_batch(MIGRATION_004)
+            .expect("apply migration 004");
+
+        database
+            .execute(
+                "UPDATE companion_settings SET collection_enabled = 1 WHERE id = 1",
+                [],
+            )
+            .unwrap();
+        database
+            .execute(
+                "INSERT INTO companion_tool_consents (adapter_id, tool_id, enabled, consent_policy_version, updated_at)
+                 VALUES ('browser-chrome', 'chatgpt', 1, 1, 'before'),
+                        ('browser-edge', 'claude', 1, 1, 'before')",
+                [],
+            )
+            .unwrap();
+
+        disable_collection_in_database(&mut database).expect("disable collection");
+
+        let collection: i64 = database
+            .query_row(
+                "SELECT collection_enabled FROM companion_settings WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         let enabled_consents: i64 = database
             .query_row(
                 "SELECT COUNT(*) FROM companion_tool_consents WHERE enabled = 1",
                 [],
-                |row| row.get(0),
+                |r| r.get(0),
             )
-            .expect("consent count");
+            .unwrap();
         assert_eq!(collection, 0);
         assert_eq!(enabled_consents, 0);
     }

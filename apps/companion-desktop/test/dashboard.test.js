@@ -18,6 +18,7 @@ function createMockElement(id = "", tagName = "div") {
     textContent: "",
     className: "",
     disabled: false,
+    checked: false,
     value: "",
     children,
     addEventListener(event, handler) {
@@ -38,6 +39,25 @@ function createMockElement(id = "", tagName = "div") {
     append(...newChildren) {
       children.push(...newChildren);
     },
+    querySelector(selector) {
+      for (const child of children) {
+        if (
+          selector.startsWith(".") &&
+          child.className &&
+          child.className.split(" ").includes(selector.slice(1))
+        ) {
+          return child;
+        }
+        if (selector.startsWith("#") && child.id === selector.slice(1)) {
+          return child;
+        }
+        if (child.querySelector) {
+          const found = child.querySelector(selector);
+          if (found) return found;
+        }
+      }
+      return null;
+    },
   };
 }
 
@@ -47,8 +67,12 @@ function setupEnvironment({ onInvoke }) {
     "#collection-detail": createMockElement("collection-detail", "p"),
     "#consents": createMockElement("consents", "div"),
     "#host-state": createMockElement("host-state", "p"),
+    "#resume-collection": createMockElement("resume-collection", "button"),
+    "#pause-collection": createMockElement("pause-collection", "button"),
     "#disable-collection": createMockElement("disable-collection", "button"),
-    "#disable-feedback": createMockElement("disable-feedback", "p"),
+    "#control-feedback": createMockElement("control-feedback", "p"),
+    "#consent-acknowledgement": createMockElement("consent-acknowledgement", "input"),
+    "#consent-feedback": createMockElement("consent-feedback", "p"),
     "#native-host-form": createMockElement("native-host-form", "form"),
     "#register-host": createMockElement("register-host", "button"),
     "#host-feedback": createMockElement("host-feedback", "p"),
@@ -88,38 +112,95 @@ function setupEnvironment({ onInvoke }) {
   return { elements, context };
 }
 
-test("dashboard executes in VM: verifies initial status render and disable click updates status", async () => {
+test("no initial mutations: initial render calls only get_companion_dashboard", async () => {
   const invokeCalls = [];
-  let dashboardState = {
-    collection: "enabled",
+  const dashboardState = {
+    collection: "disabled",
     store: "ready",
     consents: [
-      { adapter: "Chrome browser", tool: "ChatGPT", state: "enabled" },
+      { adapterId: "browser-chrome", adapter: "Chrome browser", toolId: "chatgpt", tool: "ChatGPT", state: "disabled" },
     ],
-    nativeHost: {
-      chrome: "registered",
-      edge: "unregistered",
-      registrationControl: "available",
-    },
+    nativeHost: { chrome: "unregistered", edge: "unregistered", registrationControl: "available" },
   };
 
   const onInvoke = async (command, payload) => {
     invokeCalls.push({ command, payload });
-    if (command === "get_companion_dashboard") {
-      return dashboardState;
-    }
-    if (command === "disable_companion_collection") {
+    if (command === "get_companion_dashboard") return dashboardState;
+    throw new Error(`Unexpected command: ${command}`);
+  };
+
+  const { elements, context } = setupEnvironment({ onInvoke });
+  const script = new vm.Script(dashboardCode, { filename: "dashboard.js" });
+  script.runInContext(context);
+  await new Promise(setImmediate);
+
+  assert.equal(invokeCalls.length, 1);
+  assert.equal(invokeCalls[0].command, "get_companion_dashboard");
+  assert.equal(elements["#collection-heading"].textContent, "Collection is disabled");
+  assert.equal(elements["#consent-acknowledgement"].checked, false);
+});
+
+test("acknowledgement gating: grant buttons are disabled until checkbox is checked", async () => {
+  const dashboardState = {
+    collection: "disabled",
+    store: "ready",
+    consents: [
+      { adapterId: "browser-chrome", adapter: "Chrome browser", toolId: "chatgpt", tool: "ChatGPT", state: "disabled" },
+    ],
+    nativeHost: { chrome: "unregistered", edge: "unregistered", registrationControl: "available" },
+  };
+
+  const { elements, context } = setupEnvironment({
+    onInvoke: async (cmd) => {
+      if (cmd === "get_companion_dashboard") return dashboardState;
+      throw new Error(`Unexpected: ${cmd}`);
+    },
+  });
+
+  const script = new vm.Script(dashboardCode, { filename: "dashboard.js" });
+  script.runInContext(context);
+  await new Promise(setImmediate);
+
+  const row = elements["#consents"].children[0];
+  const grantBtn = row.querySelector(".grant-button");
+  assert.ok(grantBtn, "grant button should exist");
+  assert.equal(grantBtn.disabled, true, "grant button must be initially disabled when unacknowledged");
+
+  // Check acknowledgement
+  elements["#consent-acknowledgement"].checked = true;
+  await elements["#consent-acknowledgement"].trigger("change");
+
+  assert.equal(grantBtn.disabled, false, "grant button must be enabled when acknowledged");
+
+  // Uncheck acknowledgement
+  elements["#consent-acknowledgement"].checked = false;
+  await elements["#consent-acknowledgement"].trigger("change");
+
+  assert.equal(grantBtn.disabled, true, "grant button must be disabled again when unchecked");
+});
+
+test("fixed grant payload: clicking grant dispatches set_companion_consent with exact parameters", async () => {
+  const invokeCalls = [];
+  let dashboardState = {
+    collection: "disabled",
+    store: "ready",
+    consents: [
+      { adapterId: "browser-chrome", adapter: "Chrome browser", toolId: "chatgpt", tool: "ChatGPT", state: "disabled" },
+    ],
+    nativeHost: { chrome: "unregistered", edge: "unregistered", registrationControl: "available" },
+  };
+
+  const onInvoke = async (command, payload) => {
+    invokeCalls.push({ command, payload });
+    if (command === "get_companion_dashboard") return dashboardState;
+    if (command === "set_companion_consent") {
       dashboardState = {
         collection: "disabled",
         store: "ready",
         consents: [
-          { adapter: "Chrome browser", tool: "ChatGPT", state: "disabled" },
+          { adapterId: "browser-chrome", adapter: "Chrome browser", toolId: "chatgpt", tool: "ChatGPT", state: "enabled" },
         ],
-        nativeHost: {
-          chrome: "registered",
-          edge: "unregistered",
-          registrationControl: "available",
-        },
+        nativeHost: { chrome: "unregistered", edge: "unregistered", registrationControl: "available" },
       };
       return dashboardState;
     }
@@ -127,45 +208,253 @@ test("dashboard executes in VM: verifies initial status render and disable click
   };
 
   const { elements, context } = setupEnvironment({ onInvoke });
-
-  // Execute the actual dashboard.js script within Node's VM context
   const script = new vm.Script(dashboardCode, { filename: "dashboard.js" });
   script.runInContext(context);
-
-  // Wait for initial refreshDashboard microtasks
   await new Promise(setImmediate);
 
-  // Verify initial status render
-  assert.equal(invokeCalls.length, 1);
-  assert.equal(invokeCalls[0].command, "get_companion_dashboard");
-  assert.equal(elements["#collection-heading"].textContent, "Collection is enabled");
-  assert.equal(
-    elements["#collection-detail"].textContent,
-    "Only fixed, consented activity envelopes can be accepted by the shared local store."
-  );
-  assert.equal(elements["#consents"].children.length, 1);
-  assert.equal(
-    elements["#host-state"].textContent,
-    "Chrome: registered. Edge: unregistered."
-  );
+  elements["#consent-acknowledgement"].checked = true;
+  await elements["#consent-acknowledgement"].trigger("change");
 
-  // Trigger disable click
-  const disableButton = elements["#disable-collection"];
-  await disableButton.trigger("click");
+  const grantBtn = elements["#consents"].children[0].querySelector(".grant-button");
+  await grantBtn.trigger("click");
 
-  // Verify disable_companion_collection was invoked
   assert.equal(invokeCalls.length, 2);
-  assert.equal(invokeCalls[1].command, "disable_companion_collection");
+  assert.equal(invokeCalls[1].command, "set_companion_consent");
+  assert.deepEqual(JSON.parse(JSON.stringify(invokeCalls[1].payload)), {
+    request: {
+      adapterId: "browser-chrome",
+      toolId: "chatgpt",
+      enabled: true,
+      policyVersion: 1,
+    },
+  });
 
-  // Verify UI updated to reflect disabled collection status
+  // Verify UI updated to reflect enabled consent row with revoke button
+  const updatedRow = elements["#consents"].children[0];
+  const revokeBtn = updatedRow.querySelector(".revoke-button");
+  assert.ok(revokeBtn, "revoke button should now exist in place of grant button");
+  assert.equal(revokeBtn.disabled, false);
+});
+
+test("pause/resume dispatch: resume only enabled with ready+current grant, pause only enabled when collection enabled", async () => {
+  const invokeCalls = [];
+  let dashboardState = {
+    collection: "disabled",
+    store: "ready",
+    consents: [
+      { adapterId: "browser-chrome", adapter: "Chrome browser", toolId: "chatgpt", tool: "ChatGPT", state: "enabled" },
+    ],
+    nativeHost: { chrome: "unregistered", edge: "unregistered", registrationControl: "available" },
+  };
+
+  const onInvoke = async (command, payload) => {
+    invokeCalls.push({ command, payload });
+    if (command === "get_companion_dashboard") return dashboardState;
+    if (command === "resume_companion_collection") {
+      dashboardState = {
+        ...dashboardState,
+        collection: "enabled",
+      };
+      return dashboardState;
+    }
+    if (command === "pause_companion_collection") {
+      dashboardState = {
+        ...dashboardState,
+        collection: "disabled",
+      };
+      return dashboardState;
+    }
+    throw new Error(`Unexpected command: ${command}`);
+  };
+
+  const { elements, context } = setupEnvironment({ onInvoke });
+  const script = new vm.Script(dashboardCode, { filename: "dashboard.js" });
+  script.runInContext(context);
+  await new Promise(setImmediate);
+
+  // Ready + disabled collection + current browser grant: resume is enabled, pause is disabled
+  assert.equal(elements["#resume-collection"].disabled, false);
+  assert.equal(elements["#pause-collection"].disabled, true);
+
+  // Click resume
+  await elements["#resume-collection"].trigger("click");
+  assert.equal(invokeCalls[1].command, "resume_companion_collection");
+  assert.equal(elements["#collection-heading"].textContent, "Collection is enabled");
+  assert.equal(elements["#resume-collection"].disabled, true);
+  assert.equal(elements["#pause-collection"].disabled, false);
+
+  // Click pause
+  await elements["#pause-collection"].trigger("click");
+  assert.equal(invokeCalls[2].command, "pause_companion_collection");
   assert.equal(elements["#collection-heading"].textContent, "Collection is disabled");
+  assert.equal(elements["#resume-collection"].disabled, false);
+  assert.equal(elements["#pause-collection"].disabled, true);
+});
+
+test("revoke-all: disable collection triggers disable_companion_collection", async () => {
+  const invokeCalls = [];
+  let dashboardState = {
+    collection: "enabled",
+    store: "ready",
+    consents: [
+      { adapterId: "browser-chrome", adapter: "Chrome browser", toolId: "chatgpt", tool: "ChatGPT", state: "enabled" },
+    ],
+    nativeHost: { chrome: "unregistered", edge: "unregistered", registrationControl: "available" },
+  };
+
+  const onInvoke = async (command, payload) => {
+    invokeCalls.push({ command, payload });
+    if (command === "get_companion_dashboard") return dashboardState;
+    if (command === "disable_companion_collection") {
+      dashboardState = {
+        collection: "disabled",
+        store: "ready",
+        consents: [
+          { adapterId: "browser-chrome", adapter: "Chrome browser", toolId: "chatgpt", tool: "ChatGPT", state: "disabled" },
+        ],
+        nativeHost: { chrome: "unregistered", edge: "unregistered", registrationControl: "available" },
+      };
+      return dashboardState;
+    }
+    throw new Error(`Unexpected command: ${command}`);
+  };
+
+  const { elements, context } = setupEnvironment({ onInvoke });
+  const script = new vm.Script(dashboardCode, { filename: "dashboard.js" });
+  script.runInContext(context);
+  await new Promise(setImmediate);
+
+  await elements["#disable-collection"].trigger("click");
+  assert.equal(invokeCalls[1].command, "disable_companion_collection");
+  assert.equal(elements["#collection-heading"].textContent, "Collection is disabled");
+  assert.equal(elements["#consents"].children[0].querySelector(".grant-button").disabled, true);
+});
+
+test("desktop foreground adapter is read-only without grant/revoke buttons", async () => {
+  const dashboardState = {
+    collection: "disabled",
+    store: "ready",
+    consents: [
+      {
+        adapterId: "desktop-foreground-app",
+        adapter: "Desktop foreground adapter",
+        toolId: "chatgpt",
+        tool: "ChatGPT",
+        state: "disabled",
+      },
+    ],
+    nativeHost: { chrome: "unregistered", edge: "unregistered", registrationControl: "available" },
+  };
+
+  const { elements, context } = setupEnvironment({
+    onInvoke: async () => dashboardState,
+  });
+
+  const script = new vm.Script(dashboardCode, { filename: "dashboard.js" });
+  script.runInContext(context);
+  await new Promise(setImmediate);
+
+  const row = elements["#consents"].children[0];
+  assert.equal(row.querySelector(".grant-button"), null);
+  assert.equal(row.querySelector(".revoke-button"), null);
+  const badge = row.querySelector(".read-only-badge");
+  assert.ok(badge);
+  assert.equal(badge.textContent, "read-only");
+});
+
+test("failed load fail-closed controls: when get_companion_dashboard fails, all controls disable", async () => {
+  const { elements, context } = setupEnvironment({
+    onInvoke: async () => {
+      throw new Error("Store connection error");
+    },
+  });
+
+  const script = new vm.Script(dashboardCode, { filename: "dashboard.js" });
+  script.runInContext(context);
+  await new Promise(setImmediate);
+
+  assert.equal(elements["#collection-heading"].textContent, "Collection status unavailable");
   assert.equal(
     elements["#collection-detail"].textContent,
-    "No new Companion activity can be recorded."
+    "The local observability status is unavailable. Nothing is being enabled."
   );
+  assert.equal(elements["#resume-collection"].disabled, true);
+  assert.equal(elements["#pause-collection"].disabled, true);
+  assert.equal(elements["#disable-collection"].disabled, true);
+  assert.equal(elements["#consent-acknowledgement"].disabled, true);
+});
+
+test("safe errors: unknown errors generic, allowlisted errors displayed verbatim", async () => {
+  let failWith = "Unknown sqlite internal crash details";
+  const { elements, context } = setupEnvironment({
+    onInvoke: async (cmd) => {
+      if (cmd === "get_companion_dashboard") {
+        return {
+          collection: "disabled",
+          store: "ready",
+          consents: [
+            { adapterId: "browser-chrome", adapter: "Chrome browser", toolId: "chatgpt", tool: "ChatGPT", state: "enabled" },
+          ],
+          nativeHost: { chrome: "unregistered", edge: "unregistered", registrationControl: "available" },
+        };
+      }
+      if (cmd === "resume_companion_collection") {
+        throw failWith;
+      }
+      throw new Error("unexpected");
+    },
+  });
+
+  const script = new vm.Script(dashboardCode, { filename: "dashboard.js" });
+  script.runInContext(context);
+  await new Promise(setImmediate);
+
+  // Trigger error with unlisted message
+  await elements["#resume-collection"].trigger("click");
   assert.equal(
-    elements["#disable-feedback"].textContent,
-    "Collection is disabled and all fixed consents are revoked."
+    elements["#control-feedback"].textContent,
+    "The requested local action could not be completed."
   );
-  assert.equal(elements["#consents"].children[0].children[1].textContent, "disabled");
+
+  // Trigger error with allowlisted message
+  failWith = "The local NEXUS observability store could not be updated; no setting was changed.";
+  await elements["#resume-collection"].trigger("click");
+  assert.equal(
+    elements["#control-feedback"].textContent,
+    "The local NEXUS observability store could not be updated; no setting was changed."
+  );
+});
+
+
+test("unacknowledged click and unknown consent IDs cannot enable collection", async () => {
+  const calls = [];
+  const status = { collection: "disabled", store: "ready", consents: [
+    { adapterId: "browser-chrome", adapter: "Chrome browser", toolId: "chatgpt", tool: "ChatGPT", state: "disabled" },
+    { adapterId: "browser-edge", adapter: "Edge browser", toolId: "unknown", tool: "Claude", state: "enabled" },
+  ], nativeHost: { chrome: "unregistered", edge: "unregistered", registrationControl: "unavailable" } };
+  const { elements, context } = setupEnvironment({onInvoke: async command => { calls.push(command); return status; }});
+  new vm.Script(dashboardCode).runInContext(context);
+  await new Promise(setImmediate);
+  assert.equal(elements["#consents"].children.length, 1);
+  assert.equal(elements["#resume-collection"].disabled, true);
+  await elements["#consents"].children[0].querySelector(".grant-button").trigger("click");
+  assert.deepEqual(calls, ["get_companion_dashboard"]);
+});
+
+test("failed mutation followed by unavailable status clears stale resume readiness", async () => {
+  let reads = 0;
+  const status = { collection: "enabled", store: "ready", consents: [
+    { adapterId: "browser-chrome", adapter: "Chrome browser", toolId: "chatgpt", tool: "ChatGPT", state: "enabled" },
+  ], nativeHost: { chrome: "unregistered", edge: "unregistered", registrationControl: "unavailable" } };
+  const {elements, context} = setupEnvironment({onInvoke: async command => {
+    if (command === "get_companion_dashboard" && reads++ === 0) return status;
+    throw new Error("sensitive arbitrary provider payload");
+  }});
+  new vm.Script(dashboardCode).runInContext(context);
+  await new Promise(setImmediate);
+  await elements["#pause-collection"].trigger("click");
+  assert.equal(elements["#resume-collection"].disabled, true);
+  assert.equal(elements["#pause-collection"].disabled, true);
+  assert.equal(elements["#consent-acknowledgement"].disabled, true);
+  assert.equal(elements["#control-feedback"].textContent, "The requested local action could not be completed.");
 });

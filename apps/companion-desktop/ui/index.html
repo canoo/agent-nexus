@@ -14,16 +14,28 @@
       <p class="status" id="collection-detail" role="status">Loading local privacy status…</p>
 
       <section aria-labelledby="controls-heading">
-        <h2 id="controls-heading">Privacy controls</h2>
-        <p>Collection is off by default. This dashboard never enables collection or changes browser permissions.</p>
-        <button type="button" class="danger" id="disable-collection">Disable collection and revoke all consents</button>
-        <p class="feedback" id="disable-feedback" role="status"></p>
+        <h2 id="controls-heading">Privacy & collection controls</h2>
+        <p>Collection is off by default and requires at least one granted browser tool consent before it can be resumed. Opening this dashboard never enables collection or alters permissions.</p>
+        <div class="control-actions">
+          <button type="button" id="resume-collection" disabled>Resume collection</button>
+          <button type="button" id="pause-collection" disabled>Pause collection</button>
+          <button type="button" class="danger" id="disable-collection" disabled>Disable collection and revoke all consents</button>
+        </div>
+        <p class="feedback" id="control-feedback" role="status"></p>
       </section>
 
       <section aria-labelledby="consents-heading">
-        <h2 id="consents-heading">Fixed consent status</h2>
-        <p>Only the listed NEXUS tools and adapters can appear here. This is configuration status, not a history of browser or desktop activity.</p>
+        <h2 id="consents-heading">Tool consent & privacy disclosure</h2>
+        <div class="disclosure-box">
+          <p><strong>Privacy disclosure:</strong> NEXUS Companion observes only fixed tool presence, surface (active browser tab), and start/end timestamps. The browser extension checks the selected tab’s origin locally to identify a supported tool. It <em>never</em> sends or stores page URLs, titles, prompts, responses, or browsing history. Browser permission is granted separately in the extension.</p>
+          <label class="acknowledgement-label">
+            <input type="checkbox" id="consent-acknowledgement" disabled />
+            <span>I acknowledge that granting consent allows NEXUS Companion to observe only fixed tool presence, surface, and timestamps (never URLs, titles, prompts, or content).</span>
+          </label>
+        </div>
+        <p class="hint">Granting or revoking consent per tool updates your settings immediately without enabling collection. Desktop foreground adapter consent is not implemented and is read-only.</p>
         <div class="consent-grid" id="consents" aria-live="polite"></div>
+        <p class="feedback" id="consent-feedback" role="status"></p>
       </section>
 
       <section aria-labelledby="host-heading">

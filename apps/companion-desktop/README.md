@@ -6,25 +6,48 @@ menu-bar surface and in a local dashboard.
 
 It does **not** collect browser or desktop activity. It contains no browser
 integration, content script, desktop/process detector, analytics, activity
-store, or observability writer. It reads and can explicitly revoke the existing
-migration-owned consent/settings rows in
+store, or observability writer. It reads and manages the existing
+migration-owned consent and settings rows in
 `~/.config/nexus/logs/observability.sqlite`; it never creates, migrates, or
 replaces that database. The native host remains the only activity writer via
 the shared Node observability store.
 
 ## Current behavior
 
-- Creates a Tauri v2 tray/menu-bar item. Its tooltip reflects the current local
-  collection state where platform support permits it.
-- Provides a dashboard/no-tray fallback that shows only the fixed allowlisted
-  adapter/tool consent states and native-host registration states. It never
-  renders activity history, titles, URLs, prompts, responses, account/project
-  identifiers, source code, or arbitrary metadata.
-- Offers an explicit **Disable collection and revoke all consents** action. It
-  updates `companion_settings` and `companion_tool_consents` in one SQLite
-  transaction. There is intentionally no enable action in this app.
-- Offers `Open Dashboard`, explicit disable, and `Quit` in the tray/menu-bar
-  menu. Opening the app or dashboard never changes a collection setting.
+- Creates a Tauri v2 tray/menu-bar item. Its tooltip and menu state reflect the
+  current local collection status where platform support permits it. If tray
+  creation fails (such as in headless or minimal desktop environments), the
+  dashboard window continues running without crashing.
+- Provides a dashboard/no-tray fallback that displays fixed allowlisted
+  adapter/tool consent states and native-host registration states. It discloses
+  that only tool presence, surface, and start/end timestamps are captured. It
+  never renders activity history, titles, URLs, prompts, responses,
+  account/project identifiers, source code, or arbitrary metadata.
+- Requires an explicit, initially unchecked acknowledgement checkbox confirming
+  the privacy disclosure before any per-tool/browser grant button can be clicked.
+- Supports per-tool/browser consent grants and revocations for Chrome and Edge
+  across the five supported tools (`chatgpt`, `claude`, `gemini`, `copilot`,
+  `perplexity`) targeting consent policy version 1. Consent updates are atomic
+  upserts into `companion_tool_consents` and intentionally do **not** enable
+  collection.
+- Desktop foreground adapter is not implemented in this preview and is displayed
+  as strictly read-only.
+- Provides separate **Pause collection** and **Resume collection** actions:
+  - **Pause**: atomically sets `collection_enabled = 0` in `companion_settings`
+    while preserving all granted tool consents.
+  - **Resume**: executes an immediate transaction requiring an existing
+    settings row and at least one enabled current-policy browser consent
+    before setting `collection_enabled = 1`. Stale, unknown, desktop-only, or
+    absent consents are rejected.
+- Offers an explicit **Disable collection and revoke all consents** action that
+  atomically zeroes `collection_enabled` and revokes all tool consents in SQLite.
+- Disables competing controls during in-flight actions to prevent conflicting
+  state transitions. If store refresh fails, controls fail closed.
+- Restricts error responses to fixed, safe messages, falling back to a generic
+  error for any unexpected condition. Applies a bounded SQLite busy timeout
+  (5 seconds) to prevent hangs.
+- Opening the app or rendering the dashboard never mutates collection state or
+  tool consents.
 - Can invoke the existing browser-specific native-host registration helper only
   after a user submits a published Chrome-format extension ID and an existing
   absolute host path. The installer must deliberately configure
@@ -33,11 +56,22 @@ the shared Node observability store.
   enable collection or request browser access.
 - Uses a generated in-memory tray status icon and a matching packaged PNG
   window icon required by Tauri's compile-time context generation.
-- Never enables collection through the UI. There is no hidden or automatic
-  collection mode.
 
-The dashboard is a privacy-status/control surface, not a task, token, cost, or
-activity view. The existing CLI and Go TUI remain independent of this app.
+## Remaining gates for release
+
+This desktop shell is a preview control surface. Shipped release requires:
+
+- **Data retention enforcement**: automated cleanup of raw spans (14 days)
+  and daily aggregates (90 days) in the shared store.
+- **Pause-boundary spans**: verify resumed activity never counts time spent paused.
+- **Browser extension & native host integration**: end-to-end integration tests
+  verifying extension-to-host messaging and store consent enforcement in real
+  Chrome and Edge installations.
+- **Platform runtime validation**: verifying tray, windowing, and notification
+  behavior across Linux desktop environments (GNOME, KDE, Wayland) and macOS.
+- **Packaging and distribution**: Developer ID signing, notarization, and DMG
+  assembly on macOS; sandboxed Flatpak permissions and native messaging design
+  on Linux.
 
 ## Bootstrap and local development
 
@@ -64,8 +98,9 @@ Required toolchains:
 
 Use `npm test` to run the frontend unit tests, and `npm run check` for
 the Rust formatting check. `cargo test --manifest-path src-tauri/Cargo.toml --locked`
-additionally covers fixed extension-ID validation and the unavailable-store
-fail-closed state. To run the full Companion test suite locally:
+additionally covers consent request validation, migration 004 schema verification,
+grant-without-enabling, pause/resume rules, and rollback behavior. To run the full
+Companion test suite locally:
 
 ```sh
 # Browser extension unit tests
@@ -89,10 +124,10 @@ locally.
 
 Linux tray visibility depends on the desktop environment. The app uses Tauri's
 tray/status-notifier path where available, but does not promise a top-bar icon
-or working tray tooltip on every GNOME or Wayland setup. The application
-launcher and dashboard window remain the no-tray fallback. This foundation
-does not yet provide the planned CLI status command or a desktop activity
-adapter.
+or working tray tooltip on every GNOME or Wayland setup. If tray creation fails,
+the app logs a message and keeps running. The application launcher and
+dashboard window remain the no-tray fallback. This foundation does not yet
+provide the planned CLI status command or a desktop activity adapter.
 
 Do not use tray presence, absence, clicks, or tooltips as activity signals.
 Linux tray events are not consistently supported by Tauri desktop backends.

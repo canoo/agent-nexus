@@ -14,6 +14,12 @@ All notable changes to NEXUS are documented here. Releases use
   Chrome/Edge extension, bounded native host, separate TUI Tool Activity view,
   and a Tauri privacy-status window. This is development work for the v0.3.0
   private preview; packaging and end-to-end release gates remain outstanding.
+- Explicit Companion browser consent controls and pause/resume lifecycle in the
+  desktop shell: per-tool/browser consent granting for Chrome and Edge with
+  privacy disclosure acknowledgement, atomic consent updates that do not enable
+  collection, pause retaining grants, resume requiring active browser grants,
+  read-only desktop status, fail-closed UI controls on store error, and safe error
+  filtering (#108).
 - Project memory CLI and interactive TUI screen for user-authored Markdown
   notes (`~/.config/nexus/agent-memory/<project>/`), including `nexus memory list`,
   `show`, `save`, `search`, and `init` commands alongside a two-pane TUI browser.
