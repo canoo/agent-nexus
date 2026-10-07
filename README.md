@@ -134,6 +134,23 @@ nexus memory search "decisions"
 
 You can also browse and manage project memories interactively via the **Project Memory** screen in the TUI (`nexus`).
 
+### Companion data controls (v0.3.0 development)
+
+The CLI and desktop share local retention and deletion controls. These commands
+return JSON for scripts and AI agents; deletion requires explicit confirmation.
+They affect only Companion activity, preserving MCP task history and project memory.
+
+```bash
+nexus companion data --json
+nexus companion retention --days 14 --json
+nexus companion prune --json
+nexus companion clear --confirm --json
+```
+
+Raw retention defaults to 14 days and accepts 0–365 days; zero keeps no raw history.
+The native host prunes expired spans while running. With the host inactive, use the
+prune command. Browser/desktop runtime and packaging validation remain release gates.
+
 ### Usage data attribution
 
 NEXUS's optional CLI usage integration is powered by

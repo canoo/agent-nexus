@@ -319,8 +319,22 @@ for the fixed event envelope, retention policy, and native-host boundary.
 itself. Hashes should be treated as metadata, not as a security boundary.
 
 The migration stores initial Companion retention defaults (14 raw-span days and
-90 aggregate days) locally. A deletion job and activity export/deletion controls
-are not implemented yet, so no consumer may claim active retention enforcement.
+90 aggregate days) locally. In v0.3.0 development, raw-span cleanup runs at native
+host startup, every 30 minutes while it runs, and before validated incoming spans.
+It also runs explicitly through the shared data helper used by the CLI and desktop.
+An inactive host does not run cleanup; use `nexus companion prune --json`.
+
+Raw retention accepts integer days from 0 through 365. A span is expired when its
+`ended_at` is strictly before the UTC cutoff (current time minus retention days);
+the exact cutoff is retained. Setting a shorter window updates policy and removes
+expired rows atomically. Zero days removes all raw activity and rejects new raw
+spans without changing collection state or consents. Confirmed clear removes only
+`tool_activity`; MCP tasks, sessions, routing, import bookkeeping, project memory,
+and collection/consent settings are preserved. Status reads never prune or create
+a database. Maintenance requires an existing store and fails with fixed error codes.
+
+The 90-day aggregate setting is reserved: no daily aggregates are generated yet.
+Activity export and packaged/browser runtime verification remain outstanding.
 
 ## Compatibility Notes
 

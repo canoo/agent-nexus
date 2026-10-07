@@ -15,7 +15,7 @@ function temporaryStore(t, options = {}) {
     directory,
     databasePath,
     jsonlPath,
-    store: createObservabilityStore({ databasePath, jsonlPath, ...options }),
+    store: createObservabilityStore({ databasePath, jsonlPath, now: () => Date.parse("2026-10-07T00:00:00Z"), ...options }),
   };
 }
 
