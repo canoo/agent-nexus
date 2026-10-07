@@ -13,6 +13,7 @@ var menuItems = []string{
 	"Companion Tool Activity",
 	"Update NEXUS",
 	"Uninstall NEXUS",
+	"Project Memory",
 }
 
 func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
@@ -71,6 +72,8 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				m.err = nil
 				m.uninstallConfirmed = false
 				return m, nil
+			case 8:
+				return startMemory(m)
 			}
 		}
 	}
