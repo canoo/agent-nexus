@@ -7,10 +7,8 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check"
-  },
-  "dependencies": {
-    "@tauri-apps/api": "^2.0.0"
+    "check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
+    "test": "node --test test/**/*.test.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"

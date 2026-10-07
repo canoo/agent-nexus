@@ -62,10 +62,11 @@ Required toolchains:
 - The platform prerequisites documented by the [Tauri v2 prerequisites guide](https://v2.tauri.app/start/prerequisites/), including a supported WebKitGTK
   development stack on Linux and Xcode command-line tools on macOS.
 
-Use `npm run check` for the Rust formatting check. `cargo test` additionally
-covers fixed extension-ID validation and the unavailable-store fail-closed
-state. Full compilation requires the Tauri and bundled SQLite crates to be
-available locally.
+Use `npm test` to run the frontend unit tests, and `npm run check` for
+the Rust formatting check. `cargo test` additionally covers fixed
+extension-ID validation and the unavailable-store fail-closed state. Full
+compilation requires the Tauri and bundled SQLite crates to be available
+locally.
 
 ## Linux behavior
 
