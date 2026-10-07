@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+const { invoke } = window.__TAURI__.core;
 
 const collectionHeading = document.querySelector("#collection-heading");
 const collectionDetail = document.querySelector("#collection-detail");
