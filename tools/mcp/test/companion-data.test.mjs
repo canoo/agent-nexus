@@ -37,7 +37,7 @@ test('safe store errors survive while private messages and invalid summaries do 
  for(const result of [{deleted:-1,retentionDays:14},{deleted:1,retentionDays:366},{deleted:NaN,retentionDays:14}])assert.equal(call(['prune'],{store:{pruneToolActivity(){return result;}}}).reply.error,'companion_data_unavailable');
  let writes=0;assert.equal(runCompanionDataCLI(['prune'],{store:{pruneToolActivity(){return {deleted:0,retentionDays:14};}},out:{write(){writes++;throw new Error('broken pipe');}}}),1);assert.equal(writes,1);
 });
-test('standalone helper never creates a missing store and malformed schema fails closed',t=>{
+test('standalone status never creates a missing store and malformed schema fails closed',t=>{
  const root=mkdtempSync(join(tmpdir(),'data-cli-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
  const proc=spawnSync(process.execPath,[join(import.meta.dirname,'..','companion-data.mjs'),'status'],{env:{...process.env,HOME:root},encoding:'utf8'});
  assert.equal(proc.status,1);assert.equal(JSON.parse(proc.stdout).error,'companion_store_unavailable');assert.equal(existsSync(join(root,'.config')),false);
