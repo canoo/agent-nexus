@@ -168,6 +168,13 @@ history, or project memory.
 Both desktop and CLI invoke `tools/mcp/companion-data.mjs`, which owns mutation
 through the observability store. The desktop finds this helper beneath an absolute
 `NEXUS_REPO`, otherwise `$HOME/.config/nexus/repo`, and requires Node.js 22.13+.
+The optional `NEXUS_COMPANION_NODE` selects an absolute, existing Node executable
+for both data controls and native-host registration. An invalid configured path
+fails closed without falling back to PATH. When unset, source development uses
+`node` from PATH. The native-host
+[launcher generator](../companion-native-host/README.md#bind-an-installed-runtime)
+pins the runtime and helper paths for installed launches; it does not bundle Node
+or establish real GUI compatibility.
 Missing helper, runtime, database, or valid settings disables the data controls.
 Opening the dashboard only reads data. The CLI and desktop wrappers use fixed arguments, a bounded
 JSON reply, and a 15-second deadline; errors never display paths or SQL.

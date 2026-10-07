@@ -115,7 +115,8 @@ fn execute(command: &mut Command, action: &str) -> Result<Reply, &'static str> {
     validate_reply(&bytes, action, status.success())
 }
 fn run_at(helper: &Path, args: &[&str], home: Option<&Path>) -> Result<Reply, &'static str> {
-    let mut command = Command::new("node");
+    let node = crate::companion_runtime::node_executable().map_err(|_| DATA_ERROR)?;
+    let mut command = Command::new(node);
     command.arg(helper).args(args);
     if let Some(home) = home {
         command.env("HOME", home);

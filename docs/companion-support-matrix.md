@@ -13,7 +13,7 @@ The native host staged payload contains:
 
 **Constraints & Prerequisites:**
 
-- Requires external Node.js `>=22.13`; system environment `PATH` must resolve `node`.
+- Requires external Node.js `>=22.13`. Source `.mjs` launchers use PATH; generated installed launchers pin an absolute runtime and desktop/helper paths.
 - **Not bundled:** Node runtime, GUI binary, browser extension, npm dependencies, logs, secrets, or configuration files.
 - **Staging guarantees:** Executed via explicit `--version` and absolute non-existing `--output` outside the source checkout; creates deterministic payload hashes/modes manifest; executes no browser registration, collection changes, or DB access during build.
 - **CLI/TUI:** Source Go build, vet, and tests pass. Automated source Rust/Go and install cycle CI pass on Linux/macOS at `fad51fb` (does not verify live GUI/browsers; staged payload tests also pass on both at `3d652cb`).
@@ -58,3 +58,14 @@ The Linux and macOS Companion jobs pass at `3d652cb` in
 This includes 27 extension tests, 29 host tests (staging, runtime gates and
 registration/removal included), and desktop frontend tests/audit. The runner
 executes test subprocesses; it does not operate installed browsers or the GUI.
+
+## Installed launcher contract
+
+The install-time generator validates staged payload hashes and probes the chosen
+Node runtime before creating browser and desktop shell launchers. Linux tests
+verify quoted paths, literal argument forwarding, Chrome/Edge ingestion and
+shared helper reads with Node absent from PATH. A fixture executable stands in
+for the desktop; this does not verify a real GUI installation. The generator
+bundles neither Node nor a desktop binary, performs no browser registration, and
+leaves history/consent unchanged. Signed packages and live platform/browser
+checks remain required.

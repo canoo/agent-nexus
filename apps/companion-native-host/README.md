@@ -64,8 +64,8 @@ Registrations remain distinct:
 | Linux | `~/.config/google-chrome/NativeMessagingHosts` | `~/.config/microsoft-edge/NativeMessagingHosts` |
 | macOS | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` | `~/Library/Application Support/Microsoft Edge/NativeMessagingHosts` |
 
-The desktop installer will own launcher placement and this lifecycle in a later
-milestone. Flatpak registration is not implemented or implied by this project.
+A distributable desktop installer must own launcher placement and this lifecycle.
+The install-time launcher generator below supplies the runtime binding. Flatpak registration is not implemented or implied by this project.
 
 ## Test
 
@@ -160,3 +160,43 @@ combination before advertising support. Existing data-helper/CLI behavior is
 separate from this native-host runtime gate.
 The markers used by this gate are described in the official
 [Flatpak command reference](https://docs.flatpak.org/en/latest/flatpak-command-reference.html).
+
+## Bind an installed runtime
+
+After placing the staged payload, an external Node.js 22.13+ runtime and the
+compiled desktop executable at stable locations, generate three launchers from
+this source checkout:
+
+```sh
+node apps/companion-native-host/bin/nexus-companion-runtime-launchers.mjs \
+  --runtime-root /absolute/path/nexus-companion-host \
+  --node-path /absolute/path/to/node \
+  --desktop-path /absolute/path/to/nexus-companion-desktop \
+  --output /absolute/new/path/nexus-companion-launchers
+```
+
+All four paths must be absolute. Output must not exist. The generator verifies
+allowlisted payload hashes, checks the chosen Node version and SQLite module,
+and requires executable Node/desktop files. Manifest hashes check integrity;
+they are not a signature or proof of publisher identity. Select trusted binaries.
+A failed write can leave partial output; retry with a new destination.
+
+The generated `nexus-companion-native-host-chrome` and
+`nexus-companion-native-host-edge` scripts invoke the pinned Node executable.
+Use their absolute paths as `--host-path` when explicitly registering each
+browser. The generated `nexus-companion` script invokes the chosen desktop
+binary and sets `NEXUS_REPO`, `NEXUS_COMPANION_NODE` and
+`NEXUS_COMPANION_NATIVE_HOST_REGISTRATION_HELPER` to the installed paths.
+Desktop data and registration helpers use this pinned runtime, so these
+launchers do not need Node on the browser or desktop environment's PATH.
+
+Creation does not launch the GUI, register a browser, open a user database or
+change consent. Keep the payload, binaries and launchers at stable locations;
+regenerate launchers and re-register hosts if paths change. Remove browser
+registrations before removing launcher files. History is retained. This is an
+installer building block, not a bundled runtime or distributable desktop asset.
+
+Automated tests exercise literal paths containing spaces and shell punctuation,
+argument forwarding, shared isolated SQLite data, and a PATH without Node.
+The desktop test executable is a fixture, not the real GUI. Installed desktop
+and live browser verification remain release gates.

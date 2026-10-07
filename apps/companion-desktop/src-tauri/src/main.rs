@@ -1,4 +1,5 @@
 mod companion_data;
+mod companion_runtime;
 
 use std::{
     env, fs,
@@ -417,6 +418,7 @@ fn registration_helper_is_available() -> bool {
     env::var_os(REGISTRATION_HELPER_ENV)
         .map(PathBuf::from)
         .is_some_and(|path| path.is_absolute() && path.is_file())
+        && companion_runtime::node_executable().is_ok()
 }
 
 fn native_host_status() -> NativeHostStatus {
@@ -604,7 +606,8 @@ fn register_native_host(
         .map(PathBuf::from)
         .filter(|path| path.is_absolute() && path.is_file())
         .ok_or("Native-host registration is unavailable in this installation.")?;
-    let completed = Command::new("node")
+    let node = companion_runtime::node_executable().map_err(str::to_owned)?;
+    let completed = Command::new(node)
         .arg(helper)
         .arg("install")
         .arg("--browser")

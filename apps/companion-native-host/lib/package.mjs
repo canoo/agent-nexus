@@ -4,7 +4,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_SOURCE_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
-const FIXED_FILES = [
+export const NATIVE_HOST_PAYLOAD_FILES = Object.freeze([
   "LICENSE",
   "docs/companion-support-matrix.md",
   "docs/nexus-companion.md",
@@ -21,7 +21,7 @@ const FIXED_FILES = [
   "apps/companion-native-host/lib/registration.mjs",
   "tools/mcp/companion-data.mjs",
   "tools/mcp/lib/observability-store.mjs",
-];
+]);
 const MIGRATIONS_PATH = "tools/mcp/migrations";
 const SAFE_CODES = new Set(["package_input_invalid", "package_output_exists", "package_source_invalid", "package_write_failed"]);
 
@@ -81,7 +81,7 @@ export function stageNativeHostPackage(options = {}) {
     if (!migrations.length || migrations.some((name) => !/^\d{3}_[a-z0-9_-]+\.sql$/.test(name))) {
       throw failure("package_source_invalid");
     }
-    const paths = [...FIXED_FILES, ...migrations.map((name) => `${MIGRATIONS_PATH}/${name}`)].sort();
+    const paths = [...NATIVE_HOST_PAYLOAD_FILES, ...migrations.map((name) => `${MIGRATIONS_PATH}/${name}`)].sort();
     payload = paths.map((path) => {
       const bytes = readFileSync(assertSourcePath(root, path));
       const mode = path.startsWith("apps/companion-native-host/bin/") ? 0o755 : 0o644;
