@@ -471,11 +471,13 @@ export class ObservabilityStore {
     jsonlPath = DEFAULT_JSONL_PATH,
     migrationsDir = MIGRATIONS_DIR,
     databaseFactory = defaultDatabaseFactory,
+    now = Date.now,
   } = {}) {
     this.databasePath = databasePath;
     this.jsonlPath = jsonlPath;
     this.migrationsDir = migrationsDir;
     this.databaseFactory = databaseFactory;
+    this.now = now;
   }
 
   migrate() {
@@ -519,6 +521,89 @@ export class ObservabilityStore {
       result.sqlite.error = error instanceof Error ? error.message : String(error);
     }
     return result;
+  }
+
+  // Maintenance never creates a missing store or touches MCP/task history.
+  pruneToolActivity() { return this.#maintainExistingCompanion("prune"); }
+
+  setCompanionRetentionDays(days) {
+    this.#validateRetentionDays(days);
+    return this.#maintainExistingCompanion("set", days);
+  }
+
+  clearToolActivity() { return this.#maintainExistingCompanion("clear"); }
+
+  #validateRetentionDays(days) {
+    if (!Number.isInteger(days) || days < 0 || days > 365) {
+      throw new Error("companion_retention_invalid");
+    }
+  }
+
+  #retentionNow() {
+    let now;
+    try { now = this.now(); } catch { throw new Error("companion_clock_invalid"); }
+    if (!Number.isSafeInteger(now) || now < 0 || now > 253402300799999) {
+      throw new Error("companion_clock_invalid");
+    }
+    return now;
+  }
+
+  #retentionDays(database) {
+    const row = database.prepare(`SELECT raw_span_retention_days
+      FROM companion_settings WHERE id = 1`).get();
+    this.#validateRetentionDays(row?.raw_span_retention_days);
+    return row.raw_span_retention_days;
+  }
+
+  #pruneActivityRows(database, days, now) {
+    if (days === 0) return database.prepare("DELETE FROM tool_activity").run().changes;
+    const cutoff = new Date(now - days * 86400000).toISOString();
+    // The existing start-time index bounds candidates; julianday handles
+    // whole-second and millisecond UTC timestamps at the exact end-time cutoff.
+    const candidateBound = cutoff.slice(0, 19) + "~";
+    return database.prepare(`DELETE FROM tool_activity
+      WHERE started_at < ? AND julianday(ended_at) < julianday(?)`)
+      .run(candidateBound, cutoff).changes;
+  }
+
+  #maintainCompanion(database, action, now, days) {
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      let retentionDays = this.#retentionDays(database);
+      if (action === "set") {
+        const updated = database.prepare(`UPDATE companion_settings
+          SET raw_span_retention_days = ?, updated_at = ? WHERE id = 1`)
+          .run(days, new Date(now).toISOString()).changes;
+        if (updated !== 1) throw new Error("companion_retention_invalid");
+        retentionDays = days;
+      }
+      const deleted = action === "clear"
+        ? database.prepare("DELETE FROM tool_activity").run().changes
+        : this.#pruneActivityRows(database, retentionDays, now);
+      database.exec("COMMIT");
+      return { deleted, retentionDays };
+    } catch (error) {
+      try { database.exec("ROLLBACK"); } catch {}
+      throw error;
+    }
+  }
+
+  #maintainExistingCompanion(action, days) {
+    const now = this.#retentionNow();
+    let database;
+    try {
+      if (!existsSync(this.databasePath) || !statSync(this.databasePath).isFile()) {
+        throw new Error("companion_store_unavailable");
+      }
+      database = this.#openDatabase();
+      applyMigrations(database, migrationsFrom(this.migrationsDir));
+      return this.#maintainCompanion(database, action, now, days);
+    } catch (error) {
+      const safe = new Set(["companion_store_unavailable", "companion_retention_invalid", "companion_clock_invalid"]);
+      throw new Error(safe.has(error?.message) ? error.message : "companion_data_unavailable");
+    } finally {
+      database?.close();
+    }
   }
 
   /**
@@ -695,10 +780,13 @@ export class ObservabilityStore {
   }
 
   #writeToolActivity(event) {
+    const now = this.#retentionNow();
     const database = this.#openDatabase();
     try {
       applyMigrations(database, migrationsFrom(this.migrationsDir));
       const adapterId = adapterIdForToolActivity(event);
+      // Cleanup commits even when disabled collection later rejects the span.
+      this.#maintainCompanion(database, "prune", now);
 
       // A single immediate transaction prevents a concurrently revoked local
       // consent from being observed between the checks and the insert.
@@ -716,6 +804,11 @@ export class ObservabilityStore {
           adapterId, event.toolId, event.consentPolicyVersion,
         );
         if (!consent) throw new Error("companion_tool_consent_missing");
+        const retentionDays = this.#retentionDays(database);
+        if (retentionDays === 0) throw new Error("companion_retention_disabled");
+        if (Date.parse(event.endedAt) < now - retentionDays * 86400000) {
+          throw new Error("companion_activity_expired");
+        }
 
         database.prepare(`INSERT INTO tool_activity (
           id, session_id, tool_id, surface, started_at, ended_at, detector,

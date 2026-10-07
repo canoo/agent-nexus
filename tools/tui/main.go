@@ -256,6 +256,9 @@ func main() {
 		}
 		args = nil
 	}
+	if len(args) > 0 && args[0] == "companion" {
+		os.Exit(runCompanionCLI(args[1:], findNexusDir(), os.Stdout))
+	}
 	if len(args) > 0 && args[0] == "memory" {
 		root, err := memoryRoot()
 		if err != nil {

@@ -5,6 +5,8 @@ const BROWSER_FAMILIES = new Set(["chrome", "edge"]);
 const SAFE_STORE_CODES = new Map([
   ["companion_collection_disabled", "companion_collection_disabled"],
   ["companion_tool_consent_missing", "companion_tool_consent_missing"],
+  ["companion_retention_disabled", "companion_retention_disabled"],
+  ["companion_activity_expired", "companion_activity_expired"],
 ]);
 
 function safeFailure(code) {
@@ -73,9 +75,24 @@ export class CompanionNativeMessagingHost {
   }
 }
 
+/** Cleanup is silent and independent of collection/consent state. */
+export function startCompanionRetentionMaintenance(store, {
+  schedule = setInterval, cancel = clearInterval,
+} = {}) {
+  if (typeof store?.pruneToolActivity !== "function") return () => {};
+  const prune = () => { try { store.pruneToolActivity(); } catch {} };
+  prune();
+  const timer = schedule(prune, 30 * 60 * 1000);
+  timer.unref?.();
+  return () => cancel(timer);
+}
+
 /** Starts a silent stdio native-messaging process for one registered browser. */
 export function runNativeMessagingHost({ browserFamily, store } = {}) {
   const host = new CompanionNativeMessagingHost({ browserFamily, store });
+  const stopMaintenance = startCompanionRetentionMaintenance(host.store);
+  process.stdin.once("end", stopMaintenance);
+  process.stdin.once("close", stopMaintenance);
   process.stdin.on("data", (chunk) => {
     host.ingest(chunk);
     if (host.decoder.closed) process.stdin.pause();

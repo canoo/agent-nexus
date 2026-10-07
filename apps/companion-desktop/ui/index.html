@@ -24,6 +24,31 @@
         <p class="feedback" id="control-feedback" role="status"></p>
       </section>
 
+      <section aria-labelledby="data-heading">
+        <h2 id="data-heading">Local data controls</h2>
+        <p>Shortening retention removes expired spans immediately. Retaining 0 days keeps no raw history. Pruning removes expired spans now based on the configured retention window. Clearing history deletes recorded activity while preserving collection state, tool consent, and MCP/project memory.</p>
+        <div class="data-summary">
+          <p>Stored spans: <span id="stored-spans">Loading…</span></p>
+        </div>
+        <div class="control-actions">
+          <label for="retention-days">Retention (days)
+            <input type="number" id="retention-days" min="0" max="365" step="1" value="14" disabled />
+          </label>
+          <button type="button" id="save-retention" disabled>Save retention</button>
+          <button type="button" id="prune-history" disabled>Prune history</button>
+        </div>
+        <div class="disclosure-box">
+          <label class="acknowledgement-label" for="clear-acknowledgement">
+            <input type="checkbox" id="clear-acknowledgement" disabled />
+            <span>I acknowledge that clearing local history removes recorded Companion spans immediately and cannot be undone.</span>
+          </label>
+          <div class="control-actions">
+            <button type="button" class="danger" id="clear-history" disabled>Clear history</button>
+          </div>
+        </div>
+        <p class="feedback" id="data-feedback" role="status"></p>
+      </section>
+
       <section aria-labelledby="consents-heading">
         <h2 id="consents-heading">Tool consent & privacy disclosure</h2>
         <div class="disclosure-box">

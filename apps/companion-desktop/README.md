@@ -61,8 +61,10 @@ the shared Node observability store.
 
 This desktop shell is a preview control surface. Shipped release requires:
 
-- **Data retention enforcement**: automated cleanup of raw spans (14 days)
-  and daily aggregates (90 days) in the shared store.
+- **Packaged data controls**: verify the installed Node.js/shared-helper path and
+  cleanup lifecycle in distributable builds. Raw-span cleanup and CLI/GUI controls
+  have automated tests; the aggregate-retention setting is reserved and no daily
+  aggregates are generated yet.
 - **Pause-boundary spans**: verify resumed activity never counts time spent paused.
 - **Browser extension & native host integration**: end-to-end integration tests
   verifying extension-to-host messaging and store consent enforcement in real
@@ -152,3 +154,30 @@ Flatpak browser native messaging is explicitly unimplemented. A future
 Flatpak-specific validation must establish a minimal, auditable host
 registration design; it must not expand permissions or assume that all browser
 installations can use a sandboxed host.
+
+## Local data controls (v0.3.0 development)
+
+The dashboard offers a raw-history count, retention setting (0–365 days), pruning,
+and confirmed deletion. The default is 14 days. Shortening retention removes expired
+spans immediately; zero days keeps no raw activity. Clear requires an unchecked-by-
+default acknowledgement and does not change collection/consent policy, MCP task
+history, or project memory.
+
+Both desktop and CLI invoke `tools/mcp/companion-data.mjs`, which owns mutation
+through the observability store. The desktop finds this helper beneath an absolute
+`NEXUS_REPO`, otherwise `$HOME/.config/nexus/repo`, and requires Node.js 22.13+.
+Missing helper, runtime, database, or valid settings disables the data controls.
+Opening the dashboard only reads data. The CLI and desktop wrappers use fixed arguments, a bounded
+JSON reply, and a 15-second deadline; errors never display paths or SQL.
+
+```bash
+nexus companion data --json
+nexus companion retention --days 14 --json
+nexus companion prune --json
+nexus companion clear --confirm --json
+```
+
+The native host prunes at startup, every 30 minutes while running, and before
+validated incoming spans. With no host running, use the prune command. Expiry uses
+UTC `ended_at`, retaining spans exactly at the cutoff. Daily aggregates and export
+are not implemented. Real browser/GUI and packaged runtime validation remain open.

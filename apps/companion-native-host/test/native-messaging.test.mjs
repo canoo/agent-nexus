@@ -29,7 +29,7 @@ function temporaryStore(t) {
   const directory = mkdtempSync(join(tmpdir(), "nexus-native-host-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const databasePath = join(directory, "logs", "observability.sqlite");
-  return { databasePath, store: createObservabilityStore({ databasePath, jsonlPath: join(directory, "logs", "mcp.jsonl") }) };
+  return { databasePath, store: createObservabilityStore({ databasePath, now: () => Date.parse("2026-10-07T00:00:00Z"), jsonlPath: join(directory, "logs", "mcp.jsonl") }) };
 }
 
 function enableChromeConsent(databasePath) {

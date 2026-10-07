@@ -14,6 +14,14 @@ const nativeHostForm = document.querySelector("#native-host-form");
 const registerHostButton = document.querySelector("#register-host");
 const hostFeedback = document.querySelector("#host-feedback");
 
+const storedSpansElement = document.querySelector("#stored-spans");
+const retentionDaysInput = document.querySelector("#retention-days");
+const saveRetentionButton = document.querySelector("#save-retention");
+const pruneHistoryButton = document.querySelector("#prune-history");
+const clearAcknowledgement = document.querySelector("#clear-acknowledgement");
+const clearHistoryButton = document.querySelector("#clear-history");
+const dataFeedback = document.querySelector("#data-feedback");
+
 let currentStatus = null;
 let isBusy = false;
 
@@ -58,11 +66,35 @@ const safeActionErrors = new Set([
   "Native-host registration could not be started.",
   "Native-host registration was not completed.",
   "Use a supported browser, a published Chrome-format extension ID, and an existing absolute host path.",
+  "Local Companion data could not be updated; refresh status before trying again.",
 ]);
 
 function safeError(error) {
   const message = typeof error === "string" ? error : (error && error.message) ? error.message : "";
   return safeActionErrors.has(message) ? message : "The requested local action could not be completed.";
+}
+
+function validDataControls(controls) {
+  return (
+    controls &&
+    controls.state === "ready" &&
+    Object.keys(controls).length === 3 &&
+    typeof controls.retentionDays === "number" &&
+    Number.isInteger(controls.retentionDays) &&
+    controls.retentionDays >= 0 &&
+    controls.retentionDays <= 365 &&
+    typeof controls.storedSpans === "number" &&
+    Number.isSafeInteger(controls.storedSpans) &&
+    controls.storedSpans >= 0
+  );
+}
+
+function isDataControlsReady(status) {
+  return Boolean(
+    status &&
+    status.store === "ready" &&
+    validDataControls(status.dataControls)
+  );
 }
 
 const toolLabels = Object.freeze({ chatgpt: "ChatGPT", claude: "Claude", gemini: "Gemini", copilot: "Microsoft Copilot", perplexity: "Perplexity" });
@@ -87,6 +119,8 @@ function updateControlStates() {
   const isEnabled = currentStatus && currentStatus.collection === "enabled";
   const hasGrant = hasActiveBrowserGrant(currentStatus);
   const acknowledged = Boolean(consentAcknowledgement && consentAcknowledgement.checked);
+  const dataReady = isDataControlsReady(currentStatus);
+  const clearAcknowledged = Boolean(clearAcknowledgement && clearAcknowledgement.checked);
 
   if (resumeButton) {
     resumeButton.disabled = isBusy || !isReady || isEnabled || !hasGrant;
@@ -106,6 +140,22 @@ function updateControlStates() {
   }
   if (consentAcknowledgement) {
     consentAcknowledgement.disabled = isBusy || !isReady;
+  }
+
+  if (retentionDaysInput) {
+    retentionDaysInput.disabled = isBusy || !dataReady;
+  }
+  if (saveRetentionButton) {
+    saveRetentionButton.disabled = isBusy || !dataReady;
+  }
+  if (pruneHistoryButton) {
+    pruneHistoryButton.disabled = isBusy || !dataReady;
+  }
+  if (clearAcknowledgement) {
+    clearAcknowledgement.disabled = isBusy || !dataReady;
+  }
+  if (clearHistoryButton) {
+    clearHistoryButton.disabled = isBusy || !dataReady || !clearAcknowledged;
   }
 
   if (consents && consents.children) {
@@ -226,6 +276,19 @@ function renderDashboard(status) {
   if (registerHostButton && status.nativeHost && status.nativeHost.registrationControl !== "available") {
     if (hostFeedback) hostFeedback.textContent = "Native-host registration is unavailable in this installation.";
   }
+
+  if (isDataControlsReady(status)) {
+    if (storedSpansElement) {
+      storedSpansElement.textContent = String(status.dataControls.storedSpans);
+    }
+    if (retentionDaysInput) {
+      retentionDaysInput.value = String(status.dataControls.retentionDays);
+    }
+  } else {
+    if (storedSpansElement) storedSpansElement.textContent = "Unavailable";
+    if (dataFeedback) dataFeedback.textContent = "Local data controls require the installed NEXUS helper, Node.js, and an available store.";
+  }
+
   updateControlStates();
 }
 
@@ -258,6 +321,8 @@ async function refreshDashboard() {
     if (collectionHeading) collectionHeading.textContent = "Collection status unavailable";
     if (collectionDetail) collectionDetail.textContent = safeStoreCopy.error;
     renderConsents([]);
+    if (storedSpansElement) storedSpansElement.textContent = "Unavailable";
+    if (dataFeedback) dataFeedback.textContent = "Local data status is unavailable.";
     updateControlStates();
   }
 }
@@ -265,6 +330,65 @@ async function refreshDashboard() {
 if (consentAcknowledgement) {
   consentAcknowledgement.addEventListener("change", () => {
     updateControlStates();
+  });
+}
+
+if (clearAcknowledgement) {
+  clearAcknowledgement.addEventListener("change", () => {
+    updateControlStates();
+  });
+}
+
+if (saveRetentionButton) {
+  saveRetentionButton.addEventListener("click", async () => {
+    if (saveRetentionButton.disabled || !isDataControlsReady(currentStatus)) return;
+    const rawVal = retentionDaysInput ? retentionDaysInput.value.trim() : "";
+    if (!/^\d+$/.test(rawVal)) {
+      if (dataFeedback) dataFeedback.textContent = "Retention days must be an integer between 0 and 365.";
+      return;
+    }
+    const days = Number(rawVal);
+    if (!Number.isInteger(days) || days < 0 || days > 365) {
+      if (dataFeedback) dataFeedback.textContent = "Retention days must be an integer between 0 and 365.";
+      return;
+    }
+    await runAction(async () => {
+      if (dataFeedback) dataFeedback.textContent = "Updating retention window…";
+      const status = await invoke("set_companion_retention", {
+        request: { days },
+      });
+      renderDashboard(status);
+      if (dataFeedback) dataFeedback.textContent = `Retention updated to ${days} days.`;
+    }, dataFeedback);
+  });
+}
+
+if (pruneHistoryButton) {
+  pruneHistoryButton.addEventListener("click", async () => {
+    if (pruneHistoryButton.disabled || !isDataControlsReady(currentStatus)) return;
+    await runAction(async () => {
+      if (dataFeedback) dataFeedback.textContent = "Pruning expired local history…";
+      const status = await invoke("prune_companion_history");
+      renderDashboard(status);
+      if (dataFeedback) dataFeedback.textContent = "Expired local history pruned.";
+    }, dataFeedback);
+  });
+}
+
+if (clearHistoryButton) {
+  clearHistoryButton.addEventListener("click", async () => {
+    if (clearHistoryButton.disabled || !isDataControlsReady(currentStatus) || !clearAcknowledgement || !clearAcknowledgement.checked) return;
+    await runAction(async () => {
+      if (dataFeedback) dataFeedback.textContent = "Clearing recorded local history…";
+      const status = await invoke("clear_companion_history", {
+        request: { confirmed: true },
+      });
+      if (clearAcknowledgement) {
+        clearAcknowledgement.checked = false;
+      }
+      renderDashboard(status);
+      if (dataFeedback) dataFeedback.textContent = "Recorded local history cleared.";
+    }, dataFeedback);
   });
 }
 

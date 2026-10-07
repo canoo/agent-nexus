@@ -1,3 +1,5 @@
+mod companion_data;
+
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -85,6 +87,7 @@ struct DashboardStatus {
     store: &'static str,
     consents: Vec<ConsentStatus>,
     native_host: NativeHostStatus,
+    data_controls: companion_data::DataControls,
 }
 
 #[derive(Deserialize)]
@@ -434,6 +437,7 @@ fn unavailable_dashboard(store: StoreState) -> DashboardStatus {
         store: store.as_str(),
         consents: fixed_consents("unavailable"),
         native_host: native_host_status(),
+        data_controls: companion_data::DataControls::unavailable(),
     }
 }
 
@@ -465,6 +469,7 @@ fn dashboard_status() -> DashboardStatus {
         store: StoreState::Ready.as_str(),
         consents,
         native_host: native_host_status(),
+        data_controls: companion_data::status(),
     }
 }
 
@@ -514,6 +519,32 @@ fn safe_error(state: StoreState) -> &'static str {
         }
         StoreState::Ready => "The requested local action could not be completed.",
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RetentionRequest {
+    days: u16,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClearHistoryRequest {
+    confirmed: bool,
+}
+#[tauri::command]
+fn set_companion_retention(request: RetentionRequest) -> Result<DashboardStatus, String> {
+    companion_data::set_retention(request.days)?;
+    Ok(dashboard_status())
+}
+#[tauri::command]
+fn prune_companion_history() -> Result<DashboardStatus, String> {
+    companion_data::prune()?;
+    Ok(dashboard_status())
+}
+#[tauri::command]
+fn clear_companion_history(request: ClearHistoryRequest) -> Result<DashboardStatus, String> {
+    companion_data::clear(request.confirmed)?;
+    Ok(dashboard_status())
 }
 
 #[tauri::command]
@@ -594,6 +625,9 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_companion_dashboard,
+            set_companion_retention,
+            prune_companion_history,
+            clear_companion_history,
             disable_companion_collection,
             pause_companion_collection,
             resume_companion_collection,

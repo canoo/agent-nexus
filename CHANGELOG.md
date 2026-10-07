@@ -27,6 +27,12 @@ All notable changes to NEXUS are documented here. Releases use
   Companion activity; no automatic decision capture, synchronization, or GUI
   memory view exists yet.
 
+- Shared Companion raw-history controls for CLI and desktop: JSON status,
+  retention (0–365 days, default 14), pruning, and explicitly confirmed clear.
+  Native-host cleanup runs at startup, periodically while active, and before
+  incoming spans. Zero days keeps no raw history; MCP tasks and project memory
+  are preserved. This remains unreleased pending browser/runtime/package gates.
+
 ### Changed
 
 - Split the TUI into screen and helper files within the existing Go package,

@@ -79,6 +79,13 @@ function setupEnvironment({ onInvoke }) {
     "#browser": createMockElement("browser", "select"),
     "#extension-id": createMockElement("extension-id", "input"),
     "#host-path": createMockElement("host-path", "input"),
+    "#stored-spans": createMockElement("stored-spans"),
+    "#retention-days": createMockElement("retention-days", "input"),
+    "#save-retention": createMockElement("save-retention", "button"),
+    "#prune-history": createMockElement("prune-history", "button"),
+    "#clear-acknowledgement": createMockElement("clear-acknowledgement", "input"),
+    "#clear-history": createMockElement("clear-history", "button"),
+    "#data-feedback": createMockElement("data-feedback"),
   };
 
   const documentMock = {
@@ -457,4 +464,66 @@ test("failed mutation followed by unavailable status clears stale resume readine
   assert.equal(elements["#pause-collection"].disabled, true);
   assert.equal(elements["#consent-acknowledgement"].disabled, true);
   assert.equal(elements["#control-feedback"].textContent, "The requested local action could not be completed.");
+});
+
+function dataDashboard(dataControls = {state: "ready", retentionDays: 14, storedSpans: 2}) {
+  return {collection: "disabled", store: "ready", consents: [], nativeHost: {chrome: "unregistered", edge: "unregistered", registrationControl: "unavailable"}, dataControls};
+}
+async function dataEnvironment(handler) {
+  const env = setupEnvironment({onInvoke: handler});
+  new vm.Script(dashboardCode).runInContext(env.context);
+  await new Promise(setImmediate);
+  return env;
+}
+test("data controls validate retention and require a fresh clear acknowledgement", async () => {
+  const calls = [];
+  const {elements: e} = await dataEnvironment(async (command, payload) => {
+    calls.push({command, payload}); return dataDashboard();
+  });
+  assert.equal(e["#stored-spans"].textContent, "2");
+  assert.equal(e["#clear-history"].disabled, true);
+  await e["#clear-history"].trigger("click");
+  for (const value of ["", "-1", "366", "1.5", "1e2", "NaN"]) {
+    e["#retention-days"].value = value;
+    await e["#save-retention"].trigger("click");
+  }
+  assert.equal(calls.length, 1);
+  e["#retention-days"].value = "0";
+  await e["#save-retention"].trigger("click");
+  assert.equal(JSON.stringify(calls[1]), JSON.stringify({command: "set_companion_retention", payload: {request: {days: 0}}}));
+  e["#clear-acknowledgement"].checked = true;
+  await e["#clear-acknowledgement"].trigger("change");
+  await e["#clear-history"].trigger("click");
+  assert.equal(JSON.stringify(calls[2]), JSON.stringify({command: "clear_companion_history", payload: {request: {confirmed: true}}}));
+  assert.equal(e["#clear-acknowledgement"].checked, false);
+  assert.equal(e["#clear-history"].disabled, true);
+  await e["#prune-history"].trigger("click");
+  assert.equal(calls[3].command, "prune_companion_history");
+});
+test("missing helper and malformed data status fail closed", async () => {
+  for (const controls of [null, {state: "unavailable"}, {state: "ready", retentionDays: 366, storedSpans: 0}, {state: "ready", retentionDays: 14, storedSpans: -1}, {state: "unknown", retentionDays: 14, storedSpans: 0}, {state: "ready", retentionDays: 14, storedSpans: 0, private: "path"}]) {
+    let calls = 0;
+    const {elements: e} = await dataEnvironment(async () => {calls++;return dataDashboard(controls);});
+    assert.equal(e["#stored-spans"].textContent, "Unavailable");
+    for (const id of ["#save-retention", "#prune-history", "#clear-history"]) {
+      assert.equal(e[id].disabled, true); await e[id].trigger("click");
+    }
+    assert.equal(calls, 1);
+  }
+});
+test("data mutations serialize and failed actions sanitize and refresh readiness", async () => {
+  let resolveAction, reads = 0;
+  const calls = [];
+  const {elements: e} = await dataEnvironment(async (command) => {
+    calls.push(command);
+    if (command === "get_companion_dashboard") {reads++;return dataDashboard(reads === 1 ? {state: "ready", retentionDays: 14, storedSpans: 1} : {state: "unavailable"});}
+    return new Promise((resolve, reject) => {resolveAction = () => reject(new Error("private SQL/path"));});
+  });
+  const pending = e["#prune-history"].trigger("click");
+  assert.equal(e["#save-retention"].disabled, true);
+  await e["#save-retention"].trigger("click");
+  resolveAction(); await pending;
+  assert.deepEqual(calls, ["get_companion_dashboard", "prune_companion_history", "get_companion_dashboard"]);
+  assert.equal(e["#prune-history"].disabled, true);
+  assert.ok(!e["#data-feedback"].textContent.includes("private"));
 });
