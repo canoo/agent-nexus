@@ -45,6 +45,9 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Fixed
 
+- Companion data helper recognizes its entry point through symlinked directory
+  aliases, including macOS temporary paths, while imports remain side-effect free.
+
 - Companion native hosts and registration/removal refuse detectable Flatpak
   contexts and unsupported operating systems before activity, cleanup or
   registration writes. Unsupported hosts return only a fixed negative reply.
