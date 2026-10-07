@@ -58,8 +58,8 @@ function readDatabase(path, callback) {
 function setCompanionCollection(databasePath, { enabled, adapterId, toolId, consentEnabled, policyVersion = 1 }) {
   readDatabase(databasePath, (database) => {
     database.prepare(`UPDATE companion_settings
-      SET collection_enabled = ?, updated_at = ? WHERE id = 1`)
-      .run(enabled ? 1 : 0, "2026-10-02T18:00:00.000Z");
+      SET collection_enabled = ?, collection_started_at = ?, updated_at = ? WHERE id = 1`)
+      .run(enabled ? 1 : 0, enabled ? "2026-10-02T18:00:00.000Z" : null, "2026-10-02T18:00:00.000Z");
     if (adapterId && toolId && consentEnabled !== undefined) {
       database.prepare(`INSERT INTO companion_tool_consents (
         adapter_id, tool_id, enabled, consent_policy_version, updated_at
@@ -85,7 +85,7 @@ test("migrations are owned, transactional, and idempotent", (t) => {
   assert.equal(existsSync(databasePath), true);
   assert.equal(existsSync(jsonlPath), false);
   readDatabase(databasePath, (database) => {
-    assert.deepEqual(database.prepare("SELECT version FROM schema_migrations").all().map(plain), [{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
+    assert.deepEqual(database.prepare("SELECT version FROM schema_migrations").all().map(plain), [{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }]);
     const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all()
       .map(({ name }) => name);
     assert.deepEqual(tables, [

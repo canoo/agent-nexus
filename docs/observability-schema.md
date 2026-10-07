@@ -168,11 +168,13 @@ CREATE INDEX IF NOT EXISTS idx_tool_activity_tool_id
 The same migration also creates device-local Companion configuration tables:
 
 - `companion_settings` has one disabled-by-default row with the initial
-  14-day raw-span and 90-day aggregate-retention defaults.
+  14-day raw-span and 90-day aggregate-retention defaults. Migration 005 adds
+  nullable `collection_started_at`, the UTC time of the latest explicit resume;
+  pause/disable clears it. Retention updates do not change this boundary.
 - `companion_tool_consents` reserves explicit per-adapter, per-tool consent;
   the strict native host can write only after the existing collection and
-  matching device-local consent gates are explicitly enabled; a consent UI and
-  lifecycle integration remain future work.
+  matching device-local consent gates are explicitly enabled. The v0.3.0
+  development desktop supplies explicit browser consent and pause/resume controls.
 
 These tables are local configuration only and are never inputs to `nexus sync`
 or `nexus adopt`.
@@ -344,3 +346,20 @@ Activity export and packaged/browser runtime verification remain outstanding.
 - Store routing alternatives as JSON text so Go, Node.js, and shell tooling can
   read/write the database without a custom extension.
 - Do not require network access for observability storage.
+
+## Companion collection boundaries (v0.3.0 development)
+
+Ingestion checks collection, current consent, and timestamps in the same immediate
+transaction. A span must start at or after both the latest explicit resume
+(`collection_started_at`) and the matching tool consent's `updated_at`.
+Spans crossing either boundary are discarded whole; no post-resume tail is inferred.
+The exact millisecond boundary is accepted. Missing or invalid boundaries and
+future end times fail closed with fixed error codes. Legacy SQLite consent
+`CURRENT_TIMESTAMP` values are interpreted explicitly as UTC.
+
+Migration 005 pauses any enabled preview store without a trustworthy boundary
+once, preserving activity history and per-tool grants. The user must explicitly
+resume afterwards. Reapplying migrations does not pause a subsequently resumed
+store. New consent writes and resume timestamps use UTC millisecond precision.
+Desktop status fails closed on a schema without this boundary; migrations remain
+owned by the observability store, never by the Rust shell.

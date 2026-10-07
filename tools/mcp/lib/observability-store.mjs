@@ -779,6 +779,18 @@ export class ObservabilityStore {
     }
   }
 
+  #companionBoundaryMillis(value) {
+    // Migration-004 consent timestamps used SQLite CURRENT_TIMESTAMP (UTC).
+    // Parse that one legacy format explicitly; never assume a local time zone.
+    const utc = typeof value === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)
+      ? value.replace(" ", "T") + "Z" : value;
+    try {
+      const normalized = normalizedUtcTimestamp(utc, "companion_boundary");
+      if (normalized.slice(0, 19) !== utc.slice(0, 19)) throw new Error();
+      return Date.parse(normalized);
+    } catch { throw new Error("companion_activity_boundary_unavailable"); }
+  }
+
   #writeToolActivity(event) {
     const now = this.#retentionNow();
     const database = this.#openDatabase();
@@ -792,18 +804,27 @@ export class ObservabilityStore {
       // consent from being observed between the checks and the insert.
       database.exec("BEGIN IMMEDIATE");
       try {
-        const collection = database.prepare(`SELECT collection_enabled
+        const collection = database.prepare(`SELECT collection_enabled, collection_started_at
           FROM companion_settings WHERE id = 1`).get();
         if (collection?.collection_enabled !== 1) {
           throw new Error("companion_collection_disabled");
         }
 
-        const consent = database.prepare(`SELECT 1 FROM companion_tool_consents
+        const consent = database.prepare(`SELECT updated_at FROM companion_tool_consents
           WHERE adapter_id = ? AND tool_id = ? AND enabled = 1
             AND consent_policy_version = ?`).get(
           adapterId, event.toolId, event.consentPolicyVersion,
         );
         if (!consent) throw new Error("companion_tool_consent_missing");
+        const boundary = Math.max(
+          this.#companionBoundaryMillis(collection.collection_started_at),
+          this.#companionBoundaryMillis(consent.updated_at),
+        );
+        // Drop the whole span rather than infer an unobserved post-resume tail.
+        if (Date.parse(event.startedAt) < boundary) {
+          throw new Error("companion_activity_crosses_boundary");
+        }
+        if (Date.parse(event.endedAt) > now) throw new Error("companion_activity_future");
         const retentionDays = this.#retentionDays(database);
         if (retentionDays === 0) throw new Error("companion_retention_disabled");
         if (Date.parse(event.endedAt) < now - retentionDays * 86400000) {
