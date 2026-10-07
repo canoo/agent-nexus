@@ -8,6 +8,10 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Added
 
+- Installer-facing Companion launchers that validate the staged payload and pin
+  an external Node runtime for browser hosts and desktop helpers. Configured
+  desktop runtime paths fail closed when missing; live installation gates remain.
+
 - Separate Companion native-host staging with an allowlisted payload, owned
   migrations, shared data helper and deterministic SHA-256/mode manifest.
   Relocated executable and explicit registration/uninstall tests run in
