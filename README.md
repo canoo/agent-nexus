@@ -328,6 +328,12 @@ cd tools/tui && go test ./...
 
 # Full install/uninstall cycle (isolated temp $HOME)
 bash tests/test-install-cycle.sh
+
+# Companion test suite (extension, native host, desktop frontend & Rust)
+cd apps/companion-browser-extension && npm test
+cd apps/companion-native-host && npm test
+cd apps/companion-desktop && npm ci && npm audit && npm test
+cd apps/companion-desktop && cargo +stable test --manifest-path src-tauri/Cargo.toml --locked
 ```
 
 ---

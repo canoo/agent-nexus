@@ -83,3 +83,60 @@ jobs:
 
       - name: Lint shell scripts
         run: shellcheck setup-nexus.sh teardown-nexus.sh install.sh
+
+  companion-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Test companion browser extension
+        working-directory: apps/companion-browser-extension
+        run: npm test
+
+      - name: Test companion native host
+        working-directory: apps/companion-native-host
+        run: npm test
+
+      - name: Install and test companion desktop
+        working-directory: apps/companion-desktop
+        run: |
+          npm ci
+          npm audit
+          npm test
+
+  companion-desktop-rust:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Linux prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt
+
+      - name: Check Rust formatting
+        run: cargo +stable fmt --manifest-path apps/companion-desktop/src-tauri/Cargo.toml -- --check
+
+      - name: Run Rust tests
+        run: cargo +stable test --manifest-path apps/companion-desktop/src-tauri/Cargo.toml --locked
