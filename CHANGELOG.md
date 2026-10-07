@@ -40,6 +40,8 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Fixed
 
+- Observability store construction rejects unknown options before a mistyped
+  database-path option can silently fall back to the default local database.
 - Companion spans cannot include time before the latest explicit resume or tool
   consent: crossing spans are discarded whole, exact UTC boundaries are accepted,
   and invalid/future timestamps fail closed. Migration 005 pauses older enabled

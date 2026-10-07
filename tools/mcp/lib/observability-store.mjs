@@ -472,7 +472,11 @@ export class ObservabilityStore {
     migrationsDir = MIGRATIONS_DIR,
     databaseFactory = defaultDatabaseFactory,
     now = Date.now,
+    ...unsupportedOptions
   } = {}) {
+    if (Object.keys(unsupportedOptions).length !== 0) {
+      throw new TypeError("observability_store_options_invalid");
+    }
     this.databasePath = databasePath;
     this.jsonlPath = jsonlPath;
     this.migrationsDir = migrationsDir;

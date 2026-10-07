@@ -362,3 +362,11 @@ test("legacy JSONL import reports blank, malformed, and unsafe rows without chan
   );
   assert.equal(readFileSync(inputPath).equals(before), true);
 });
+
+test("unknown store options fail before a mistyped database path can fall back", t => {
+  const {databasePath} = temporaryStore(t);
+  for (const options of [{dbPath: databasePath}, {databasePath, databasepath: databasePath}, {databasePath, path: databasePath}]) {
+    assert.throws(() => createObservabilityStore(options), /^TypeError: observability_store_options_invalid$/);
+  }
+  assert.equal(existsSync(databasePath), false);
+});
