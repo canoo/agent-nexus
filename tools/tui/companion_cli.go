@@ -67,7 +67,10 @@ func runCompanionCLI(args []string, nexusDir string, out io.Writer) int {
 	var helperArgs []string
 	var reqDays *int
 
-	if len(args) == 2 && args[0] == "data" && args[1] == "--json" {
+	if len(args) == 3 && args[0] == "initialize" && args[1] == "--confirm" && args[2] == "--json" {
+		expectedAction = "initialize"
+		helperArgs = []string{"initialize", "--confirm"}
+	} else if len(args) == 2 && args[0] == "data" && args[1] == "--json" {
 		expectedAction = "status"
 		helperArgs = []string{"status"}
 	} else if len(args) == 2 && args[0] == "prune" && args[1] == "--json" {
@@ -151,6 +154,8 @@ func runCompanionCLI(args []string, nexusDir string, out io.Writer) int {
 		}
 		errCode := *hr.Error
 		if errCode != "companion_store_unavailable" &&
+			errCode != "companion_store_exists" &&
+			errCode != "companion_setup_unavailable" &&
 			errCode != "companion_retention_invalid" &&
 			errCode != "companion_clock_invalid" &&
 			errCode != "companion_data_unavailable" {
@@ -176,8 +181,12 @@ func runCompanionCLI(args []string, nexusDir string, out io.Writer) int {
 		return 1
 	}
 	outResp := companionOutput{Action: hr.Action, RetentionDays: hr.RetentionDays}
-	if expectedAction == "status" {
+	if expectedAction == "status" || expectedAction == "initialize" {
 		if hr.StoredSpans == nil || *hr.StoredSpans < 0 || *hr.StoredSpans > maxSafeInt || hr.Deleted != nil {
+			emitError(out, "companion_data_unavailable")
+			return 1
+		}
+		if expectedAction == "initialize" && (*hr.RetentionDays != 14 || *hr.StoredSpans != 0) {
 			emitError(out, "companion_data_unavailable")
 			return 1
 		}

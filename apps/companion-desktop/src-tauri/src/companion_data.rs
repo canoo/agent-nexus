@@ -9,6 +9,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub const SETUP_ERROR: &str =
+    "Local Companion setup could not be completed; existing data was not replaced.";
+
 pub const DATA_ERROR: &str =
     "Local Companion data could not be updated; refresh status before trying again.";
 
@@ -57,7 +60,7 @@ fn validate_reply(bytes: &[u8], action: &str, success: bool) -> Result<Reply, &'
     {
         return Err(DATA_ERROR);
     }
-    let valid = if action == "status" {
+    let valid = if matches!(action, "status" | "initialize") {
         matches!(reply.stored_spans, Some(0..=MAX_SAFE)) && reply.deleted.is_none()
     } else {
         matches!(reply.deleted, Some(0..=MAX_SAFE)) && reply.stored_spans.is_none()
@@ -125,6 +128,38 @@ fn run_at(helper: &Path, args: &[&str], home: Option<&Path>) -> Result<Reply, &'
 }
 fn run(args: &[&str]) -> Result<Reply, &'static str> {
     run_at(&helper_path()?, args, None)
+}
+
+pub fn setup_available_at(database: &Path, helper: &Path) -> bool {
+    cfg!(any(target_os = "linux", target_os = "macos"))
+        && !env::var_os("FLATPAK_ID").is_some_and(|value| !value.is_empty())
+        && !Path::new("/.flatpak-info").exists()
+        && database.is_absolute()
+        && helper.is_absolute()
+        && helper.is_file()
+        && crate::companion_runtime::node_executable().is_ok()
+        && ["", "-wal", "-shm", "-journal"].iter().all(|suffix| {
+            let mut path = database.as_os_str().to_os_string();
+            path.push(suffix);
+            matches!(std::fs::symlink_metadata(path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+        })
+}
+pub fn setup_available(database: &Path) -> bool {
+    helper_path().is_ok_and(|helper| setup_available_at(database, &helper))
+}
+pub fn initialize(confirmed: bool) -> Result<(), &'static str> {
+    if !confirmed {
+        return Err(SETUP_ERROR);
+    }
+    run(&["initialize", "--confirm"])
+        .map_err(|_| SETUP_ERROR)
+        .and_then(|reply| {
+            if reply.retention_days == Some(14) && reply.stored_spans == Some(0) {
+                Ok(())
+            } else {
+                Err(SETUP_ERROR)
+            }
+        })
 }
 
 pub fn status() -> DataControls {
@@ -204,9 +239,38 @@ mod tests {
         let _cleanup = Cleanup(home.clone());
         assert!(run_at(&helper, &["status"], Some(&home)).is_err());
         assert!(!home.join(".config").exists());
-        let setup = Command::new("node").args(["--input-type=module", "-e", "import {createObservabilityStore} from './tools/mcp/lib/observability-store.mjs';createObservabilityStore().migrate();"])
-            .current_dir(&root).env("HOME", &home).stderr(Stdio::null()).status().unwrap();
-        assert!(setup.success());
+        assert_eq!(initialize(false), Err(SETUP_ERROR));
+        let database_path = home.join(".config/nexus/logs/observability.sqlite");
+        assert!(setup_available_at(&database_path, &helper));
+        assert!(run_at(&helper, &["initialize"], Some(&home)).is_err());
+        assert!(!home.join(".config").exists());
+        let reply = run_at(&helper, &["initialize", "--confirm"], Some(&home)).unwrap();
+        assert_eq!(reply.retention_days, Some(14));
+        assert_eq!(reply.stored_spans, Some(0));
+        assert!(!setup_available_at(&database_path, &helper));
+        let database = rusqlite::Connection::open(&database_path).unwrap();
+        assert_eq!(
+            database
+                .query_row(
+                    "SELECT collection_enabled FROM companion_settings WHERE id=1",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            database
+                .query_row("SELECT COUNT(*) FROM companion_tool_consents", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
+        drop(database);
+        let bytes = std::fs::read(&database_path).unwrap();
+        assert!(run_at(&helper, &["initialize", "--confirm"], Some(&home)).is_err());
+        assert_eq!(std::fs::read(&database_path).unwrap(), bytes);
         let status = run_at(&helper, &["status"], Some(&home)).unwrap();
         assert_eq!(status.retention_days, Some(14));
         assert_eq!(status.stored_spans, Some(0));

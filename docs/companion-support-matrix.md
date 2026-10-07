@@ -86,3 +86,14 @@ both Linux/macOS Rust jobs. Build output does not establish GNOME/KDE/Wayland,
 real browser or macOS runtime support. See the
 [preview installation guide](companion-preview-install.md); fresh-install GUI
 initialization and signed/notarized distribution remain outstanding.
+
+## First-run initialization
+
+The installed helper can now explicitly create a missing store from the GUI
+acknowledgement/button or CLI `initialize --confirm` path. Source Rust/Node/Go
+integration and desktop VM tests verify creation with disabled collection and
+no grants, while rejecting existing databases, journal remnants and redirected
+paths. The native artifact verifier also exercises packaged initialization in an
+isolated HOME. Dashboard reads remain non-mutating. This implements the setup
+operation; it does not establish a live GUI/browser installation result. Runtime
+binding is still explicit and Node remains external.

@@ -63,6 +63,10 @@ function createMockElement(id = "", tagName = "div") {
 
 function setupEnvironment({ onInvoke }) {
   const elements = {
+    "#setup-section": createMockElement("setup-section"),
+    "#setup-acknowledgement": createMockElement("setup-acknowledgement", "input"),
+    "#initialize-store": createMockElement("initialize-store", "button"),
+    "#setup-feedback": createMockElement("setup-feedback"),
     "#collection-heading": createMockElement("collection-heading", "h1"),
     "#collection-detail": createMockElement("collection-detail", "p"),
     "#consents": createMockElement("consents", "div"),
@@ -526,4 +530,60 @@ test("data mutations serialize and failed actions sanitize and refresh readiness
   assert.deepEqual(calls, ["get_companion_dashboard", "prune_companion_history", "get_companion_dashboard"]);
   assert.equal(e["#prune-history"].disabled, true);
   assert.ok(!e["#data-feedback"].textContent.includes("private"));
+});
+
+test("fresh setup requires acknowledgement, serializes, resets and keeps collection off", async () => {
+  const calls = [];
+  let complete;
+  const missing = { store: "unavailable", collection: "disabled", setupControl: "available", consents: [], nativeHost: { registrationControl: "unavailable" } };
+  const {elements, context} = setupEnvironment({onInvoke: async (command, payload) => {
+    calls.push([command, payload]);
+    if (command === "get_companion_dashboard") return missing;
+    assert.equal(command, "initialize_companion_store");
+    assert.equal(JSON.stringify(payload), JSON.stringify({request:{confirmed:true}}));
+    return new Promise(resolve => { complete = resolve; });
+  }});
+  vm.runInContext(dashboardCode, context);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.length, 1);
+  assert.equal(elements["#initialize-store"].disabled, true);
+  assert.equal(elements["#resume-collection"].disabled, true);
+  await elements["#initialize-store"].trigger("click");
+  assert.equal(calls.length, 1);
+  elements["#setup-acknowledgement"].checked = true;
+  await elements["#setup-acknowledgement"].trigger("change");
+  const request = elements["#initialize-store"].trigger("click");
+  assert.equal(elements["#setup-acknowledgement"].checked, false);
+  assert.equal(elements["#initialize-store"].disabled, true);
+  await elements["#initialize-store"].trigger("click");
+  assert.equal(calls.length, 2);
+  complete({...missing,store:"ready",setupControl:"unavailable",dataControls:{state:"ready",retentionDays:14,storedSpans:0}});
+  await request;
+  assert.equal(elements["#setup-section"].hidden, true);
+  assert.equal(elements["#resume-collection"].disabled, true);
+});
+
+test("unavailable or failed setup never reveals diagnostics or keeps acknowledgement", async () => {
+  for (const status of [{store:"error",setupControl:"available"},{store:"unavailable",setupControl:"unavailable"},{store:"unavailable"}]) {
+    const {elements,context}=setupEnvironment({onInvoke:async()=>({...status,collection:"disabled",consents:[]})});
+    vm.runInContext(dashboardCode,context);
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(elements["#initialize-store"].disabled,true);
+    assert.equal(elements["#setup-acknowledgement"].disabled,true);
+  }
+  const calls=[];
+  const {elements,context}=setupEnvironment({onInvoke:async(command)=>{
+    calls.push(command);
+    if(command === "initialize_companion_store") throw new Error("private SQL/path");
+    return {store:"unavailable",setupControl:"available",collection:"disabled",consents:[]};
+  }});
+  vm.runInContext(dashboardCode,context);
+  await new Promise(resolve=>setImmediate(resolve));
+  elements["#setup-acknowledgement"].checked=true;
+  await elements["#setup-acknowledgement"].trigger("change");
+  await elements["#initialize-store"].trigger("click");
+  assert.equal(elements["#setup-acknowledgement"].checked,false);
+  assert.equal(elements["#initialize-store"].disabled,true);
+  assert.ok(!elements["#setup-feedback"].textContent.includes("private"));
+  assert.deepEqual(calls,["get_companion_dashboard","initialize_companion_store","get_companion_dashboard"]);
 });

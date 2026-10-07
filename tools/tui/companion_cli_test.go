@@ -10,7 +10,7 @@ import (
 )
 
 func TestCompanionCLIRejectsBeforeHelper(t *testing.T) {
-	for _, args := range [][]string{{}, {"clear", "--json"}, {"clear", "--confirm"}, {"retention", "--days", "-1", "--json"}, {"retention", "--days", "366", "--json"}, {"retention", "--days", "1.5", "--json"}, {"data", "--json", "extra"}} {
+	for _, args := range [][]string{{}, {"initialize", "--json"}, {"initialize", "--confirm"}, {"clear", "--json"}, {"clear", "--confirm"}, {"retention", "--days", "-1", "--json"}, {"retention", "--days", "366", "--json"}, {"retention", "--days", "1.5", "--json"}, {"data", "--json", "extra"}} {
 		var out bytes.Buffer
 		if code := runCompanionCLI(args, "/no/helper", &out); code != 2 {
 			t.Fatalf("%v code %d", args, code)
@@ -66,6 +66,18 @@ func TestCompanionCLIRealBinary(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".config")); !os.IsNotExist(err) {
 		t.Fatal("status created data")
+	}
+	if run([]string{"initialize", "--json"}, 2)["error"] != "companion_command_invalid" {
+		t.Fatal("unconfirmed setup accepted")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config")); !os.IsNotExist(err) {
+		t.Fatal("unconfirmed setup created data")
+	}
+	if run([]string{"initialize", "--confirm", "--json"}, 0)["storedSpans"] != float64(0) {
+		t.Fatal("fresh setup failed")
+	}
+	if run([]string{"initialize", "--confirm", "--json"}, 1)["error"] != "companion_store_exists" {
+		t.Fatal("existing store must never be replaced")
 	}
 	setup := exec.Command("node", "--input-type=module", "-e", `import {createObservabilityStore} from './tools/mcp/lib/observability-store.mjs'; import {DatabaseSync} from 'node:sqlite'; const s=createObservabilityStore();s.migrate();const db=new DatabaseSync(s.databasePath);db.exec("INSERT INTO tool_activity (id,tool_id,surface,started_at,ended_at,detector,confidence,browser_family,platform,schema_version,consent_policy_version) VALUES ('old','chatgpt','browser','2000-01-01T00:00:00Z','2000-01-01T00:00:01Z','selected-browser-tab','surface-active','chrome','linux',1,1)");db.close();`)
 	setup.Dir = root

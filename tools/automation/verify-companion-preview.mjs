@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Verify trusted locally built artifacts; never launch the desktop GUI or install packages.
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -72,5 +73,16 @@ try {
   assert.equal(helper.status, 1);
   assert.deepEqual(JSON.parse(helper.stdout), { schemaVersion: 1, ok: false, error: "companion_store_unavailable" });
   assert.equal(existsSync(join(home, ".config")), false);
-  process.stdout.write("Preview hashes/modes, packaged executable, runtime binding and fail-closed host/helper checks passed; GUI not launched.\n");
+  const initialized = spawnSync(process.execPath, [join(root, "host/tools/mcp/companion-data.mjs"), "initialize", "--confirm"], { env, encoding: "utf8", timeout: 10000 });
+  assert.equal(initialized.status, 0);
+  assert.deepEqual(JSON.parse(initialized.stdout), { schemaVersion: 1, ok: true, action: "initialize", retentionDays: 14, storedSpans: 0 });
+  const database = new DatabaseSync(join(home, ".config/nexus/logs/observability.sqlite"), { readOnly: true });
+  try {
+    assert.equal(database.prepare("SELECT collection_enabled FROM companion_settings WHERE id=1").get().collection_enabled, 0);
+    assert.equal(database.prepare("SELECT COUNT(*) n FROM companion_tool_consents").get().n, 0);
+  } finally { database.close(); }
+  const repeated = spawnSync(process.execPath, [join(root, "host/tools/mcp/companion-data.mjs"), "initialize", "--confirm"], { env, encoding: "utf8", timeout: 10000 });
+  assert.equal(repeated.status, 1);
+  assert.equal(JSON.parse(repeated.stdout).error, "companion_store_exists");
+  process.stdout.write("Preview hashes/modes, packaged executable, runtime binding, fail-closed host/helper and confirmed fresh setup checks passed; GUI not launched.\n");
 } finally { rmSync(directory, { recursive: true, force: true }); }

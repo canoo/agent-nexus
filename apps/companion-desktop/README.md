@@ -8,8 +8,9 @@ It does **not** collect browser or desktop activity. It contains no browser
 integration, content script, desktop/process detector, analytics, activity
 store, or observability writer. It reads and manages the existing
 migration-owned consent and settings rows in
-`~/.config/nexus/logs/observability.sqlite`; it never creates, migrates, or
-replaces that database. The native host remains the only activity writer via
+`~/.config/nexus/logs/observability.sqlite`; opening the dashboard never creates or migrates that database.
+An explicit, acknowledged setup action can create a missing store through the
+shared owned migrations; existing stores are never replaced or upgraded by setup. The native host remains the only activity writer via
 the shared Node observability store.
 
 ## Current behavior
@@ -228,6 +229,22 @@ binaries. CI preserves executable modes and macOS app layout in a tar archive,
 uploaded as a short-lived development artifact, not a GitHub Release.
 
 See the [preview installation guide](../../docs/companion-preview-install.md).
-Existing NEXUS setup/database and explicit external runtime binding are required;
-a standalone fresh-install GUI flow, live browser/desktop evidence and signed
-macOS distribution remain release gates.
+Explicit external runtime/helper binding is required. The first-run setup action
+can create a missing local store without a CLI installation. Live fresh-install
+GUI/browser validation and signed macOS distribution remain release gates.
+
+## Explicit first-run setup
+
+When the store is absent and the installed helper/runtime are available, the
+dashboard offers an unchecked acknowledgement and **Create local store** button.
+Only that explicit action invokes `initialize --confirm` through the shared Node
+helper. It exclusively reserves a private database, then applies owned migrations
+with collection disabled, no grants and no activity. Setup refuses existing
+files, dangling links and journal remnants. It does not register a browser or
+request browser access. Existing stores must use the normal NEXUS upgrade path.
+
+Read-only dashboard/status requests never create data. Failed setup resets the
+acknowledgement and displays a fixed error; an interrupted migration can leave a
+partial newly reserved store, which setup will not replace or delete. Flatpak and
+Windows setup are unsupported. Automated source and packaged-helper checks pass;
+the actual GUI first-run experience remains a live validation gate.

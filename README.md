@@ -137,15 +137,21 @@ You can also browse and manage project memories interactively via the **Project 
 ### Companion data controls (v0.3.0 development)
 
 The CLI and desktop share local retention and deletion controls. These commands
-return JSON for scripts and AI agents; deletion requires explicit confirmation.
+return JSON for scripts and AI agents; creation and deletion require explicit confirmation.
 They affect only Companion activity, preserving MCP task history and project memory.
 
 ```bash
+nexus companion initialize --confirm --json
 nexus companion data --json
 nexus companion retention --days 14 --json
 nexus companion prune --json
 nexus companion clear --confirm --json
 ```
+
+Initialization creates a missing migration-owned store with collection off and no
+grants. Existing databases, symlinks and journal remnants are never replaced. The
+desktop offers the same action behind an unchecked setup acknowledgement. Opening
+the dashboard or requesting status creates nothing.
 
 Raw retention defaults to 14 days and accepts 0–365 days; zero keeps no raw history.
 The native host prunes expired spans while running. With the host inactive, use the

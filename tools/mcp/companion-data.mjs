@@ -1,5 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, parse, relative } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createObservabilityStore, DEFAULT_DATABASE_PATH } from './lib/observability-store.mjs';
 
@@ -16,6 +18,8 @@ function normalizeError(err) {
   const code = err && typeof err === 'object' ? (err.code ?? err.message) : '';
   if (
     code === 'companion_store_unavailable' ||
+    code === 'companion_setup_unavailable' ||
+    code === 'companion_store_exists' ||
     code === 'companion_retention_invalid' ||
     code === 'companion_clock_invalid' ||
     code === 'companion_data_unavailable'
@@ -23,6 +27,63 @@ function normalizeError(err) {
     return code;
   }
   return 'companion_data_unavailable';
+}
+
+
+function setupFailure(code = 'companion_setup_unavailable') {
+  const error = new Error(code);
+  error.code = code;
+  return error;
+}
+
+// Create missing directories only. Never follow a redirected store directory.
+function setupDirectory(path, anchor) {
+  if (path !== anchor) setupDirectory(dirname(path), anchor);
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw setupFailure();
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw setupFailure();
+    try { mkdirSync(path, { mode: 0o700 }); }
+    catch (error) {
+      if (error.code !== 'EEXIST') throw setupFailure();
+      const stat = lstatSync(path);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw setupFailure();
+    }
+  }
+}
+
+function initializeStore(databasePath) {
+  if (typeof databasePath !== 'string' || !isAbsolute(databasePath)
+      || !['linux', 'darwin'].includes(process.platform)
+      || process.env.FLATPAK_ID || existsSync('/.flatpak-info')) throw setupFailure();
+  for (const path of [databasePath, ...['-wal', '-shm', '-journal'].map((suffix) => databasePath + suffix)]) {
+    try {
+      lstatSync(path);
+      throw setupFailure('companion_store_exists');
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error.code === 'companion_store_exists' ? error : setupFailure();
+    }
+  }
+  const homeRelative = relative(homedir(), databasePath);
+  const anchor = homeRelative && !homeRelative.startsWith('..') && !isAbsolute(homeRelative) ? homedir() : parse(databasePath).root;
+  setupDirectory(dirname(databasePath), anchor);
+  try { closeSync(openSync(databasePath, 'wx', 0o600)); }
+  catch (error) { throw setupFailure(error.code === 'EEXIST' ? 'companion_store_exists' : undefined); }
+  // This exclusively reserved file is the only file we migrate. Never remove it
+  // on failure: another process may have opened it after reservation.
+  const store = createObservabilityStore({ databasePath });
+  if (store.databasePath !== databasePath) throw setupFailure();
+  store.migrate();
+  const database = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    const settings = database.prepare('SELECT collection_enabled, collection_started_at, raw_span_retention_days FROM companion_settings WHERE id=1').get();
+    const consent = database.prepare('SELECT COUNT(*) AS n FROM companion_tool_consents WHERE enabled=1').get();
+    const activity = database.prepare('SELECT COUNT(*) AS n FROM tool_activity').get();
+    if (!settings || settings.collection_enabled !== 0 || settings.collection_started_at !== null
+        || settings.raw_span_retention_days !== 14 || consent.n !== 0 || activity.n !== 0) throw setupFailure();
+    return { retentionDays: 14, storedSpans: 0 };
+  } finally { database.close(); }
 }
 
 export function runCompanionDataCLI(
@@ -41,7 +102,9 @@ export function runCompanionDataCLI(
   let action = null;
   let retentionArg = null;
 
-  if (args.length === 1 && args[0] === 'status') {
+  if (args.length === 2 && args[0] === 'initialize' && args[1] === '--confirm') {
+    action = 'initialize';
+  } else if (args.length === 1 && args[0] === 'status') {
     action = 'status';
   } else if (args.length === 1 && args[0] === 'prune') {
     action = 'prune';
@@ -63,6 +126,10 @@ export function runCompanionDataCLI(
   }
 
   try {
+    if (action === 'initialize') {
+      const result = initializeStore(databasePath);
+      return emitJson(out, { schemaVersion: 1, ok: true, action, ...result }) ? 0 : 1;
+    }
     if (action === 'status') {
       if (!existsSync(databasePath)) {
         const err = new Error('Database file does not exist');

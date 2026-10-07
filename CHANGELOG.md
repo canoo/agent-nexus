@@ -8,6 +8,11 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Added
 
+- Explicit Companion first-run setup in the desktop and
+  `nexus companion initialize --confirm --json`. Owned migrations create only a
+  missing private store with collection off and no grants; existing files and
+  journal remnants are preserved. Dashboard/status reads remain read-only.
+
 - Native Companion development artifact builds: Linux `.deb` and unsigned macOS
   `.app`, separate host/launcher setup payload, integrity manifest and preview
   installation guide. CI archives are build evidence, pending live installation.

@@ -13,6 +13,21 @@
       <h1 id="collection-heading">Collection is disabled</h1>
       <p class="status" id="collection-detail" role="status">Loading local privacy status…</p>
 
+      <section id="setup-section" aria-labelledby="setup-heading">
+        <h2 id="setup-heading">Local store setup</h2>
+        <div class="disclosure-box">
+          <p>Create local SQLite store with collection off and no tool consent; existing stores are never replaced.</p>
+          <label class="acknowledgement-label" for="setup-acknowledgement">
+            <input type="checkbox" id="setup-acknowledgement" disabled />
+            <span>I acknowledge that initializing creates a local SQLite store with collection off and no tool consent; existing stores are never replaced.</span>
+          </label>
+          <div class="control-actions">
+            <button type="button" id="initialize-store" disabled>Create local store</button>
+          </div>
+        </div>
+        <p class="feedback" id="setup-feedback" role="status"></p>
+      </section>
+
       <section aria-labelledby="controls-heading">
         <h2 id="controls-heading">Privacy & collection controls</h2>
         <p>Collection is off by default and requires at least one granted browser tool consent before it can be resumed. Opening this dashboard never enables collection or alters permissions.</p>

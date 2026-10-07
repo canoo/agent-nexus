@@ -22,6 +22,11 @@ const clearAcknowledgement = document.querySelector("#clear-acknowledgement");
 const clearHistoryButton = document.querySelector("#clear-history");
 const dataFeedback = document.querySelector("#data-feedback");
 
+const setupSection = document.querySelector("#setup-section");
+const setupAcknowledgement = document.querySelector("#setup-acknowledgement");
+const initializeStoreButton = document.querySelector("#initialize-store");
+const setupFeedback = document.querySelector("#setup-feedback");
+
 let currentStatus = null;
 let isBusy = false;
 
@@ -67,6 +72,7 @@ const safeActionErrors = new Set([
   "Native-host registration was not completed.",
   "Use a supported browser, a published Chrome-format extension ID, and an existing absolute host path.",
   "Local Companion data could not be updated; refresh status before trying again.",
+  "Local Companion setup could not be completed; existing data was not replaced.",
 ]);
 
 function safeError(error) {
@@ -156,6 +162,19 @@ function updateControlStates() {
   }
   if (clearHistoryButton) {
     clearHistoryButton.disabled = isBusy || !dataReady || !clearAcknowledged;
+  }
+
+  const isSetupAvailable = Boolean(
+    currentStatus &&
+    currentStatus.store === "unavailable" &&
+    currentStatus.setupControl === "available"
+  );
+  const setupAcknowledged = Boolean(setupAcknowledgement && setupAcknowledgement.checked);
+  if (setupAcknowledgement) {
+    setupAcknowledgement.disabled = isBusy || !isSetupAvailable;
+  }
+  if (initializeStoreButton) {
+    initializeStoreButton.disabled = isBusy || !isSetupAvailable || !setupAcknowledged;
   }
 
   if (consents && consents.children) {
@@ -289,6 +308,18 @@ function renderDashboard(status) {
     if (dataFeedback) dataFeedback.textContent = "Local data controls require the installed NEXUS helper, Node.js, and an available store.";
   }
 
+  if (setupSection) {
+    if (status && status.store === "ready") {
+      setupSection.hidden = true;
+      if (setupFeedback) setupFeedback.textContent = "";
+    } else {
+      setupSection.hidden = false;
+      if (!status || status.store !== "unavailable" || status.setupControl !== "available") {
+        if (setupFeedback) setupFeedback.textContent = "Local Companion setup is unavailable.";
+      }
+    }
+  }
+
   updateControlStates();
 }
 
@@ -315,6 +346,7 @@ async function refreshDashboard() {
     currentStatus = {
       collection: "disabled",
       store: "error",
+      setupControl: "unavailable",
       consents: [],
       nativeHost: { chrome: "error", edge: "error", registrationControl: "unavailable" },
     };
@@ -323,8 +355,44 @@ async function refreshDashboard() {
     renderConsents([]);
     if (storedSpansElement) storedSpansElement.textContent = "Unavailable";
     if (dataFeedback) dataFeedback.textContent = "Local data status is unavailable.";
+    if (setupSection) {
+      setupSection.hidden = false;
+      if (setupFeedback) setupFeedback.textContent = "Local Companion setup is unavailable.";
+    }
     updateControlStates();
   }
+}
+
+if (setupAcknowledgement) {
+  setupAcknowledgement.addEventListener("change", () => {
+    updateControlStates();
+  });
+}
+
+if (initializeStoreButton) {
+  initializeStoreButton.addEventListener("click", async () => {
+    const isSetupAvailable = Boolean(
+      currentStatus &&
+      currentStatus.store === "unavailable" &&
+      currentStatus.setupControl === "available"
+    );
+    if (initializeStoreButton.disabled || !isSetupAvailable || !setupAcknowledgement || !setupAcknowledgement.checked) {
+      return;
+    }
+    await runAction(async () => {
+      if (setupAcknowledgement) {
+        setupAcknowledgement.checked = false;
+      }
+      if (setupFeedback) setupFeedback.textContent = "Initializing local SQLite store…";
+      const status = await invoke("initialize_companion_store", {
+        request: { confirmed: true },
+      });
+      renderDashboard(status);
+      if (setupFeedback) {
+        setupFeedback.textContent = "Local store initialized. Collection remains off.";
+      }
+    }, setupFeedback);
+  });
 }
 
 if (consentAcknowledgement) {

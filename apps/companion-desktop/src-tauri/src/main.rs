@@ -84,6 +84,7 @@ struct NativeHostStatus {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DashboardStatus {
+    setup_control: &'static str,
     collection: &'static str,
     store: &'static str,
     consents: Vec<ConsentStatus>,
@@ -435,6 +436,13 @@ fn native_host_status() -> NativeHostStatus {
 
 fn unavailable_dashboard(store: StoreState) -> DashboardStatus {
     DashboardStatus {
+        setup_control: if store == StoreState::Unavailable
+            && companion_database_path().is_ok_and(|path| companion_data::setup_available(&path))
+        {
+            "available"
+        } else {
+            "unavailable"
+        },
         collection: "disabled",
         store: store.as_str(),
         consents: fixed_consents("unavailable"),
@@ -464,6 +472,7 @@ fn dashboard_status() -> DashboardStatus {
     };
 
     DashboardStatus {
+        setup_control: "unavailable",
         collection: if collection_enabled {
             "enabled"
         } else {
@@ -531,8 +540,17 @@ struct RetentionRequest {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ClearHistoryRequest {
+struct ConfirmationRequest {
     confirmed: bool,
+}
+#[tauri::command]
+fn initialize_companion_store(
+    request: ConfirmationRequest,
+    app: tauri::AppHandle,
+) -> Result<DashboardStatus, String> {
+    companion_data::initialize(request.confirmed)?;
+    refresh_tray_status(&app);
+    Ok(dashboard_status())
 }
 #[tauri::command]
 fn set_companion_retention(request: RetentionRequest) -> Result<DashboardStatus, String> {
@@ -545,7 +563,7 @@ fn prune_companion_history() -> Result<DashboardStatus, String> {
     Ok(dashboard_status())
 }
 #[tauri::command]
-fn clear_companion_history(request: ClearHistoryRequest) -> Result<DashboardStatus, String> {
+fn clear_companion_history(request: ConfirmationRequest) -> Result<DashboardStatus, String> {
     companion_data::clear(request.confirmed)?;
     Ok(dashboard_status())
 }
@@ -629,6 +647,7 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_companion_dashboard,
+            initialize_companion_store,
             set_companion_retention,
             prune_companion_history,
             clear_companion_history,
