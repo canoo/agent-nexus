@@ -8,6 +8,9 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Added
 
+- Explicit desktop removal of one browser's native-host registration, preserving
+  collection/consent settings, local history and other browser registrations.
+
 - Explicit Companion first-run setup in the desktop and
   `nexus companion initialize --confirm --json`. Owned migrations create only a
   missing private store with collection off and no grants; existing files and
@@ -57,6 +60,9 @@ All notable changes to NEXUS are documented here. Releases use
   preserving its behavior and CLI entrypoint (#56).
 
 ### Fixed
+
+- Desktop register/remove helpers run outside the GUI thread with a 15-second
+  deadline and suppressed subprocess output; failures return a fixed safe error.
 
 - Companion data helper recognizes its entry point through symlinked directory
   aliases, including macOS temporary paths, while imports remain side-effect free.

@@ -248,3 +248,20 @@ acknowledgement and displays a fixed error; an interrupted migration can leave a
 partial newly reserved store, which setup will not replace or delete. Flatpak and
 Windows setup are unsupported. Automated source and packaged-helper checks pass;
 the actual GUI first-run experience remains a live validation gate.
+
+## Browser-specific host removal
+
+Select Chrome or Edge and choose **Remove this native host** to remove only that
+browser's NEXUS manifest. The button is available for a registered or invalid
+manifest when the installed helper/runtime are available; empty install fields
+are irrelevant to removal. It does not revoke grants, pause collection, prune
+history, remove payload files or change the other browser's registration. Use
+pause/revoke controls separately when you want to stop collection.
+
+Register/remove operations run on Tauri's blocking worker pool, with a 15-second
+child-process deadline. Helper stdout/stderr are discarded and the GUI receives
+only a fixed safe failure. Requests accept only allowlisted browser values and
+fixed helper arguments. The UI serializes actions and refreshes after failure.
+Rust executable tests use isolated profiles and a migration-owned database;
+frontend VM tests cover selection, gating, serialization and safe errors.
+Actual installed GUI/browser validation is still required.

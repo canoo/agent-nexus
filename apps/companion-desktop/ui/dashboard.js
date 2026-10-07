@@ -22,6 +22,45 @@ const clearAcknowledgement = document.querySelector("#clear-acknowledgement");
 const clearHistoryButton = document.querySelector("#clear-history");
 const dataFeedback = document.querySelector("#data-feedback");
 
+const unregisterHostButton = document.querySelector("#unregister-host");
+
+function updateRemovalState() {
+  const browserSelect = document.querySelector("#browser");
+  const selectedBrowser = browserSelect ? browserSelect.value : null;
+  const validBrowser = selectedBrowser === "chrome" || selectedBrowser === "edge";
+  const regControlAvailable = currentStatus?.nativeHost?.registrationControl === "available";
+  const browserState = validBrowser && currentStatus?.nativeHost ? currentStatus.nativeHost[selectedBrowser] : null;
+  const eligibleState = browserState === "registered" || browserState === "error";
+
+  const canUnregister = !isBusy && regControlAvailable && validBrowser && eligibleState;
+  if (unregisterHostButton) {
+    unregisterHostButton.disabled = !canUnregister;
+  }
+}
+
+document.querySelector("#browser")?.addEventListener("change", () => {
+  updateControlStates();
+});
+
+unregisterHostButton?.addEventListener("click", async () => {
+  const selectedBrowser = document.querySelector("#browser")?.value;
+  const validBrowser = selectedBrowser === "chrome" || selectedBrowser === "edge";
+  const regControlAvailable = currentStatus?.nativeHost?.registrationControl === "available";
+  const browserState = validBrowser && currentStatus?.nativeHost ? currentStatus.nativeHost[selectedBrowser] : null;
+  const eligibleState = browserState === "registered" || browserState === "error";
+
+  if (isBusy || !regControlAvailable || !validBrowser || !eligibleState) {
+    return;
+  }
+
+  await runAction(async () => {
+    if (hostFeedback) hostFeedback.textContent = "Removing native host registration...";
+    const reply = await invoke("unregister_native_host", { request: { browser: selectedBrowser } });
+    renderDashboard(reply);
+    if (hostFeedback) hostFeedback.textContent = "This browser’s native host is removed. Collection and local history are unchanged.";
+  }, hostFeedback);
+});
+
 const setupSection = document.querySelector("#setup-section");
 const setupAcknowledgement = document.querySelector("#setup-acknowledgement");
 const initializeStoreButton = document.querySelector("#initialize-store");
@@ -70,6 +109,7 @@ const safeActionErrors = new Set([
   "Native-host registration is unavailable in this installation.",
   "Native-host registration could not be started.",
   "Native-host registration was not completed.",
+  "Native-host registration could not be updated.",
   "Use a supported browser, a published Chrome-format extension ID, and an existing absolute host path.",
   "Local Companion data could not be updated; refresh status before trying again.",
   "Local Companion setup could not be completed; existing data was not replaced.",
@@ -121,6 +161,7 @@ function hasActiveBrowserGrant(status) {
 }
 
 function updateControlStates() {
+  updateRemovalState();
   const isReady = currentStatus && currentStatus.store === "ready" && Object.hasOwn(safeCollectionCopy, currentStatus.collection);
   const isEnabled = currentStatus && currentStatus.collection === "enabled";
   const hasGrant = hasActiveBrowserGrant(currentStatus);

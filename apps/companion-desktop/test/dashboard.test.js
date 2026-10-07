@@ -78,6 +78,7 @@ function setupEnvironment({ onInvoke }) {
     "#consent-acknowledgement": createMockElement("consent-acknowledgement", "input"),
     "#consent-feedback": createMockElement("consent-feedback", "p"),
     "#native-host-form": createMockElement("native-host-form", "form"),
+    "#unregister-host": createMockElement("unregister-host", "button"),
     "#register-host": createMockElement("register-host", "button"),
     "#host-feedback": createMockElement("host-feedback", "p"),
     "#browser": createMockElement("browser", "select"),
@@ -586,4 +587,71 @@ test("unavailable or failed setup never reveals diagnostics or keeps acknowledge
   assert.equal(elements["#initialize-store"].disabled,true);
   assert.ok(!elements["#setup-feedback"].textContent.includes("private"));
   assert.deepEqual(calls,["get_companion_dashboard","initialize_companion_store","get_companion_dashboard"]);
+});
+
+test("host removal uses only selected browser, ignores empty install fields and serializes", async () => {
+  const calls=[];
+  let finish;
+  const initial={store:"ready",collection:"enabled",consents:[],nativeHost:{chrome:"registered",edge:"unregistered",registrationControl:"available"}};
+  const {elements,context}=setupEnvironment({onInvoke:async(command,payload)=>{
+    calls.push([command,payload]);
+    if(command==="get_companion_dashboard") return initial;
+    assert.equal(command,"unregister_native_host");
+    assert.equal(JSON.stringify(payload),JSON.stringify({request:{browser:"chrome"}}));
+    return new Promise(resolve=>{finish=resolve;});
+  }});
+  elements["#browser"].value="chrome";
+  vm.runInContext(dashboardCode,context);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(elements["#unregister-host"].disabled,false);
+  assert.equal(elements["#extension-id"].value,"");
+  const request=elements["#unregister-host"].trigger("click");
+  assert.equal(elements["#unregister-host"].disabled,true);
+  await elements["#unregister-host"].trigger("click");
+  assert.equal(calls.length,2);
+  finish({...initial,nativeHost:{...initial.nativeHost,chrome:"unregistered"}});
+  await request;
+  assert.equal(elements["#unregister-host"].disabled,true);
+  assert.equal(elements["#collection-heading"].textContent,"Collection is enabled");
+  assert.ok(elements["#host-feedback"].textContent.includes("history are unchanged"));
+});
+
+test("host removal rejects unavailable/unknown browsers and sanitizes failure", async () => {
+  for (const nativeHost of [
+    {chrome:"unregistered",registrationControl:"available"},
+    {chrome:"registered",registrationControl:"unavailable"},
+    {chrome:"registered"},
+  ]) {
+    let mutations=0;
+    const {elements,context}=setupEnvironment({onInvoke:async(command)=>{
+      if(command!=="get_companion_dashboard")mutations++;
+      return {store:"ready",collection:"disabled",consents:[],nativeHost};
+    }});
+    elements["#browser"].value="chrome";
+    vm.runInContext(dashboardCode,context);
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(elements["#unregister-host"].disabled,true);
+    await elements["#unregister-host"].trigger("click");
+    assert.equal(mutations,0);
+  }
+  const calls=[];
+  const initial={store:"ready",collection:"disabled",consents:[],nativeHost:{chrome:"registered",edge:"error",registrationControl:"available"}};
+  const {elements,context}=setupEnvironment({onInvoke:async(command)=>{
+    calls.push(command);
+    if(command==="get_companion_dashboard")return initial;
+    throw new Error("private helper path");
+  }});
+  elements["#browser"].value="chrome";
+  vm.runInContext(dashboardCode,context);
+  await new Promise(resolve=>setImmediate(resolve));
+  for(const browser of ["firefox","", "edge"]){
+    elements["#browser"].value=browser;
+    await elements["#browser"].trigger("change");
+    assert.equal(elements["#unregister-host"].disabled,browser!=="edge");
+    if(browser!=="edge")await elements["#unregister-host"].trigger("click");
+  }
+  assert.equal(calls.length,1);
+  await elements["#unregister-host"].trigger("click");
+  assert.deepEqual(calls,["get_companion_dashboard","unregister_native_host","get_companion_dashboard"]);
+  assert.ok(!elements["#host-feedback"].textContent.includes("private"));
 });

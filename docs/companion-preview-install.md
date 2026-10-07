@@ -35,3 +35,10 @@ policy; MCP tasks, import markers and tool grants are retained. Older enabled
 preview stores pause once on migration 005 because they lack a trusted resume
 boundary. Review status and explicitly resume after upgrading. Packaged process
 regressions cover this path; the live installed GUI/browser flow remains unverified.
+
+## Remove a browser registration
+
+In the dashboard, select Chrome or Edge and choose **Remove this native host**.
+This removes only that browser's NEXUS manifest. Collection state, grants, history,
+and other browser registration remain unchanged. Pause/revoke separately to stop
+collection. Remove registrations before deleting payload or launcher files.

@@ -14,7 +14,7 @@ const DESKTOP = join(ROOT, "apps/companion-desktop");
 const SOURCE_FILES = [
   "package.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock", "src-tauri/build.rs",
   "src-tauri/tauri.conf.json", "src-tauri/tauri.linux.conf.json", "src-tauri/tauri.macos.conf.json", "src-tauri/capabilities/default.json", "src-tauri/icons/icon.png",
-  "src-tauri/src/main.rs", "src-tauri/src/companion_data.rs", "src-tauri/src/companion_runtime.rs",
+  "src-tauri/src/main.rs", "src-tauri/src/companion_data.rs", "src-tauri/src/companion_runtime.rs", "src-tauri/src/companion_registration.rs",
   "ui/index.html", "ui/dashboard.js", "ui/styles.css",
 ];
 const INSTALLER_FILES = [

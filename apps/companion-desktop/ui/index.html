@@ -92,9 +92,10 @@
             <input id="host-path" name="host-path" autocomplete="off" required />
           </label>
           <button type="submit" id="register-host">Register this native host</button>
+          <button type="button" class="danger" id="unregister-host" disabled>Remove this native host</button>
         </form>
         <p class="feedback" id="host-feedback" role="status"></p>
-        <p class="hint">Registration is an explicit, browser-specific action. It validates the extension ID and host path, then writes only that browser’s native-host manifest. It does not turn on collection or request browser access.</p>
+        <p class="hint">Registration is an explicit, browser-specific action. It validates the extension ID and host path, then writes only that browser’s native-host manifest. It does not turn on collection or request browser access. Removal deletes only the selected browser’s NEXUS manifest and preserves consent, collection state, and local history.</p>
       </section>
 
       <section aria-labelledby="platform-heading">

@@ -1,13 +1,16 @@
 mod companion_data;
+mod companion_registration;
 mod companion_runtime;
 
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    process::Command,
     sync::Mutex,
     time::Duration,
 };
+
+#[cfg(test)]
+use std::process::Command;
 
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
@@ -21,7 +24,6 @@ use tauri::{
 
 const COMPANION_POLICY_VERSION: i64 = 1;
 const NATIVE_HOST_NAME: &str = "com.codelogiic.nexus.companion";
-const REGISTRATION_HELPER_ENV: &str = "NEXUS_COMPANION_NATIVE_HOST_REGISTRATION_HELPER";
 const COLLECTION_DISABLED_LABEL: &str = "Collection: Disabled";
 const COLLECTION_DISABLED_TOOLTIP: &str = "NEXUS Companion — collection disabled";
 const TOOL_IDS: [(&str, &str); 5] = [
@@ -94,6 +96,7 @@ struct DashboardStatus {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 struct NativeHostRegistrationRequest {
     browser: String,
     extension_id: String,
@@ -416,10 +419,7 @@ fn native_host_state(browser: &str) -> &'static str {
 }
 
 fn registration_helper_is_available() -> bool {
-    env::var_os(REGISTRATION_HELPER_ENV)
-        .map(PathBuf::from)
-        .is_some_and(|path| path.is_absolute() && path.is_file())
-        && companion_runtime::node_executable().is_ok()
+    companion_registration::is_available()
 }
 
 fn native_host_status() -> NativeHostStatus {
@@ -609,7 +609,7 @@ fn set_companion_consent(
 }
 
 #[tauri::command]
-fn register_native_host(
+async fn register_native_host(
     app: tauri::AppHandle,
     request: NativeHostRegistrationRequest,
 ) -> Result<DashboardStatus, String> {
@@ -620,27 +620,37 @@ fn register_native_host(
     {
         return Err("Use a supported browser, a published Chrome-format extension ID, and an existing absolute host path.".into());
     }
-    let helper = env::var_os(REGISTRATION_HELPER_ENV)
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute() && path.is_file())
-        .ok_or("Native-host registration is unavailable in this installation.")?;
-    let node = companion_runtime::node_executable().map_err(str::to_owned)?;
-    let completed = Command::new(node)
-        .arg(helper)
-        .arg("install")
-        .arg("--browser")
-        .arg(&request.browser)
-        .arg("--extension-id")
-        .arg(&request.extension_id)
-        .arg("--host-path")
-        .arg(&request.host_path)
-        .status()
-        .map_err(|_| "Native-host registration could not be started.")?;
-    if !completed.success() {
-        return Err("Native-host registration was not completed.".into());
-    }
-    refresh_tray_status(&app);
-    Ok(dashboard_status())
+    tauri::async_runtime::spawn_blocking(move || {
+        companion_registration::register(
+            &request.browser,
+            &request.extension_id,
+            &request.host_path,
+        )
+        .map_err(str::to_owned)?;
+        refresh_tray_status(&app);
+        Ok(dashboard_status())
+    })
+    .await
+    .map_err(|_| companion_registration::ERROR.to_owned())?
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BrowserRequest {
+    browser: String,
+}
+#[tauri::command]
+async fn unregister_native_host(
+    app: tauri::AppHandle,
+    request: BrowserRequest,
+) -> Result<DashboardStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        companion_registration::unregister(&request.browser).map_err(str::to_owned)?;
+        refresh_tray_status(&app);
+        Ok(dashboard_status())
+    })
+    .await
+    .map_err(|_| companion_registration::ERROR.to_owned())?
 }
 
 fn main() {
@@ -655,7 +665,8 @@ fn main() {
             pause_companion_collection,
             resume_companion_collection,
             set_companion_consent,
-            register_native_host
+            register_native_host,
+            unregister_native_host
         ])
         .setup(|app| {
             let status = dashboard_status();
