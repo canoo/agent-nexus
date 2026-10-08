@@ -9,6 +9,8 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
+import { EXTENSION_PAYLOAD_FILES } from "./lib/companion-extension-package.mjs";
+
 assert.equal(process.argv.length, 3);
 assert.ok(isAbsolute(process.argv[2]));
 const root = realpathSync(process.argv[2]);
@@ -17,6 +19,8 @@ assert.equal(manifest.platform, process.platform);
 assert.equal(manifest.arch, process.arch);
 assert.equal(manifest.signed, false);
 assert.equal(manifest.nodeBundled, false);
+assert.equal(manifest.extensionBundled, true);
+assert.equal(manifest.extensionDistribution, "unpacked-development");
 assert.equal(manifest.liveGuiVerified, false);
 assert.equal(manifest.minimumNodeVersion, "22.13.0");
 assert.equal(manifest.formatVersion, 1);
@@ -30,6 +34,22 @@ for (const file of manifest.files) {
   assert.equal(stat.mode & 0o777, file.mode);
   assert.equal(createHash("sha256").update(readFileSync(join(root, file.path))).digest("hex"), file.sha256);
 }
+const extensionPaths = manifest.files.filter(file => file.path.startsWith("extension/")).map(file => file.path.slice(10)).sort();
+assert.deepEqual(extensionPaths, [...EXTENSION_PAYLOAD_FILES].sort());
+const extension = JSON.parse(readFileSync(join(root, "extension/manifest.json"), "utf8"));
+assert.equal(extension.manifest_version, 3);
+assert.equal(extension.version, "0.3.0");
+assert.equal(extension.version_name, manifest.version);
+assert.deepEqual(extension.permissions, ["storage", "nativeMessaging"]);
+assert.equal(extension.content_scripts, undefined);
+assert.equal(extension.host_permissions, undefined);
+assert.equal(extension.key, undefined);
+assert.deepEqual(extension.background, { service_worker: "background.js", type: "module" });
+assert.deepEqual(extension.optional_host_permissions, [
+  "https://chatgpt.com/*", "https://chat.openai.com/*", "https://claude.ai/*",
+  "https://gemini.google.com/*", "https://copilot.microsoft.com/*", "https://www.perplexity.ai/*",
+]);
+
 const directory = mkdtempSync(join(tmpdir(), "nexus-preview-verify-"));
 try {
   const home = join(directory, "home");
@@ -92,5 +112,5 @@ try {
     env: {...env, NEXUS_TEST_HOST_PAYLOAD: join(root, 'host')}, encoding: 'utf8', timeout: 30000, maxBuffer: 65536,
   });
   assert.equal(upgrade.status, 0, upgrade.stdout + upgrade.stderr);
-  process.stdout.write("Preview hashes/modes, packaged executable, runtime binding, fail-closed host/helper and confirmed fresh setup and old-store upgrade checks passed; GUI not launched.\n");
+  process.stdout.write("Preview hashes/modes, unpacked extension policy/version, packaged executable, runtime binding, fail-closed host/helper and confirmed fresh setup and old-store upgrade checks passed; GUI not launched.\n");
 } finally { rmSync(directory, { recursive: true, force: true }); }

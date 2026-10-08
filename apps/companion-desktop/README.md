@@ -215,13 +215,16 @@ node tools/automation/build-companion-preview.mjs \
 
 The builder copies a fixed source allowlist into an isolated temporary project,
 builds with the locked Cargo dependencies, and stages a Linux `.deb` or unsigned
-macOS `.app` alongside the separate host payload and launcher setup tools. It
+macOS `.app` alongside the separate host payload, unpacked development extension
+and launcher setup tools. It
 uses the development version only in the isolated build; source package versions
 remain unchanged. The output must not exist and must be outside the source repo.
 Its parent must exist. An optional `CARGO_TARGET_DIR` must be absolute. Failed
 staging may leave partial output; use a new destination after correcting errors.
 
-No Node runtime, browser extension, user database or configuration is packaged.
+The archive includes only allowlisted extension runtime files, with its development
+version name and unchanged permission policy. No Node runtime, user database or
+configuration is packaged.
 The build neither opens the GUI nor installs/registers anything. The manifest
 records artifact hashes, platform/architecture and explicit unsigned/unverified
 status; it is not a publisher signature or a promise of byte-reproducible native

@@ -73,7 +73,8 @@ checks remain required.
 ## Native development artifacts
 
 The development builder produces a Linux `.deb` or unsigned macOS `.app` beside
-the separate `host/` payload and `installer/` launcher generator. It builds in an
+the separate `host/` payload, unpacked development `extension/`, and `installer/`
+launcher generator. It builds in an
 isolated source copy with locked dependencies; source version metadata remains
 unchanged. Node is external. The manifest records hashes/modes and marks unsigned,
 non-live-verified output explicitly. Hashes do not establish publisher identity.
@@ -108,3 +109,15 @@ or replace existing stores. Subsequent starts preserve an explicitly resumed
 boundary. The native artifact verifier repeats the cases against its exact host
 payload in temporary homes. Source and local Linux artifact checks pass, including
 minimum Node 22.13; live installed GUI/browser upgrade checks remain outstanding.
+
+## Archived development extension
+
+Native development preview archives now include `extension/`, an unpacked
+Chrome/Edge development payload. Four staging regressions verify its exact
+runtime allowlist, byte-identical sources except build-version metadata,
+permission-policy preservation, module relocation, exclusive output and
+rejection of redirected/missing sources. The artifact verifier checks extension
+policy/version and recorded hashes/modes. Browser loading, extension identity,
+permissions and native-host integration still require live validation; the
+archive is not a browser-store distribution. The separate `host/` payload
+continues to exclude the browser extension.

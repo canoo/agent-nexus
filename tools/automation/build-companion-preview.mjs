@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 import { stageNativeHostPackage } from "../../apps/companion-native-host/lib/package.mjs";
 import { nativeHostRuntimeSupported } from "../../apps/companion-native-host/lib/platform-support.mjs";
 
+import { stageBrowserExtension } from "./lib/companion-extension-package.mjs";
+
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const DESKTOP = join(ROOT, "apps/companion-desktop");
 const SOURCE_FILES = [
@@ -90,13 +92,14 @@ function main() {
         copyRegular(join(artifact, path), join(destination, "desktop", expectedName, path), mode);
       }
     } else copyRegular(artifact, join(destination, "desktop", artifacts[0]));
+    stageBrowserExtension({ outputDir: join(destination, "extension"), version });
     stageNativeHostPackage({ outputDir: join(destination, "host"), version });
     for (const path of INSTALLER_FILES) copyRegular(join(ROOT, "apps/companion-native-host", path), join(destination, "installer/apps/companion-native-host", path));
     copyRegular(join(ROOT, "docs/companion-preview-install.md"), join(destination, "README.md"));
     copyRegular(join(ROOT, "LICENSE"), join(destination, "LICENSE"));
     const manifest = {
       formatVersion: 1, version, platform: process.platform, arch: process.arch,
-      minimumNodeVersion: "22.13.0", nodeBundled: false, signed: false, liveGuiVerified: false,
+      minimumNodeVersion: "22.13.0", nodeBundled: false, extensionBundled: true, extensionDistribution: "unpacked-development", signed: false, liveGuiVerified: false,
       files: filesAt(destination).map((path) => ({ path, sha256: createHash("sha256").update(readFileSync(join(destination, path))).digest("hex"), mode: lstatSync(join(destination, path)).mode & 0o777 })),
     };
     writeFileSync(join(destination, "preview-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx", mode: 0o644 });
