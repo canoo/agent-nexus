@@ -8,6 +8,10 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Added
 
+- Companion native preview archives include an allowlisted unpacked development
+  extension, with build-version metadata and installation instructions. Permission
+  policy is preserved; no browser-store publication or live support is claimed.
+
 - Explicit desktop removal of one browser's native-host registration, preserving
   collection/consent settings, local history and other browser registrations.
 
