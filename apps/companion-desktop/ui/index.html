@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';" />
+    <title>NEXUS Companion</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">NEXUS COMPANION</p>
+      <h1 id="collection-heading">Collection is disabled</h1>
+      <p class="status" id="collection-detail" role="status">Loading local privacy status…</p>
+
+      <section id="setup-section" aria-labelledby="setup-heading">
+        <h2 id="setup-heading">Local store setup</h2>
+        <div class="disclosure-box">
+          <p>Create local SQLite store with collection off and no tool consent; existing stores are never replaced.</p>
+          <label class="acknowledgement-label" for="setup-acknowledgement">
+            <input type="checkbox" id="setup-acknowledgement" disabled />
+            <span>I acknowledge that initializing creates a local SQLite store with collection off and no tool consent; existing stores are never replaced.</span>
+          </label>
+          <div class="control-actions">
+            <button type="button" id="initialize-store" disabled>Create local store</button>
+          </div>
+        </div>
+        <p class="feedback" id="setup-feedback" role="status"></p>
+      </section>
+
+      <section aria-labelledby="controls-heading">
+        <h2 id="controls-heading">Privacy & collection controls</h2>
+        <p>Collection is off by default and requires at least one granted browser tool consent before it can be resumed. Opening this dashboard never enables collection or alters permissions.</p>
+        <div class="control-actions">
+          <button type="button" id="resume-collection" disabled>Resume collection</button>
+          <button type="button" id="pause-collection" disabled>Pause collection</button>
+          <button type="button" class="danger" id="disable-collection" disabled>Disable collection and revoke all consents</button>
+        </div>
+        <p class="feedback" id="control-feedback" role="status"></p>
+      </section>
+
+      <section aria-labelledby="data-heading">
+        <h2 id="data-heading">Local data controls</h2>
+        <p>Shortening retention removes expired spans immediately. Retaining 0 days keeps no raw history. Pruning removes expired spans now based on the configured retention window. Clearing history deletes recorded activity while preserving collection state, tool consent, and MCP/project memory.</p>
+        <div class="data-summary">
+          <p>Stored spans: <span id="stored-spans">Loading…</span></p>
+        </div>
+        <div class="control-actions">
+          <label for="retention-days">Retention (days)
+            <input type="number" id="retention-days" min="0" max="365" step="1" value="14" disabled />
+          </label>
+          <button type="button" id="save-retention" disabled>Save retention</button>
+          <button type="button" id="prune-history" disabled>Prune history</button>
+        </div>
+        <div class="disclosure-box">
+          <label class="acknowledgement-label" for="clear-acknowledgement">
+            <input type="checkbox" id="clear-acknowledgement" disabled />
+            <span>I acknowledge that clearing local history removes recorded Companion spans immediately and cannot be undone.</span>
+          </label>
+          <div class="control-actions">
+            <button type="button" class="danger" id="clear-history" disabled>Clear history</button>
+          </div>
+        </div>
+        <p class="feedback" id="data-feedback" role="status"></p>
+      </section>
+
+      <section aria-labelledby="consents-heading">
+        <h2 id="consents-heading">Tool consent & privacy disclosure</h2>
+        <div class="disclosure-box">
+          <p><strong>Privacy disclosure:</strong> NEXUS Companion observes only fixed tool presence, surface (active browser tab), and start/end timestamps. The browser extension checks the selected tab’s origin locally to identify a supported tool. It <em>never</em> sends or stores page URLs, titles, prompts, responses, or browsing history. Browser permission is granted separately in the extension.</p>
+          <label class="acknowledgement-label">
+            <input type="checkbox" id="consent-acknowledgement" disabled />
+            <span>I acknowledge that granting consent allows NEXUS Companion to observe only fixed tool presence, surface, and timestamps (never URLs, titles, prompts, or content).</span>
+          </label>
+        </div>
+        <p class="hint">Granting or revoking consent per tool updates your settings immediately without enabling collection. Desktop foreground adapter consent is not implemented and is read-only.</p>
+        <div class="consent-grid" id="consents" aria-live="polite"></div>
+        <p class="feedback" id="consent-feedback" role="status"></p>
+      </section>
+
+      <section aria-labelledby="host-heading">
+        <h2 id="host-heading">Native host</h2>
+        <p id="host-state">The native host is unregistered until you explicitly register it.</p>
+        <form id="native-host-form">
+          <label>Browser
+            <select id="browser" name="browser"><option value="chrome">Chrome</option><option value="edge">Edge</option></select>
+          </label>
+          <label>Published extension ID
+            <input id="extension-id" name="extension-id" inputmode="latin" autocomplete="off" pattern="[a-p]{32}" maxlength="32" required />
+          </label>
+          <label>Installed host path
+            <input id="host-path" name="host-path" autocomplete="off" required />
+          </label>
+          <button type="submit" id="register-host">Register this native host</button>
+          <button type="button" class="danger" id="unregister-host" disabled>Remove this native host</button>
+        </form>
+        <p class="feedback" id="host-feedback" role="status"></p>
+        <p class="hint">Registration is an explicit, browser-specific action. It validates the extension ID and host path, then writes only that browser’s native-host manifest. It does not turn on collection or request browser access. Removal deletes only the selected browser’s NEXUS manifest and preserves consent, collection state, and local history.</p>
+      </section>
+
+      <section aria-labelledby="platform-heading">
+        <h2 id="platform-heading">Platform notes</h2>
+        <p>On Linux, tray visibility depends on the desktop environment; use the application launcher to open this dashboard if no top-bar icon is available. On macOS, this is a menu-bar shell and not a signed or notarized distribution.</p>
+      </section>
+    </main>
+    <script type="module" src="./dashboard.js"></script>
+  </body>
+</html>

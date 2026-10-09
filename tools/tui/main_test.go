@@ -3,9 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -478,6 +482,23 @@ func TestMenuSelectUsageDashboardStartsIndependentLoads(t *testing.T) {
 	}
 }
 
+func TestMenuSelectCompanionActivityStartsIndependentLoad(t *testing.T) {
+	m := initialModel()
+	m.cursor = 5
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Text: "enter"})
+	got := updated.(model)
+	if got.screen != screenCompanionActivity {
+		t.Fatalf("screen = %d, want companion activity", got.screen)
+	}
+	if !got.companionActivityLoading || got.companionActivityState != companionActivityLoading {
+		t.Fatalf("companion loading state = loading:%t state:%d", got.companionActivityLoading, got.companionActivityState)
+	}
+	if cmd == nil {
+		t.Fatal("opening Companion activity should start a non-blocking load")
+	}
+}
+
 func TestDetectTokscaleHealthUsesFixedCommandsAndSafeClientLabels(t *testing.T) {
 	runner := &sequenceTokscaleRunner{results: []tokscaleProbeResult{
 		{output: []byte("tokscale 1.2.3\n")},
@@ -571,10 +592,59 @@ func TestConfigureToggleLocalAI(t *testing.T) {
 	}
 }
 
+func TestUpdateConfigureBackspace(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "ASCII",
+			input:    "abc",
+			expected: "ab",
+		},
+		{
+			name:     "accented",
+			input:    "café",
+			expected: "caf",
+		},
+		{
+			name:     "CJK",
+			input:    "你好世界",
+			expected: "你好世",
+		},
+		{
+			name:     "emoji",
+			input:    "hello👋",
+			expected: "hello",
+		},
+		{
+			name:     "empty input",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := initialModel()
+			m.screen = screenConfigure
+			m.configEditing = true
+			m.editBuf = tc.input
+
+			updated, _ := updateConfigure(tea.KeyPressMsg{Code: tea.KeyBackspace, Text: "backspace"}, m)
+			got := updated.(model).editBuf
+			if got != tc.expected {
+				t.Errorf("editBuf after backspace = %q, want %q", got, tc.expected)
+			}
+		})
+	}
+}
+
 func TestViewsDoNotPanic(t *testing.T) {
 	m := initialModel()
 
-	screens := []screen{screenMenu, screenInstall, screenConfigure, screenHealth, screenUninstall, screenUpdate, screenTaskLog, screenUsageDashboard}
+	screens := []screen{screenMenu, screenInstall, screenConfigure, screenHealth, screenUninstall, screenUpdate, screenTaskLog, screenUsageDashboard, screenCompanionActivity}
 	for _, s := range screens {
 		m.screen = s
 		m.steps = buildInstallSteps()
@@ -646,6 +716,151 @@ func TestSummarizeTokscaleUsage(t *testing.T) {
 
 	if got := saturatingAddInt64(math.MaxInt64-1, 2); got != math.MaxInt64 {
 		t.Errorf("int64 saturation = %d, want %d", got, int64(math.MaxInt64))
+	}
+}
+
+type companionTestActivity struct {
+	toolID     string
+	surface    string
+	startedAt  string
+	endedAt    string
+	detector   string
+	confidence string
+}
+
+func writeCompanionTestDatabase(t *testing.T, collectionEnabled, consentEnabled bool, activities []companionTestActivity) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "observability.sqlite")
+	database, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	migration, err := os.ReadFile(filepath.Join("..", "mcp", "migrations", "004_companion-activity.sql"))
+	if err != nil {
+		t.Fatalf("read Companion migration: %v", err)
+	}
+	_, err = database.Exec(string(migration))
+	if err != nil {
+		t.Fatalf("apply Companion migration: %v", err)
+	}
+	collection := 0
+	if collectionEnabled {
+		collection = 1
+	}
+	if _, err := database.Exec(`UPDATE companion_settings SET collection_enabled = ? WHERE id = 1`, collection); err != nil {
+		t.Fatalf("insert settings: %v", err)
+	}
+	if consentEnabled {
+		if _, err := database.Exec(`INSERT INTO companion_tool_consents
+			(adapter_id, tool_id, enabled, consent_policy_version, updated_at)
+            VALUES ('chrome', 'chatgpt', 1, 1, '2026-10-02T18:00:00.000Z')`); err != nil {
+			t.Fatalf("insert consent: %v", err)
+		}
+	}
+	for index, activity := range activities {
+		if _, err := database.Exec(`INSERT INTO tool_activity
+			(id, tool_id, surface, started_at, ended_at, detector, confidence, schema_version, consent_policy_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+			fmt.Sprintf("test-activity-%d", index), activity.toolID, activity.surface,
+			activity.startedAt, activity.endedAt, activity.detector, activity.confidence); err != nil {
+			t.Fatalf("insert activity: %v", err)
+		}
+	}
+	return path
+}
+
+func TestCompanionActivityReadsOnlySafeSQLiteActivityRows(t *testing.T) {
+	path := writeCompanionTestDatabase(t, true, true, []companionTestActivity{
+		{
+			toolID: "chatgpt", surface: "browser",
+			startedAt: "2026-10-02T18:00:00.000Z", endedAt: "2026-10-02T18:04:12.000Z",
+			detector: "selected-browser-tab", confidence: "surface-active",
+		},
+		// This represents an invalid/corrupt row. It must never enter the view.
+		{
+			toolID: "private prompt: do not show", surface: "browser",
+			startedAt: "2026-10-02T18:00:00.000Z", endedAt: "2026-10-02T18:04:12.000Z",
+			detector: "selected-browser-tab", confidence: "surface-active",
+		},
+	})
+
+	entries, state := readCompanionActivity(path)
+	if state != companionActivityReady {
+		t.Fatalf("state = %d, want ready", state)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %#v, want one safe activity", entries)
+	}
+	entry := entries[0]
+	if entry.toolID != "chatgpt" || entry.surface != "browser" || entry.endedAt.Sub(entry.startedAt) != 4*time.Minute+12*time.Second {
+		t.Fatalf("entry = %#v, want mapped fixed activity fields", entry)
+	}
+}
+
+func TestCompanionActivityStatesAccuratelyRepresentDisabledNoConsentAndUnavailable(t *testing.T) {
+	if _, state := readCompanionActivity(filepath.Join(t.TempDir(), "missing.sqlite")); state != companionActivityUnavailable {
+		t.Fatalf("missing database state = %d, want unavailable", state)
+	}
+
+	disabledPath := writeCompanionTestDatabase(t, false, true, nil)
+	if _, state := readCompanionActivity(disabledPath); state != companionActivityDisabled {
+		t.Fatalf("disabled collection state = %d, want disabled", state)
+	}
+
+	noConsentPath := writeCompanionTestDatabase(t, true, false, nil)
+	if _, state := readCompanionActivity(noConsentPath); state != companionActivityNoConsent {
+		t.Fatalf("no-consent state = %d, want no consent", state)
+	}
+}
+
+func TestCompanionActivityViewUsesFixedLabelsAndStaysSeparate(t *testing.T) {
+	m := initialModel()
+	m.screen = screenCompanionActivity
+	m.companionActivityState = companionActivityReady
+	m.companionActivity = []companionActivityEntry{
+		{
+			toolID: "chatgpt", surface: "browser",
+			startedAt: time.Date(2026, 10, 2, 18, 0, 0, 0, time.UTC),
+			endedAt:   time.Date(2026, 10, 2, 18, 4, 12, 0, time.UTC),
+		},
+		// Views defensively refuse unmapped values even if an in-memory caller
+		// bypasses the SQLite mapper.
+		{toolID: "https://private.example/prompt", surface: "browser", startedAt: time.Now(), endedAt: time.Now().Add(time.Minute)},
+	}
+	m.usageTaskLog = []taskLogEntry{{Tool: "private source code", Model: "private model"}}
+	m.usageTokscaleReport = TokscaleReport{GroupBy: "private provider metadata"}
+
+	view := m.View().Content
+	for _, forbidden := range []string{"private.example", "prompt", "private source code", "private model", "private provider metadata"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("Companion view leaked %q: %q", forbidden, view)
+		}
+	}
+	if !strings.Contains(view, "ChatGPT") || !strings.Contains(view, "Browser") || !strings.Contains(view, "separate from NEXUS task routing and Tokscale") {
+		t.Fatalf("Companion view is missing safe labels or separation notice: %q", view)
+	}
+}
+
+func TestMapCompanionActivityEntryRejectsInvalidOrSensitiveValues(t *testing.T) {
+	cases := []struct {
+		name     string
+		toolID   string
+		surface  string
+		detector string
+	}{
+		{name: "prompt", toolID: "private prompt", surface: "browser", detector: "selected-browser-tab"},
+		{name: "url", toolID: "https://chatgpt.example/private", surface: "browser", detector: "selected-browser-tab"},
+		{name: "title", toolID: "window title", surface: "browser", detector: "selected-browser-tab"},
+		{name: "wrong detector", toolID: "chatgpt", surface: "browser", detector: "foreground-app"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, ok := mapCompanionActivityEntry(tc.toolID, tc.surface,
+				"2026-10-02T18:00:00Z", "2026-10-02T18:00:01Z", tc.detector, "surface-active"); ok {
+				t.Fatal("unsafe activity value was accepted")
+			}
+		})
 	}
 }
 
@@ -1485,4 +1700,93 @@ func TestSharedMCPRemoveScriptConformance(t *testing.T) {
 			t.Errorf("file was deleted on refusal: %v", err)
 		}
 	})
+}
+
+type trackingCloserBody struct {
+	io.Reader
+	closed  bool
+	onClose func()
+}
+
+func (b *trackingCloserBody) Close() error {
+	b.closed = true
+	if b.onClose != nil {
+		b.onClose()
+	}
+	return nil
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestInstallStepPullOllamaModels_ClosesResponseBody(t *testing.T) {
+	binDir := t.TempDir()
+	logFile := filepath.Join(binDir, "ollama.log")
+	fakeOllama := filepath.Join(binDir, "ollama")
+	script := fmt.Sprintf("#!/bin/sh\necho \"$@\" >> %q\nexit 0\n", logFile)
+	if err := os.WriteFile(fakeOllama, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+origPath)
+
+	closedBeforeCommand := false
+	body := &trackingCloserBody{
+		Reader: strings.NewReader("Ollama is running"),
+		onClose: func() {
+			_, err := os.Stat(logFile)
+			closedBeforeCommand = os.IsNotExist(err)
+		},
+	}
+
+	origTransport := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       body,
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = origTransport
+	})
+
+	m := initialModel()
+	m.configVals[1] = "http://fake-ollama-host:11434"
+
+	msg := installStepPullOllamaModels(5, m)
+	if !msg.ok {
+		t.Fatalf("expected ok=true, got ok=false")
+	}
+	if !body.closed {
+		t.Fatalf("expected response body to be closed, but it was not closed")
+	}
+	if !closedBeforeCommand {
+		t.Fatalf("expected response body to be closed before ollama command executed")
+	}
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read fake ollama log: %v", err)
+	}
+	if !strings.Contains(string(data), "pull qwen2.5-coder:1.5b") || !strings.Contains(string(data), "pull llama3.2:3b") {
+		t.Fatalf("unexpected ollama pull invocations: %s", string(data))
+	}
+	if msg.detail != "qwen2.5-coder:1.5b, llama3.2:3b" {
+		t.Fatalf("unexpected detail: %q", msg.detail)
+	}
+
+	// A connection failure must still skip pulls without changing their log.
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, errors.New("connection refused")
+	})
+	skipMsg := installStepPullOllamaModels(5, m)
+	if !skipMsg.ok || skipMsg.detail != "skipped (ollama not running)" {
+		t.Fatalf("unexpected skip outcome: ok=%t detail=%q", skipMsg.ok, skipMsg.detail)
+	}
 }
