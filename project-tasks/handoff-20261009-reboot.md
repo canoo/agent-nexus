@@ -46,17 +46,26 @@ archive includes desktop `.app`, `extension/`, `host/` and `installer/`.
 External Node 22.13+ and generated runtime-bound launchers are required.
 The current artifact is ARM64; Intel Macs need a matching build.
 
-Linux local build before reboot:
-`/tmp/nexus-companion-linux-preview-dev4`
+Persistent Linux preview saved before reboot:
+`/home/cano/workspace/nexus-previews/0.3.0-dev.4-linux-x64`
 
-Prepared local launch command before reboot:
-`/tmp/nexus-preview-run.HrruJV/launchers/nexus-companion`
+Run after reboot:
+`/home/cano/workspace/nexus-previews/0.3.0-dev.4-linux-x64/launchers/nexus-companion`
 
-These `/tmp` paths can disappear during reboot. Do not assume they survive.
-If absent, download the Linux X64 artifact from the same CI run, or rebuild using
-`docs/companion-preview-install.md` and `apps/companion-desktop/README.md`.
-On Omarchy/Arch, the `.deb` was extracted to run its executable without system
-installation; it was not installed with a Debian package manager.
+Load the extension from:
+`/home/cano/workspace/nexus-previews/0.3.0-dev.4-linux-x64/artifact/extension`
+
+Browser host paths are in the same `launchers/` directory, named
+`nexus-companion-native-host-chrome` and `nexus-companion-native-host-edge`.
+The complete artifact was copied from the verified dev.4 build; the `.deb` was
+extracted into `runtime/` and runtime-bound launchers regenerated against these
+persistent paths. No GUI launch, browser registration or user-store access was
+performed. No Debian package manager was used on Omarchy/Arch.
+
+Old `/tmp/nexus-companion-linux-preview-dev4` and
+`/tmp/nexus-preview-run.HrruJV` paths may disappear during reboot; use the
+persistent paths above. For another machine, use the CI artifact or rebuild
+following docs/companion-preview-install.md and apps/companion-desktop/README.md.
 
 Validation sequence:
 1. Open the generated Companion launcher; check window/no-tray usability.
