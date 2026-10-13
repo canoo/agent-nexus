@@ -32,6 +32,34 @@ safe_unlink() {
     fi
 }
 
+# Must match NEXUS_COPY_MARKER in setup-nexus.sh.
+NEXUS_COPY_MARKER="<!-- Installed by agent-nexus. Edit core/kiro-nexus-steering.md and re-run setup-nexus.sh. -->"
+
+# Helper: remove a NEXUS-installed copy (or a legacy symlink) and restore its
+# backup. A file without the NEXUS marker is the user's and is left alone.
+# Usage: safe_uncopy <target>
+safe_uncopy() {
+    local target="$1"
+
+    if [ -L "$target" ]; then
+        rm "$target"
+        echo "  Removed symlink: $target"
+    elif [ -f "$target" ] && grep -qxF "$NEXUS_COPY_MARKER" "$target"; then
+        rm "$target"
+        echo "  Removed copy: $target"
+    elif [ -e "$target" ]; then
+        echo "  Skipped (not installed by NEXUS): $target"
+        return 0
+    else
+        echo "  Skipped (does not exist): $target"
+    fi
+
+    if [ -e "${target}.bak" ]; then
+        mv "${target}.bak" "$target"
+        echo "  Restored backup: ${target}.bak -> $target"
+    fi
+}
+
 echo ""
 # Canonical MCP config removal. Both removals (Kiro, Gemini) go through
 # scripts/mcp-remove.js so every writer shares one fail-closed,
@@ -45,7 +73,7 @@ nexus_mcp_remove() {
 echo "Unlinking core files..."
 safe_unlink "$GEMINI_DIR/GEMINI.md"
 safe_unlink "$CLAUDE_DIR/CLAUDE.md"
-safe_unlink "$KIRO_STEERING_DIR/nexus-orchestrator.md"
+safe_uncopy "$KIRO_STEERING_DIR/nexus-orchestrator.md"
 
 echo ""
 echo "Unlinking config directories..."

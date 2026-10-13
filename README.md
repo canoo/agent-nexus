@@ -235,13 +235,13 @@ nexus "design authentication for a private Hub"
 
 | Screen | What it does |
 |---|---|
-| **Install** | Step-by-step wizard: validates repo, creates symlinks, configures MCP, checks deps, pulls Ollama models |
+| **Install** | Step-by-step wizard: validates repo, creates symlinks (Kiro steering is copied), configures MCP, checks deps, pulls Ollama models |
 | **Configure** | Edit Ollama host URL and model overrides inline |
-| **Health Check** | Verifies Ollama reachability, symlink integrity, MCP server status |
+| **Health Check** | Verifies Ollama reachability, symlink and Kiro steering copy integrity, MCP server status |
 | **Task Log** | Read recent MCP tasks from SQLite: model, route band, latency, status, and cloud-equivalent versus actual local cost |
 | **Usage & Cost Dashboard** | NEXUS-native task routing stats and cloud-cost savings, plus Tokscale CLI usage aggregates (shown separately) |
 | **Update** | Checks latest release and self-updates with checksum verification |
-| **Uninstall** | Removes all symlinks and binary with confirmation |
+| **Uninstall** | Removes all symlinks, the Kiro steering copy and the binary with confirmation |
 
 ### Maintenance
 

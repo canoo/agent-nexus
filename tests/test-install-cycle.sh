@@ -66,6 +66,16 @@ assert_file_exists() {
     else fail "$label missing"; fi
 }
 
+# Kiro steering is installed as a marked copy, not a symlink (KiroCrew refuses
+# symlinked steering). Keep the marker in sync with setup-nexus.sh.
+NEXUS_COPY_MARKER="<!-- Installed by agent-nexus. Edit core/kiro-nexus-steering.md and re-run setup-nexus.sh. -->"
+assert_nexus_copy() {
+    local path="$1" source="$2" label="${3:-$1}"
+    if [ -L "$path" ] || [ ! -f "$path" ]; then fail "$label is not a regular file"; return; fi
+    if cmp -s "$path" <(cat "$source"; printf '\n%s\n' "$NEXUS_COPY_MARKER"); then pass "$label is a current copy of $source"
+    else fail "$label does not match $source plus the NEXUS marker"; fi
+}
+
 assert_dir_exists() {
     local path="$1" label="${2:-$1}"
     if [ -d "$path" ]; then pass "$label exists"
@@ -116,8 +126,7 @@ echo "Checking symlinks..."
 # Core files
 for pair in \
     "$FAKE_HOME/.gemini/GEMINI.md:$FAKE_REPO/core/NEXUS.md" \
-    "$FAKE_HOME/.claude/CLAUDE.md:$FAKE_REPO/core/CLAUDE.md" \
-    "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md:$FAKE_REPO/core/kiro-nexus-steering.md"; do
+    "$FAKE_HOME/.claude/CLAUDE.md:$FAKE_REPO/core/CLAUDE.md"; do
     path="${pair%%:*}"
     target="${pair##*:}"
     label="$(basename "$(dirname "$path")")/$(basename "$path")"
@@ -125,6 +134,7 @@ for pair in \
     assert_link_target  "$path"   "$target" "$label"
     assert_link_resolves "$path"  "$label"
 done
+assert_nexus_copy "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md" "$FAKE_REPO/core/kiro-nexus-steering.md" "steering/nexus-orchestrator.md"
 
 # Config directories
 for dir in core personas tools prompts agent-memory; do
@@ -174,14 +184,27 @@ HOME="$FAKE_HOME" bash "$FAKE_REPO/setup-nexus.sh"
 # Same checks — nothing should have broken.
 for pair in \
     "$FAKE_HOME/.gemini/GEMINI.md:$FAKE_REPO/core/NEXUS.md" \
-    "$FAKE_HOME/.claude/CLAUDE.md:$FAKE_REPO/core/CLAUDE.md" \
-    "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md:$FAKE_REPO/core/kiro-nexus-steering.md"; do
+    "$FAKE_HOME/.claude/CLAUDE.md:$FAKE_REPO/core/CLAUDE.md"; do
     path="${pair%%:*}"
     target="${pair##*:}"
     label="idempotent $(basename "$path")"
     assert_link_exists   "$path"   "$label"
     assert_link_target   "$path"   "$target" "$label"
 done
+assert_nexus_copy "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md" "$FAKE_REPO/core/kiro-nexus-steering.md" "idempotent nexus-orchestrator.md"
+assert_not_exists "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md.bak" "idempotent re-run does not back up the NEXUS copy"
+
+# Upgrade: a symlink left by an older setup is replaced by a copy, not backed up.
+ln -sfn "$FAKE_REPO/core/kiro-nexus-steering.md" "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md"
+HOME="$FAKE_HOME" bash "$FAKE_REPO/setup-nexus.sh" > /dev/null
+assert_nexus_copy "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md" "$FAKE_REPO/core/kiro-nexus-steering.md" "legacy symlink upgraded to copy"
+assert_not_exists "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md.bak" "legacy symlink not backed up"
+
+# A changed source refreshes the copy in place.
+echo "edited" >> "$FAKE_REPO/core/kiro-nexus-steering.md"
+HOME="$FAKE_HOME" bash "$FAKE_REPO/setup-nexus.sh" > /dev/null
+assert_nexus_copy "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md" "$FAKE_REPO/core/kiro-nexus-steering.md" "copy refreshed after source edit"
+assert_not_exists "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md.bak" "refresh does not back up the NEXUS copy"
 
 for dir in core personas tools prompts agent-memory; do
     path="$FAKE_HOME/.config/nexus/$dir"
@@ -254,6 +277,21 @@ if [ "$(cat "$FAKE_HOME/.claude/CLAUDE.md")" = "user claude config" ]; then
     pass "CLAUDE.md content restored"
 else
     fail "CLAUDE.md content not restored"
+fi
+
+assert_not_exists "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md.bak" "kiro steering .bak removed after restore"
+if [ "$(cat "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md")" = "user kiro config" ]; then
+    pass "kiro steering content restored"
+else
+    fail "kiro steering content not restored"
+fi
+
+# Teardown never deletes a Kiro steering file NEXUS did not install.
+HOME="$FAKE_HOME" bash "$FAKE_REPO/teardown-nexus.sh" > /dev/null 2>&1 || true
+if [ "$(cat "$FAKE_HOME/.kiro/steering/nexus-orchestrator.md" 2>/dev/null)" = "user kiro config" ]; then
+    pass "teardown kept user-owned kiro steering"
+else
+    fail "teardown removed user-owned kiro steering"
 fi
 
 # Custom MCP servers and other keys must be preserved after teardown
