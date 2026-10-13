@@ -81,7 +81,7 @@ If Ollama is missing, provide the install command:
 
 ### Step 4: Verify NEXUS Installation
 
-Check that symlinks and directories are in place:
+Check that symlinks and directories are in place (the Kiro steering file is a regular copy, not a symlink):
 
 ```bash
 ls -la ~/.gemini/GEMINI.md 2>/dev/null
