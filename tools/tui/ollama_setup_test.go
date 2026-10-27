@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+func TestIsLocalOllamaURL(t *testing.T) {
+	locals := []string{"", defaultOllamaURL, "http://127.0.0.1:11434", "http://[::1]:11434/"}
+	for _, raw := range locals {
+		if !isLocalOllamaURL(raw) {
+			t.Fatalf("expected local: %q", raw)
+		}
+	}
+	remotes := []string{"http://10.0.0.99:11434", "http://gpu.example:11434", "not a url"}
+	for _, raw := range remotes {
+		if isLocalOllamaURL(raw) {
+			t.Fatalf("expected remote: %q", raw)
+		}
+	}
+}
+
 func TestEnsureOllamaReadyFailsWithoutBinaryOrInstaller(t *testing.T) {
 	withIsolatedPath(t)
 	err := ensureOllamaReady(defaultOllamaURL)
@@ -17,6 +32,21 @@ func TestEnsureOllamaReadyFailsWithoutBinaryOrInstaller(t *testing.T) {
 	}
 	if !strings.Contains(msg, "https://ollama.com") {
 		t.Fatalf("missing install URL: %q", msg)
+	}
+}
+
+func TestEnsureOllamaReadyRemoteDoesNotInstall(t *testing.T) {
+	withIsolatedPath(t)
+	err := ensureOllamaReady("http://10.0.0.99:11434")
+	if err == nil {
+		t.Fatal("expected remote unreachable error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "remote Ollama") {
+		t.Fatalf("expected remote guidance, got %q", msg)
+	}
+	if strings.Contains(msg, "ollama not installed") {
+		t.Fatalf("must not attempt local install for remote URL: %q", msg)
 	}
 }
 
