@@ -235,7 +235,7 @@ nexus "design authentication for a private Hub"
 
 | Screen | What it does |
 |---|---|
-| **Install** | Step-by-step wizard: validates repo, creates symlinks, configures MCP, checks deps, pulls Ollama models |
+| **Install** | Step-by-step wizard: validates repo, creates symlinks, configures MCP, checks deps, installs/starts Ollama when local AI is enabled, and pulls default models |
 | **Configure** | Edit Ollama host URL and model overrides inline |
 | **Health Check** | Verifies Ollama reachability, symlink integrity, MCP server status |
 | **Task Log** | Read recent MCP tasks from SQLite: model, route band, latency, status, and cloud-equivalent versus actual local cost |
@@ -311,7 +311,7 @@ The next planned release and its gates are in the
 **Required for installers:** Bash, git, Node.js ≥22.13.0, and one or more
 supported AI tools (see [compatibility table](#tool-compatibility)).
 
-**Optional:** [Ollama](https://ollama.com/) for local model delegation.
+**Optional (auto-installed when you enable local AI):** [Ollama](https://ollama.com/) for local model delegation. The Install wizard installs it via Homebrew on macOS (or the official Linux install script), starts the daemon, and pulls `qwen2.5-coder:1.5b` + `llama3.2:3b`.
 
 > **Platform support:** Linux and macOS. Windows support is tracked in [#18](https://github.com/canoo/agent-nexus/issues/18).
 

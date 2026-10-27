@@ -73,9 +73,9 @@ command -v node >/dev/null && echo "node: OK" || echo "node: MISSING (needed for
 command -v ollama >/dev/null && echo "ollama: OK" || echo "ollama: MISSING (needed for local models)"
 ```
 
-If Ollama is missing, provide the install command:
+If Ollama is missing, prefer the TUI Install wizard with local AI enabled (`nexus` → Install) — it installs Ollama, starts the daemon, and pulls default models. Manual fallback:
 - Linux: `curl -fsSL https://ollama.com/install.sh -o install.sh && less install.sh && sh install.sh`
-- macOS: `brew install ollama` or download from https://ollama.com
+- macOS: `brew install ollama && brew services start ollama` or download from https://ollama.com
 
 > **Quick install (less secure):** `curl -fsSL https://ollama.com/install.sh | sh` — skips script inspection. See https://ollama.com/download for all installation methods.
 
