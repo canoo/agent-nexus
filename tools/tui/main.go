@@ -765,9 +765,13 @@ func installStepSetupOllama(idx int, m model) stepDoneMsg {
 	if err := ensureOllamaReady(ollamaURL); err != nil {
 		return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
 	}
-	pulled := pullDefaultOllamaModels()
+	pulled := pullDefaultOllamaModels(ollamaURL)
 	if len(pulled) == 0 {
-		return stepDoneMsg{idx: idx, ok: false, detail: "ollama ready but no models pulled (check disk/network)"}
+		detail := "ollama ready but no models pulled (check disk/network)"
+		if !isLocalOllamaURL(ollamaURL) {
+			detail = "remote Ollama reachable but no models pulled (need local ollama CLI, or pull on the remote host)"
+		}
+		return stepDoneMsg{idx: idx, ok: false, detail: detail}
 	}
 	return stepDoneMsg{idx: idx, ok: true, detail: strings.Join(pulled, ", ")}
 }
