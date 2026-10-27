@@ -1125,12 +1125,18 @@ func TestInstallStepCheckDependencies(t *testing.T) {
 	}
 }
 
-func TestInstallStepPullOllamaModelsSkipsWithoutOllama(t *testing.T) {
+func TestInstallStepSetupOllamaFailsWithoutOllama(t *testing.T) {
 	withIsolatedPath(t)
 	m := initialModel()
-	msg := installStepPullOllamaModels(5, m)
-	if !msg.ok || msg.idx != 5 || msg.detail != "skipped (ollama not installed)" {
+	msg := installStepSetupOllama(5, m)
+	if msg.ok || msg.idx != 5 {
 		t.Fatalf("got %+v", msg)
+	}
+	if !strings.Contains(msg.detail, "ollama not installed") {
+		t.Fatalf("detail missing install guidance: %q", msg.detail)
+	}
+	if !strings.Contains(msg.detail, "https://ollama.com") {
+		t.Fatalf("detail missing ollama.com link: %q", msg.detail)
 	}
 }
 
@@ -1152,6 +1158,14 @@ func TestRunInstallStepDispatchesAllSteps(t *testing.T) {
 		}
 		if msg.idx != idx {
 			t.Errorf("step %d: message idx = %d", idx, msg.idx)
+		}
+		// Step 5 tries to install/start Ollama; with an empty PATH it must
+		// fail clearly rather than silently skip.
+		if idx == 5 {
+			if msg.ok {
+				t.Fatalf("step 5: expected ollama setup failure with isolated PATH, got %+v", msg)
+			}
+			continue
 		}
 		if !msg.ok {
 			t.Errorf("step %d: not ok: %+v", idx, msg)
