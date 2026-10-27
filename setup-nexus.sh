@@ -49,6 +49,41 @@ safe_link() {
     echo "  Linked: $target -> $source"
 }
 
+# Appended to installed copies so setup, teardown and the TUI can tell a NEXUS
+# copy from a user's own file. Keep in sync with kiroCopyMarker in tools/tui.
+NEXUS_COPY_MARKER="<!-- Installed by agent-nexus. Edit core/kiro-nexus-steering.md and re-run setup-nexus.sh. -->"
+
+# Helper: install a file as a copy (with the NEXUS marker) instead of a symlink.
+# Kiro steering is copied because some Kiro tooling (e.g. KiroCrew) refuses
+# symlinked steering files. Re-run setup after editing the source.
+# Usage: safe_copy <source> <target>
+safe_copy() {
+    local source="$1"
+    local target="$2"
+    local tmp
+    mkdir -p "$(dirname "$target")"
+    tmp="$(mktemp "${target}.XXXXXX")"
+    { cat "$source"; printf '\n%s\n' "$NEXUS_COPY_MARKER"; } > "$tmp"
+
+    if [ -L "$target" ]; then
+        rm "$target"
+        echo "  Replaced symlink with copy: $target"
+    elif [ -f "$target" ] && grep -qxF "$NEXUS_COPY_MARKER" "$target"; then
+        if cmp -s "$tmp" "$target"; then
+            rm "$tmp"
+            echo "  Already up to date: $target (skipped)"
+            return 0
+        fi
+        echo "  Updated copy: $target"
+    elif [ -e "$target" ]; then
+        mv "$target" "${target}.bak"
+        echo "  Backed up: $target -> ${target}.bak"
+    fi
+
+    mv "$tmp" "$target"
+    echo "  Copied: $source -> $target"
+}
+
 # node >= 22.13 is required: the MCP config merges below run `node scripts/mcp-merge.js`, and the
 # nexus-ollama MCP server itself uses node:sqlite. Fail early with a clear
 # message instead of dying mid-script on a missing node.
@@ -91,7 +126,7 @@ echo ""
 echo "Linking core files..."
 safe_link "$NEXUS_REPO/core/NEXUS.md"               "$GEMINI_DIR/GEMINI.md"
 safe_link "$NEXUS_REPO/core/CLAUDE.md"               "$CLAUDE_DIR/CLAUDE.md"
-safe_link "$NEXUS_REPO/core/kiro-nexus-steering.md"  "$KIRO_STEERING_DIR/nexus-orchestrator.md"
+safe_copy "$NEXUS_REPO/core/kiro-nexus-steering.md"  "$KIRO_STEERING_DIR/nexus-orchestrator.md"
 
 echo ""
 echo "Linking config directories..."
@@ -224,7 +259,6 @@ echo "Verifying all symlinks..."
 for link in \
     "$GEMINI_DIR/GEMINI.md" \
     "$CLAUDE_DIR/CLAUDE.md" \
-    "$KIRO_STEERING_DIR/nexus-orchestrator.md" \
     "$CONFIG_NEXUS_DIR/core" \
     "$CONFIG_NEXUS_DIR/personas" \
     "$CONFIG_NEXUS_DIR/tools" \
@@ -237,13 +271,19 @@ for link in \
         echo "  OK: $link"
     fi
 done
+if grep -qxF "$NEXUS_COPY_MARKER" "$KIRO_STEERING_DIR/nexus-orchestrator.md" 2>/dev/null; then
+    echo "  OK: $KIRO_STEERING_DIR/nexus-orchestrator.md (copy)"
+else
+    echo "  MISSING: $KIRO_STEERING_DIR/nexus-orchestrator.md"
+    ERRORS=$((ERRORS + 1))
+fi
 
 echo ""
 if [ "$ERRORS" -gt 0 ]; then
     echo "Setup completed with $ERRORS error(s). Check the output above."
     exit 1
 fi
-echo "NEXUS setup complete. All symlinks verified."
+echo "NEXUS setup complete. All links and copies verified."
 if [ -x "$NEXUS_BIN" ]; then
     echo ""
     echo "  Run 'nexus' to manage your NEXUS installation via TUI."
