@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   maintenance:
@@ -96,3 +97,15 @@ jobs:
           branch: chore/weekly-maintenance
           base: main
           labels: maintenance, chore
+      - name: Notify on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh issue list --state open --search "Recurring Chores failed" --json number --jq '.[0].number // empty')
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Recurring Chores failed again: $run_url"
+          else
+            gh issue create --title "Recurring Chores failed (run ${{ github.run_id }})" --body "The Recurring Chores workflow failed. See the failed run: $run_url" --assignee canoo --label maintenance --label chore
+          fi
