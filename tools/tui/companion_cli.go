@@ -63,6 +63,12 @@ func isDigitsOnly(s string) bool {
 }
 
 func runCompanionCLI(args []string, nexusDir string, out io.Writer) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "status", "pause", "resume", "disable", "consent":
+			return runCompanionControlsCLI(args, nexusDir, out)
+		}
+	}
 	var expectedAction string
 	var helperArgs []string
 	var reqDays *int
@@ -102,7 +108,12 @@ func runCompanionCLI(args []string, nexusDir string, out io.Writer) int {
 	defer cancel()
 
 	scriptPath := filepath.Join(nexusDir, "tools", "mcp", "companion-data.mjs")
-	cmd := exec.CommandContext(ctx, "node", append([]string{scriptPath}, helperArgs...)...)
+	node, nodeErr := companionNodeExecutable()
+	if nodeErr != nil {
+		emitError(out, "companion_data_unavailable")
+		return 1
+	}
+	cmd := exec.CommandContext(ctx, node, append([]string{scriptPath}, helperArgs...)...)
 	stdoutBuf := boundedCompanionOutput{}
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = nil
