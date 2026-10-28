@@ -7,6 +7,7 @@ const DEFAULT_SOURCE_ROOT = fileURLToPath(new URL("../../../", import.meta.url))
 export const NATIVE_HOST_PAYLOAD_FILES = Object.freeze([
   "LICENSE",
   "docs/companion-support-matrix.md",
+  "docs/companion-functional-controls.md",
   "docs/nexus-companion.md",
   "docs/observability-schema.md",
   "docs/v0.3.0-work-tracker.md",
@@ -20,6 +21,7 @@ export const NATIVE_HOST_PAYLOAD_FILES = Object.freeze([
   "apps/companion-native-host/lib/platform-support.mjs",
   "apps/companion-native-host/lib/registration.mjs",
   "tools/mcp/companion-data.mjs",
+  "tools/mcp/companion-controls.mjs",
   "tools/mcp/lib/observability-store.mjs",
 ]);
 const MIGRATIONS_PATH = "tools/mcp/migrations";

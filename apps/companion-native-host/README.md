@@ -212,3 +212,10 @@ Automated tests exercise literal paths containing spaces and shell punctuation,
 argument forwarding, shared isolated SQLite data, and a PATH without Node.
 The desktop test executable is a fixture, not the real GUI. Installed desktop
 and live browser verification remain release gates.
+
+## Packaged command-line policy controls
+
+The payload includes `tools/mcp/companion-controls.mjs` alongside the existing data
+helper. It provides fixed status, explicit per-tool policy grants/revokes, pause,
+resume and confirmed disable without the desktop process. Use the matching NEXUS
+CLI and pinned runtime; see [functional control commands](../../docs/companion-functional-controls.md).
