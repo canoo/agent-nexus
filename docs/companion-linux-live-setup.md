@@ -83,6 +83,31 @@ permissions or macOS Chromium target was added.
 The installed helper’s read-only `status` command returned `storedSpans: 0` and
 `retentionDays: 14`; `desktop-file-validate` accepted the desktop entry.
 
-Live Chromium extension loading, permission prompts, real delivery, pause/resume,
-tray interactions and restart behavior still need user-assisted verification.
+## User-assisted live verification — 2026-10-28
+
+The user loaded the installed unpacked extension in native Chromium and supplied
+its assigned ID. Its browser-specific host manifest was installed and verified
+against the generated executable launcher, without enabling collection.
+
+The user then granted ChatGPT desktop consent and browser origin permission and
+explicitly resumed collection. Read-only database checks observed:
+
+| Step | Collection enabled | Stored spans |
+| --- | --- | --- |
+| Initial consent/resume | 1 | 0 |
+| Focus ChatGPT, then switch away | 1 | 2 |
+| Pause, repeat the tab transition | 0 | 2 |
+| Resume, repeat with a fresh observation | 1 | 4 |
+
+All four spans have fixed tool ID `chatgpt` and browser family `chrome`, as
+expected for the Chromium launcher using the Chrome-family adapter. This verifies
+live delivery and pause/resume on this Saturn installation. Collection was left
+enabled following the user's explicit resume; history was preserved.
+
+The user reported the extension checkbox initially became unchecked after the
+permission prompt and selected it again. Subsequent delivery succeeded; reliable
+first-click permission persistence still needs investigation.
+
+Tray interactions, browser/app restart, revoke/regrant, other tools and other
+Linux desktop environments still need user-assisted verification.
 Flatpak remains unsupported and is unnecessary for this native installation.
