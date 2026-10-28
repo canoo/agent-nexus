@@ -1,6 +1,7 @@
 mod companion_data;
 mod companion_registration;
 mod companion_runtime;
+mod nexus_control;
 
 use std::{
     env, fs,
@@ -692,9 +693,25 @@ async fn unregister_native_host(
     .map_err(|_| companion_registration::ERROR.to_owned())?
 }
 
+#[tauri::command]
+async fn nexus_control(request: Value, app: tauri::AppHandle) -> Result<Value, String> {
+    let refresh_companion =
+        request.get("operation").and_then(Value::as_str) == Some("companion.command");
+    tauri::async_runtime::spawn_blocking(move || {
+        let response = nexus_control::run(request).map_err(str::to_owned)?;
+        if refresh_companion && response.get("ok").and_then(Value::as_bool) == Some(true) {
+            refresh_tray_status(&app);
+        }
+        Ok(response)
+    })
+    .await
+    .map_err(|_| nexus_control::ERROR.to_owned())?
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            nexus_control,
             get_companion_dashboard,
             initialize_companion_store,
             set_companion_retention,
