@@ -46,8 +46,8 @@ was performed as part of installation.
 5. Open the extension popup/options and enable the same tool, approving its
    requested origin permission. Then explicitly **Resume collection** in the dashboard.
 6. Visit the supported tool in a focused tab for a few seconds, then switch to
-   another tab/window. Delivery happens when the observed span ends. Refresh the
-   dashboard and check that the stored-span count increases.
+   another tab/window. Delivery happens when the observed span ends. Ask the agent to read the
+   installed helper’s status and check that the stored-span count increases.
 7. Pause collection and repeat the transition: the count must stay unchanged.
    Resume, start a fresh observation, switch away, and confirm delivery returns.
    Test revoke/regrant and browser restart similarly before claiming live support.
@@ -79,6 +79,9 @@ The verifier additionally exercises the generated Linux Chromium wrapper. It che
 hashes/modes, extension policy, isolated setup/upgrades and fail-closed behavior.
 Chromium uses the existing Chrome protocol adapter; no new database adapter,
 permissions or macOS Chromium target was added.
+
+The installed helper’s read-only `status` command returned `storedSpans: 0` and
+`retentionDays: 14`; `desktop-file-validate` accepted the desktop entry.
 
 Live Chromium extension loading, permission prompts, real delivery, pause/resume,
 tray interactions and restart behavior still need user-assisted verification.
