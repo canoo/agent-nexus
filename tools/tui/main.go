@@ -249,6 +249,9 @@ func (m model) View() tea.View {
 
 func main() {
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "control" {
+		os.Exit(runControlCLI(args[1:], findNexusDir(), os.Stdin, os.Stdout))
+	}
 	if len(args) > 0 && args[0] == "--tui" {
 		if len(args) != 1 {
 			fmt.Fprintln(os.Stderr, "Usage: nexus --tui")

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -111,8 +113,24 @@ func loadTaskLogSQLiteFrom(dbPath string) ([]taskLogEntry, error) {
 		return nil, err
 	}
 	defer db.Close()
+	return queryTaskLogSQLite(context.Background(), db)
+}
 
-	rows, err := db.Query(`SELECT tool, model, routing, task_type, model_provider, route_band,
+// Read-only transport uses the same row mapping without changing journal mode
+// or writing path-bearing diagnostics to a caller's protocol streams.
+func loadTaskLogSQLiteReadOnly(dbPath string) ([]taskLogEntry, error) {
+	uri := (&url.URL{Scheme: "file", Path: dbPath, RawQuery: "mode=ro"}).String()
+	db, err := sql.Open("sqlite", uri)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return queryTaskLogSQLite(ctx, db)
+}
+func queryTaskLogSQLite(ctx context.Context, db *sql.DB) ([]taskLogEntry, error) {
+	rows, err := db.QueryContext(ctx, `SELECT tool, model, routing, task_type, model_provider, route_band,
 		tokens_in, tokens_out, latency_ms, ok, error, timestamp,
 		cloud_cost_equivalent, cost_usd, input_bytes, output_bytes
 		FROM tasks ORDER BY timestamp DESC LIMIT 50`)
