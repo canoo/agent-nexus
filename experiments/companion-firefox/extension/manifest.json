@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "NEXUS Firefox transport probe (experiment)",
+  "version": "0.0.1",
+  "description": "Transport-only experiment. No activity collection or production store access.",
+  "permissions": ["nativeMessaging"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "nexus-firefox-probe@codelogiic.local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": { "required": ["none"] }
+    }
+  },
+  "background": { "scripts": ["background.js"] },
+  "action": { "default_title": "Probe isolated native transport (no collection)" }
+}
