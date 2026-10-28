@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
+import { writeConsent } from "../ui.js";
 import { TOOL_DEFINITIONS, sanitizeConsents } from "../lib/policy.js";
 
-const descriptors = Object.fromEntries(["chrome", "navigator", "Date"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+const descriptors = Object.fromEntries(["chrome", "navigator", "Date", "setTimeout", "clearTimeout"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 afterEach(() => {
   for (const [key, descriptor] of Object.entries(descriptors)) {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor);
@@ -23,6 +24,7 @@ async function fixture({ spans = {}, send = async () => ({ schema_version: 1, ok
   const RealDate = descriptors.Date.value;
   let clock = RealDate.parse("2026-10-07T12:00:00Z");
   class FixtureDate extends RealDate {
+    static now() { return clock; }
     constructor(...args) { super(...(args.length ? args : [clock += 1000])); }
   }
   Object.defineProperty(globalThis, "Date", { configurable: true, writable: true, value: FixtureDate });
@@ -68,7 +70,7 @@ async function fixture({ spans = {}, send = async () => ({ schema_version: 1, ok
       async query() { return [{ id: 1 }]; },
     },
     windows: { onFocusChanged: event(), onRemoved: event(), WINDOW_ID_NONE: -1, async get() { return { focused: true }; } },
-    permissions: { onRemoved: event(), async contains({ origins }) { return origins.every((origin) => allowed.has(origin)); } },
+    permissions: { onRemoved: event(), onAdded: event(), async request() { return true; }, async contains({ origins }) { return origins.every((origin) => allowed.has(origin)); } },
     runtime: {
       id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", onMessage: event(),
       getURL(path) { return `chrome-extension://${this.id}/${path}`; },
@@ -79,6 +81,7 @@ async function fixture({ spans = {}, send = async () => ({ schema_version: 1, ok
   const worker = await import(`../background.js?fixture=${++instance}`);
   return {
     chrome, session, local, deliveries, tabs, allowed,
+    advance(ms) { clock += ms; },
     message(request, sender = { id: chrome.runtime.id, url: chrome.runtime.getURL("popup.html") }) {
       const reply = deferred();
       const responses = chrome.runtime.onMessage.emit(request, sender, reply.resolve);
@@ -274,4 +277,168 @@ test("worker refuses grants without permissions and sanitizes storage errors", a
   assert.equal(failure.applied, false);
   assert.deepEqual(Object.keys(failure).sort(), ["applied", "consents"]);
   assert.doesNotMatch(JSON.stringify(failure), /private-storage-path/);
+});
+
+
+test("popup destruction after worker-owned permission request does not lose explicit consent", async () => {
+  const f = await fixture();
+  f.consent("chatgpt", false);
+  await f.flush();
+  f.allowed.delete("https://chatgpt.com/*");
+  f.allowed.delete("https://chat.openai.com/*");
+  const permission = deferred();
+  let requested = false;
+  f.chrome.permissions.request = ({ origins }) => {
+    requested = true;
+    assert.deepEqual(origins, ["https://chatgpt.com/*", "https://chat.openai.com/*"]);
+    return permission.promise;
+  };
+  // The worker gets the real UI message, but the popup's response channel is
+  // destroyed before the browser prompt completes. Any follow-up UI mutation
+  // would fail; successful persistence must belong to the worker itself.
+  let popupAlive = true;
+  f.chrome.runtime.sendMessage = (message) => {
+    assert.equal(popupAlive, true);
+    void f.message(message);
+    return new Promise(() => {});
+  };
+  void writeConsent("chatgpt", true);
+  assert.equal(requested, true, "request must occur synchronously, before a storage await");
+  popupAlive = false;
+  f.allowed.add("https://chatgpt.com/*");
+  f.allowed.add("https://chat.openai.com/*");
+  permission.resolve(true);
+  await f.flush();
+  assert.equal(f.local.toolConsents.chatgpt, true);
+});
+
+test("denied or failed permission requests cannot create consent, nor can unrelated grants", async () => {
+  const f = await fixture();
+  f.consent("chatgpt", false);
+  await f.flush();
+  for (const request of [async () => false, async () => { throw new Error("private prompt failure"); }, () => { throw new Error("gesture unavailable"); }]) {
+    f.chrome.permissions.request = request;
+    const response = await f.message({ kind: "request-tool-grant", toolId: "chatgpt" });
+    assert.equal(response.applied, false);
+    assert.equal(response.consents.chatgpt, false);
+  }
+  f.chrome.permissions.onAdded.emit({ origins: ["https://chatgpt.com/*", "https://chat.openai.com/*"] });
+  await f.flush();
+  assert.equal(f.local.toolConsents.chatgpt, false);
+});
+
+test("revocation and explicit disable cancel permission requests before late grant completion", async () => {
+  for (const revoke of [false, true]) {
+    const f = await fixture({ spans: { 1: oldSpan } });
+    const permission = deferred();
+    f.chrome.permissions.request = () => permission.promise;
+    const grant = f.message({ kind: "request-tool-grant", toolId: "chatgpt" });
+    const disabled = revoke ? undefined : f.message({ kind: "set-tool-consent", toolId: "chatgpt", enabled: false });
+    if (revoke) f.chrome.permissions.onRemoved.emit({ origins: ["https://chatgpt.com/*"] });
+    permission.resolve(true);
+    assert.equal((await grant).applied, false);
+    if (disabled) assert.equal((await disabled).applied, true);
+    await f.flush();
+    assert.equal(f.local.toolConsents.chatgpt, false);
+    assert.deepEqual(f.session.activeSpans, {});
+  }
+});
+
+test("permission result expires at 60 seconds and a late result cannot revive it", async () => {
+  const f = await fixture();
+  f.consent("chatgpt", false);
+  await f.flush();
+  const permission = deferred();
+  f.chrome.permissions.request = () => permission.promise;
+  const grant = f.message({ kind: "request-tool-grant", toolId: "chatgpt" });
+  f.advance(60_000);
+  permission.resolve(true);
+  assert.equal((await grant).applied, false);
+  assert.equal(f.local.toolConsents.chatgpt, false);
+});
+
+test("expiry timer cancels a stalled prompt and subsequent external permissions grant stays disabled", async () => {
+  const f = await fixture();
+  f.consent("chatgpt", false);
+  await f.flush();
+  const permission = deferred();
+  f.chrome.permissions.request = () => permission.promise;
+  let expire;
+  Object.defineProperty(globalThis, "setTimeout", { configurable: true, writable: true, value: (fn, ms) => { assert.equal(ms, 60_000); expire = fn; return 1; } });
+  Object.defineProperty(globalThis, "clearTimeout", { configurable: true, writable: true, value: () => {} });
+  const grant = f.message({ kind: "request-tool-grant", toolId: "chatgpt" });
+  expire();
+  assert.equal((await grant).applied, false);
+  permission.resolve(true);
+  f.chrome.permissions.onAdded.emit({ origins: [...f.allowed] });
+  await f.flush();
+  assert.equal(f.local.toolConsents.chatgpt, false);
+});
+
+test("later explicit request supersedes old result and permission recheck still fails closed", async () => {
+  const f = await fixture();
+  f.consent("chatgpt", false);
+  await f.flush();
+  const first = deferred(), second = deferred();
+  let calls = 0;
+  f.chrome.permissions.request = () => (++calls === 1 ? first.promise : second.promise);
+  const oldGrant = f.message({ kind: "request-tool-grant", toolId: "chatgpt" });
+  const newGrant = f.message({ kind: "request-tool-grant", toolId: "chatgpt" });
+  assert.equal((await oldGrant).applied, false);
+  first.resolve(true);
+  f.allowed.delete("https://chat.openai.com/*");
+  second.resolve(true);
+  assert.equal((await newGrant).applied, false);
+  assert.equal(f.local.toolConsents.chatgpt, false);
+});
+
+test("worker-owned grants reject malformed messages, unknown tools and untrusted pages before requesting", async () => {
+  const f = await fixture();
+  f.chrome.permissions.request = () => assert.fail("untrusted request");
+  for (const message of [{kind:"request-tool-grant",toolId:"unknown"}, {kind:"request-tool-grant",toolId:"chatgpt",enabled:true}]) assert.equal(await f.message(message), undefined);
+  assert.equal(await f.message({kind:"request-tool-grant",toolId:"chatgpt"}, {id:f.chrome.runtime.id,url:"https://chatgpt.com/"}), undefined);
+});
+
+
+test("expiry during an in-flight storage grant is repaired before later observations", async () => {
+  const f = await fixture();
+  f.consent("chatgpt", false);
+  await f.flush();
+  const writing = deferred(), held = deferred();
+  const set = f.chrome.storage.local.set;
+  let first = true;
+  f.chrome.storage.local.set = async (values) => {
+    if (first && values.toolConsents?.chatgpt) { first = false; writing.resolve(); await held.promise; }
+    return set(values);
+  };
+  const grant = f.message({ kind: "request-tool-grant", toolId: "chatgpt" });
+  await writing.promise;
+  f.advance(60_000);
+  held.resolve();
+  assert.equal((await grant).applied, false);
+  await f.flush();
+  assert.equal(f.local.toolConsents.chatgpt, false);
+  assert.equal(f.local.toolConsents.claude, true);
+  f.activate(1);
+  await f.flush();
+  assert.deepEqual(f.session.activeSpans, {});
+});
+
+
+test("independent explicit permission prompts preserve each other's pending consent", async () => {
+  const f = await fixture();
+  f.consent("chatgpt", false);
+  f.consent("claude", false);
+  await f.flush();
+  const first = deferred(), second = deferred();
+  let requests = 0;
+  f.chrome.permissions.request = () => (++requests === 1 ? first.promise : second.promise);
+  const chatgpt = f.message({ kind: "request-tool-grant", toolId: "chatgpt" });
+  const claude = f.message({ kind: "request-tool-grant", toolId: "claude" });
+  first.resolve(true);
+  assert.equal((await chatgpt).applied, true);
+  second.resolve(true);
+  assert.equal((await claude).applied, true);
+  assert.equal(f.local.toolConsents.chatgpt, true);
+  assert.equal(f.local.toolConsents.claude, true);
 });

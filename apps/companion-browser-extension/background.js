@@ -17,6 +17,11 @@ const blockedTools = new Set();
 const consentRevisions = Object.fromEntries(TOOL_IDS.map((id) => [id, 0]));
 let deliveriesInFlight = 0;
 const MAX_DELIVERIES_IN_FLIGHT = 4;
+// At most one explicit permission request per fixed tool. Expired or canceled
+// results never become consent, even if the browser prompt completes later.
+const GRANT_REQUEST_TIMEOUT_MS = 60_000;
+const pendingGrants = new Map();
+function cancelPendingGrant(toolId) { pendingGrants.get(toolId)?.cancel(); }
 
 // Exposes completion only, never activity or consent state.
 export function whenIdle() { return queue.idle(); }
@@ -150,6 +155,7 @@ chrome.permissions.onRemoved.addListener((permissions) => {
   const removed = new Set(Array.isArray(permissions.origins) ? permissions.origins : []);
   const toolIds = TOOL_DEFINITIONS.filter((tool) => tool.origins.some((origin) => removed.has(origin))).map((tool) => tool.id);
   for (const id of toolIds) {
+    cancelPendingGrant(id);
     blockedTools.add(id);
     consentRevisions[id] += 1;
   }
@@ -164,7 +170,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   for (const id of TOOL_IDS) {
     if (snapshot[id] !== previous[id]) consentRevisions[id] += 1;
     revisions[id] = consentRevisions[id];
-    if (!snapshot[id]) blockedTools.add(id);
+    if (!snapshot[id]) {
+      if (snapshot[id] !== previous[id]) cancelPendingGrant(id);
+      blockedTools.add(id);
+    }
   }
   schedule(() => reconcileConsentSnapshot(snapshot, revisions));
 });
@@ -174,16 +183,25 @@ async function consentResponse(applied) {
   return { applied, consents: sanitizeConsents(local[CONSENTS_KEY]) };
 }
 
-async function setToolConsent(toolId, enabled, revision) {
+async function setToolConsent(toolId, enabled, revision, expiresAt = Infinity, stillCurrent = () => true) {
+  if (enabled && (Date.now() >= expiresAt || !stillCurrent())) return consentResponse(false);
   if (enabled) {
     const granted = await chrome.permissions.contains({ origins: [...definitionForTool(toolId).origins] });
-    if (!granted || consentRevisions[toolId] !== revision) return consentResponse(false);
+    if (!granted || consentRevisions[toolId] !== revision || Date.now() >= expiresAt || !stillCurrent()) return consentResponse(false);
   }
   // All UI mutations merge one tool against current state inside this queue.
   const local = await chrome.storage.local.get(CONSENTS_KEY);
-  if (enabled && consentRevisions[toolId] !== revision) return consentResponse(false);
+  if (enabled && (consentRevisions[toolId] !== revision || Date.now() >= expiresAt || !stillCurrent())) return consentResponse(false);
   const consents = { ...sanitizeConsents(local[CONSENTS_KEY]), [toolId]: enabled };
   await chrome.storage.local.set({ [CONSENTS_KEY]: consents });
+  if (enabled && (Date.now() >= expiresAt || !stillCurrent())) {
+    // A timeout/revocation can arrive while the storage write is in flight.
+    // Repair before releasing the state queue; preserve every other tool.
+    blockedTools.add(toolId);
+    const latest = await chrome.storage.local.get(CONSENTS_KEY);
+    await chrome.storage.local.set({ [CONSENTS_KEY]: { ...sanitizeConsents(latest[CONSENTS_KEY]), [toolId]: false } });
+    return consentResponse(false);
+  }
   // A disable must discard spans even if the storage event is delayed.
   if (!enabled) {
     const session = await chrome.storage.session.get(ACTIVE_SPANS_KEY);
@@ -192,27 +210,71 @@ async function setToolConsent(toolId, enabled, revision) {
   return consentResponse(true);
 }
 
+function requestToolGrant(toolId) {
+  cancelPendingGrant(toolId);
+  const revision = ++consentRevisions[toolId];
+  const expiresAt = Date.now() + GRANT_REQUEST_TIMEOUT_MS;
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer;
+    const finish = (response) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (pendingGrants.get(toolId) === pending) pendingGrants.delete(toolId);
+      resolve(response);
+    };
+    const pending = { cancel() {
+      if (settled) return;
+      // Mark canceled synchronously, before reading storage or handling late
+      // permission results. No generic permissions.onAdded grant inference.
+      settled = true;
+      clearTimeout(timer);
+      if (pendingGrants.get(toolId) === pending) pendingGrants.delete(toolId);
+      void consentResponse(false).catch(() => ({ applied: false, consents: sanitizeConsents({}) })).then(resolve);
+    } };
+    pendingGrants.set(toolId, pending);
+    timer = setTimeout(pending.cancel, GRANT_REQUEST_TIMEOUT_MS);
+    try {
+      // Chromium propagates the real UI gesture to this message listener.
+      // Request synchronously: no storage/queue await may precede this call.
+      const permission = chrome.permissions.request({ origins: [...definitionForTool(toolId).origins] });
+      void Promise.resolve(permission).then((granted) => {
+        if (settled) return;
+        if (granted !== true || Date.now() >= expiresAt) return pending.cancel();
+        void queue.enqueue(() => {
+          if (settled || consentRevisions[toolId] !== revision || Date.now() >= expiresAt) return consentResponse(false);
+          return setToolConsent(toolId, true, revision, expiresAt, () => !settled && pendingGrants.get(toolId) === pending);
+        }).then(finish, pending.cancel);
+      }, pending.cancel);
+    } catch { pending.cancel(); }
+  });
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const allowedPages = [chrome.runtime.getURL("popup.html"), chrome.runtime.getURL("options.html")];
   if (!sender || sender.id !== chrome.runtime.id || !allowedPages.includes(sender.url)
       || !message || typeof message !== "object" || Array.isArray(message)
-      || Object.keys(message).length !== 3
-      || !["kind", "toolId", "enabled"].every((key) => Object.hasOwn(message, key))
-      || message.kind !== "set-tool-consent" || !isToolId(message.toolId)
-      || typeof message.enabled !== "boolean") return false;
-  const { toolId, enabled } = message;
-  if (!enabled) {
-    blockedTools.add(toolId);
-    consentRevisions[toolId] += 1;
-  }
-  const revision = consentRevisions[toolId];
-  void queue.enqueue(() => setToolConsent(toolId, enabled, revision)).then(
-    sendResponse,
-    async () => {
-      const response = await consentResponse(false).catch(() => ({ applied: false, consents: sanitizeConsents({}) }));
-      sendResponse(response);
-    },
-  ).catch(() => undefined);
-  // Keep the response channel open without relying on Promise-return support.
+      || !isToolId(message.toolId)) return false;
+  let response;
+  if (message.kind === "request-tool-grant" && Object.keys(message).length === 2) {
+    // Keep permission completion and consent persistence in the worker even if
+    // the requesting popup vanishes and sendResponse has no receiver.
+    response = requestToolGrant(message.toolId);
+  } else if (message.kind === "set-tool-consent" && Object.keys(message).length === 3
+      && typeof message.enabled === "boolean") {
+    const { toolId, enabled } = message;
+    if (!enabled) {
+      cancelPendingGrant(toolId);
+      blockedTools.add(toolId);
+      consentRevisions[toolId] += 1;
+    }
+    const revision = consentRevisions[toolId];
+    response = queue.enqueue(() => setToolConsent(toolId, enabled, revision));
+  } else return false;
+  void response.then(sendResponse, async () => {
+    const fallback = await consentResponse(false).catch(() => ({ applied: false, consents: sanitizeConsents({}) }));
+    sendResponse(fallback);
+  }).catch(() => undefined);
   return true;
 });

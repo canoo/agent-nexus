@@ -81,6 +81,29 @@ concurrent UI instances cannot overwrite each other's unrelated settings.
 The worker accepts only a fixed consent message from its own popup/options pages,
 rechecks required origin permissions before granting, and returns only the five
 consent booleans and an applied flag. UI pages never write shared consent objects
-directly. Optional permission requests start from the checkbox gesture before any
-storage await. The worker uses the explicit asynchronous response channel
-described in Chrome's [message-passing documentation](https://developer.chrome.com/docs/extensions/develop/concepts/messaging).
+directly. A grant now sends `request-tool-grant` synchronously from the checkbox
+gesture. Its validated worker listener starts `permissions.request` before any
+storage or queue await, and the worker owns the permission-result continuation.
+Destroying the popup while its permission prompt is open therefore cannot discard
+the subsequent consent write. The worker uses the explicit asynchronous response
+channel described in Chrome's [message-passing documentation](https://developer.chrome.com/docs/extensions/develop/concepts/messaging).
+
+There is at most one pending grant per fixed tool, expiring after 60 seconds.
+Denied, failed, expired, superseded or revoked requests cannot enable consent.
+The worker rechecks the required origins and repairs a canceled write before
+releasing the state queue. A prompt completing after expiry may leave browser
+permission granted, but tool consent stays off; another explicit checkbox click
+is required. Browser `permissions.onAdded` events never imply a tool grant.
+Pending grants are not persisted for replay after an unexpected worker shutdown;
+that failure remains closed. No manifest permissions, origin list or capture
+fields changed, and collection still requires separate desktop/CLI consent.
+
+Chromium's upstream `UserGestureFromExtensionPage` and
+`UserGestureFromContentScript` browser tests verify gesture propagation to an MV3
+worker in its [messaging API tests](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/extensions/api/messaging/messaging_apitest.cc).
+Chrome's [worker lifecycle documentation](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)
+also describes the longer-lived `permissions.request` API prompt. Local mocked
+regressions verify popup-response loss, denial, late results, expiry during
+storage writes, concurrent tools and revocation. They do not establish gesture
+propagation or first-click behavior in the user's installed Chromium; that needs
+a fresh user-assisted permission prompt after updating the installed extension.

@@ -22,7 +22,10 @@ function fixture() {
     },
     runtime: { async sendMessage(message) {
       calls.push(message);
-      state.consents = sanitizeConsents({ ...state.consents, [message.toolId]: message.enabled });
+      if (message.kind === "request-tool-grant") {
+        if (await chrome.permissions.request({ origins: ["https://chatgpt.com/*", "https://chat.openai.com/*"] }) !== true) return { applied: false, consents: state.consents };
+        state.consents = sanitizeConsents({ ...state.consents, [message.toolId]: true });
+      } else state.consents = sanitizeConsents({ ...state.consents, [message.toolId]: message.enabled });
       return { applied: true, consents: state.consents };
     } },
   };
@@ -30,29 +33,27 @@ function fixture() {
   return { chrome, state, calls };
 }
 
-test("UI requests permission immediately and submits only the one-tool mutation", async () => {
+test("UI hands the gesture to the worker immediately without owning the permission continuation", async () => {
   const f = fixture();
   const pending = writeConsent("chatgpt", true);
-  assert.deepEqual(f.calls, [{ permission: "request", origins: ["https://chatgpt.com/*", "https://chat.openai.com/*"] }]);
+  assert.deepEqual(f.calls, [{ kind: "request-tool-grant", toolId: "chatgpt" }, { permission: "request", origins: ["https://chatgpt.com/*", "https://chat.openai.com/*"] }]);
   const result = await pending;
   assert.equal(result.applied, true);
   assert.equal(result.consents.chatgpt, true);
   assert.equal(result.consents.claude, true);
-  assert.deepEqual(f.calls[1], { kind: "set-tool-consent", toolId: "chatgpt", enabled: true });
   assert.equal(f.calls.length, 2);
   await writeConsent("claude", false);
   assert.deepEqual(f.calls[2], { permission: "remove", origins: ["https://claude.ai/*"] });
+  assert.deepEqual(f.calls[3], { kind: "set-tool-consent", toolId: "claude", enabled: false });
 });
 
-test("permission refusal reads fresh state and never sends a worker mutation", async () => {
+test("permission refusal stays false through the worker-owned request", async () => {
   const f = fixture();
-  f.chrome.permissions.request = async () => {
-    f.state.consents = sanitizeConsents({ gemini: true });
-    return false;
-  };
-  f.chrome.runtime.sendMessage = async () => assert.fail("no mutation after denied permission");
-  assert.deepEqual(await writeConsent("chatgpt", true), { applied: false, consents: f.state.consents });
-  assert.deepEqual(f.calls, ["read"]);
+  f.chrome.permissions.request = async () => false;
+  const result = await writeConsent("chatgpt", true);
+  assert.equal(result.applied, false);
+  assert.equal(result.consents.chatgpt, false);
+  assert.deepEqual(f.calls, [{ kind: "request-tool-grant", toolId: "chatgpt" }]);
 });
 
 test("malformed worker responses and errors return fresh state without fallback writes", async () => {

@@ -1,4 +1,4 @@
-import { TOOL_DEFINITIONS, sanitizeConsents } from "./lib/policy.js";
+import { TOOL_DEFINITIONS, definitionForTool, sanitizeConsents } from "./lib/policy.js";
 import { changeToolConsent } from "./lib/consent.js";
 
 const CONSENTS_KEY = "toolConsents";
@@ -36,34 +36,28 @@ function isValidWorkerResponse(response) {
 }
 
 export async function writeConsent(toolId, enabled) {
-  if (typeof enabled !== "boolean") return { applied: false, consents: await readConsents() };
-  const result = await changeToolConsent({
-    toolId,
-    enabled,
-    // Request permission synchronously from the checkbox gesture. The worker
-    // merges consent against current storage; this snapshot is never persisted.
-    rawConsents: {},
-    requestOrigins: (origins) => chrome.permissions.request({ origins }),
-    removeOrigins: (origins) => chrome.permissions.remove({ origins }),
-  });
-
-  if (!result.applied) {
-    return { applied: false, consents: await readConsents() };
-  }
-
+  if (typeof enabled !== "boolean" || !definitionForTool(toolId)) return { applied: false, consents: await readConsents() };
   try {
-    const response = await chrome.runtime.sendMessage({
-      kind: "set-tool-consent",
-      toolId,
-      enabled,
-    });
-    if (isValidWorkerResponse(response)) {
-      return response;
+    // Send directly from the checkbox gesture. The worker starts and owns the
+    // permission request before any await, so popup destruction cannot lose
+    // the grant-result continuation.
+    if (enabled) {
+      const response = await chrome.runtime.sendMessage({ kind: "request-tool-grant", toolId });
+      if (isValidWorkerResponse(response)) return response;
+    } else {
+      const result = await changeToolConsent({
+        toolId, enabled, rawConsents: {},
+        requestOrigins: (origins) => chrome.permissions.request({ origins }),
+        removeOrigins: (origins) => chrome.permissions.remove({ origins }),
+      });
+      if (result.applied) {
+        const response = await chrome.runtime.sendMessage({ kind: "set-tool-consent", toolId, enabled: false });
+        if (isValidWorkerResponse(response)) return response;
+      }
     }
   } catch {
-    // sendMessage failure falls through
+    // Errors and closed message channels return only a fresh safe snapshot.
   }
-
   return { applied: false, consents: await readConsents() };
 }
 
