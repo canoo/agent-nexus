@@ -278,3 +278,12 @@ The helper deadlines and fixed errors remain in effect. Frontend actions still
 serialize and disable controls while pending. A Rust regression verifies a
 stalled worker does not prevent independent background work from completing.
 Live window/tray responsiveness still requires installed GUI validation.
+
+## Native Chromium on Linux
+
+The registration selector includes **Chromium (Linux)** and reads its separate
+`~/.config/chromium/NativeMessagingHosts` manifest. Bind the generated
+`nexus-companion-native-host-chromium` launcher when registering. Chromium shares
+the existing Chrome-family consent adapter, displayed as **Chrome / Chromium**;
+no separate activity identity or additional collection permissions are introduced.
+Chromium registration is unavailable on macOS and in Flatpak environments.

@@ -27,6 +27,7 @@ Staged-process tests verify standalone executable and migration behavior in isol
 | Desktop/browser packaging | Current evidence | Preview status |
 | :--- | :--- | :--- |
 | **Linux (Native) + Chrome** | Staged executable tests pass in isolated `$HOME` and relocated path with spaces; migrations initialize disabled; test grant verifies fixture ingestion; helper status reads 1 span. | Automated only; live use unverified |
+| **Linux (Native) + Chromium** | Separate Linux manifest and generated launcher tested; ingestion uses the Chrome-family consent adapter. | Automated only; live browser use unverified |
 | **Linux (Native) + Edge** | Same staged-process execution and migration test suite passes as Chrome. | Automated only; live use unverified |
 | **macOS (Native) + Chrome / Edge** | Automated staged launchers, packaged migrations/helper and registration/removal tests pass at `3d652cb`. Live browser/GUI runtime and signed distribution remain unverified. | Automated only; live use unverified |
 | **Flatpak (Companion & Browsers)** | Recipe placeholder only (empty `finish-args` and `modules`; not distributable). Host and registration helper refuse detectable Flatpak contexts in automated tests. | Unsupported |

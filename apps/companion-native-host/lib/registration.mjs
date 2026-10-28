@@ -5,10 +5,11 @@ import { nativeHostRuntimeSupported } from "./platform-support.mjs";
 
 export const NATIVE_HOST_NAME = "com.codelogiic.nexus.companion";
 const EXTENSION_ID = /^[a-p]{32}$/;
-const BROWSERS = new Set(["chrome", "edge"]);
+const BROWSERS = new Set(["chrome", "chromium", "edge"]);
 
-function assertBrowser(browser) {
-  if (!BROWSERS.has(browser)) throw new TypeError("browser must be chrome or edge");
+function assertBrowser(browser, platform = process.platform) {
+  if (!BROWSERS.has(browser)) throw new TypeError("browser must be chrome, chromium or edge");
+  if (browser === "chromium" && platform !== "linux") throw new TypeError("chromium registration supports Linux only");
   return browser;
 }
 
@@ -26,14 +27,13 @@ function validatedExtensionIds(extensionIds) {
   return [...unique];
 }
 
-/** Chrome and Edge are deliberately registered to different browser-owned paths. */
+/** Browser registration targets have separate browser-owned paths. */
 export function nativeMessagingDirectory({ browser, platform = process.platform, home = homedir() } = {}) {
-  assertBrowser(browser);
+  assertBrowser(browser, platform);
   if (typeof home !== "string" || home.length === 0) throw new TypeError("home must be a local directory");
   if (platform === "linux") {
-    return browser === "chrome"
-      ? join(home, ".config", "google-chrome", "NativeMessagingHosts")
-      : join(home, ".config", "microsoft-edge", "NativeMessagingHosts");
+    const directory = { chrome: "google-chrome", chromium: "chromium", edge: "microsoft-edge" }[browser];
+    return join(home, ".config", directory, "NativeMessagingHosts");
   }
   if (platform === "darwin") {
     return browser === "chrome"
@@ -47,8 +47,8 @@ export function manifestPath(options) {
   return join(nativeMessagingDirectory(options), `${NATIVE_HOST_NAME}.json`);
 }
 
-export function createNativeHostManifest({ browser, extensionIds, hostPath } = {}) {
-  assertBrowser(browser);
+export function createNativeHostManifest({ browser, extensionIds, hostPath, platform = process.platform } = {}) {
+  assertBrowser(browser, platform);
   if (typeof hostPath !== "string" || !isAbsolute(hostPath)) {
     throw new TypeError("hostPath must be an absolute executable path");
   }

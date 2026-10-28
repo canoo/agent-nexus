@@ -182,8 +182,8 @@ test("staged registration install and uninstall stay browser-specific and preser
   const env = { ...process.env, HOME: home, NODE_NO_WARNINGS: "1" };
   const registration = join(outputDir, "apps/companion-native-host/bin/nexus-companion-native-host-registration.mjs");
   const manifests = {};
-  for (const browser of ["chrome", "edge"]) {
-    const hostPath = join(outputDir, `apps/companion-native-host/bin/nexus-companion-native-host-${browser}.mjs`);
+  for (const browser of ["chrome", "edge", ...(process.platform === "linux" ? ["chromium"] : [])]) {
+    const hostPath = join(outputDir, `apps/companion-native-host/bin/nexus-companion-native-host-${browser === "chromium" ? "chrome" : browser}.mjs`);
     const result = spawnSync(process.execPath, [registration, "install", "--browser", browser, "--extension-id", "a".repeat(32), "--host-path", hostPath], { env, encoding: "utf8", timeout: 10000 });
     assertQuiet(result);
     manifests[browser] = result.stdout.trim();
@@ -193,10 +193,14 @@ test("staged registration install and uninstall stay browser-specific and preser
       path: hostPath, type: "stdio", allowed_origins: [`chrome-extension://${"a".repeat(32)}/`],
     });
   }
-  assert.notEqual(manifests.chrome, manifests.edge);
-  const removed = spawnSync(process.execPath, [registration, "uninstall", "--browser", "chrome"], { env, encoding: "utf8", timeout: 10000 });
-  assertQuiet(removed);
-  assert.equal(existsSync(manifests.chrome), false);
-  assert.equal(existsSync(manifests.edge), true);
-  assert.equal(readFileSync(history, "utf8"), "preserved-history-fixture");
+  assert.equal(new Set(Object.values(manifests)).size, Object.keys(manifests).length);
+  const preserved = new Map(Object.entries(manifests).map(([browser, path]) => [browser, readFileSync(path, "utf8")]));
+  for (const browser of Object.keys(manifests)) {
+    const removed = spawnSync(process.execPath, [registration, "uninstall", "--browser", browser], { env, encoding: "utf8", timeout: 10000 });
+    assertQuiet(removed);
+    assert.equal(existsSync(manifests[browser]), false);
+    preserved.delete(browser);
+    for (const [other, bytes] of preserved) assert.equal(readFileSync(manifests[other], "utf8"), bytes);
+    assert.equal(readFileSync(history, "utf8"), "preserved-history-fixture");
+  }
 });

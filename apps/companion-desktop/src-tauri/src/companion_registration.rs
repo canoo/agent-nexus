@@ -52,8 +52,11 @@ fn run(args: &[&str]) -> Result<(), &'static str> {
         Duration::from_secs(15),
     )
 }
+pub fn browser_is_supported(browser: &str) -> bool {
+    matches!(browser, "chrome" | "edge") || (cfg!(target_os = "linux") && browser == "chromium")
+}
 pub fn register(browser: &str, extension_id: &str, host_path: &str) -> Result<(), &'static str> {
-    if !matches!(browser, "chrome" | "edge") {
+    if !browser_is_supported(browser) {
         return Err(ERROR);
     }
     run(&[
@@ -67,7 +70,7 @@ pub fn register(browser: &str, extension_id: &str, host_path: &str) -> Result<()
     ])
 }
 pub fn unregister(browser: &str) -> Result<(), &'static str> {
-    if !matches!(browser, "chrome" | "edge") {
+    if !browser_is_supported(browser) {
         return Err(ERROR);
     }
     run(&["uninstall", "--browser", browser])
@@ -171,6 +174,13 @@ mod tests {
         assert_eq!(fs::read(&edge).unwrap(), edge_before);
         assert_eq!(fs::read(&history).unwrap(), history_before);
         assert_eq!(unregister("firefox"), Err(ERROR));
+    }
+    #[test]
+    fn chromium_is_linux_only_and_unknown_browsers_are_rejected() {
+        assert_eq!(browser_is_supported("chromium"), cfg!(target_os = "linux"));
+        assert!(browser_is_supported("chrome"));
+        assert!(browser_is_supported("edge"));
+        assert!(!browser_is_supported("firefox"));
     }
     #[test]
     fn noisy_failed_and_stalled_helpers_return_only_fixed_errors() {

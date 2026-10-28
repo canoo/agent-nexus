@@ -2,7 +2,7 @@
 import { createNativeHostManifest, installNativeHost, uninstallNativeHost } from "../lib/registration.mjs";
 
 function usage() {
-  return "usage: nexus-companion-native-host-registration <print-manifest|install|uninstall> --browser <chrome|edge> [--extension-id <id>]... [--host-path </absolute/path>]";
+  return "usage: nexus-companion-native-host-registration <print-manifest|install|uninstall> --browser <chrome|chromium|edge> [--extension-id <id>]... [--host-path </absolute/path>]";
 }
 
 function argumentsFrom(argv) {

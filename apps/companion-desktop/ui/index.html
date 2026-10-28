@@ -83,7 +83,7 @@
         <p id="host-state">The native host is unregistered until you explicitly register it.</p>
         <form id="native-host-form">
           <label>Browser
-            <select id="browser" name="browser"><option value="chrome">Chrome</option><option value="edge">Edge</option></select>
+            <select id="browser" name="browser"><option value="chrome">Chrome</option><option value="edge">Edge</option><option value="chromium">Chromium (Linux)</option></select>
           </label>
           <label>Published extension ID
             <input id="extension-id" name="extension-id" inputmode="latin" autocomplete="off" pattern="[a-p]{32}" maxlength="32" required />
@@ -95,7 +95,7 @@
           <button type="button" class="danger" id="unregister-host" disabled>Remove this native host</button>
         </form>
         <p class="feedback" id="host-feedback" role="status"></p>
-        <p class="hint">Registration is an explicit, browser-specific action. It validates the extension ID and host path, then writes only that browser’s native-host manifest. It does not turn on collection or request browser access. Removal deletes only the selected browser’s NEXUS manifest and preserves consent, collection state, and local history.</p>
+        <p class="hint">Chromium on Linux shares the Chrome-family tool consents above. Chrome and Chromium use separate native-host registrations. Registration is an explicit, browser-specific action. It validates the extension ID and host path, then writes only that browser’s native-host manifest. It does not turn on collection or request browser access. Removal deletes only the selected browser’s NEXUS manifest and preserves consent, collection state, and local history.</p>
       </section>
 
       <section aria-labelledby="platform-heading">

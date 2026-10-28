@@ -16,5 +16,5 @@ export NEXUS_COMPANION_NODE=${quote(nodePath)}
 export NEXUS_COMPANION_NATIVE_HOST_REGISTRATION_HELPER=${quote(helper)}
 exec ${quote(desktopPath)} "$@"\n`;
 
-  return { chrome, edge, desktop };
+  return { chrome, edge, desktop, ...(process.platform === "linux" ? { chromium: chrome } : {}) };
 }

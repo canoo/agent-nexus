@@ -86,7 +86,7 @@ export function createRuntimeLaunchers(options = {}) {
   let desktop;
   try { desktop = executable(desktopPath); } catch { throw failure("launcher_input_invalid"); }
   const scripts = renderRuntimeLaunchers({ runtimeRoot: root, nodePath: node, desktopPath: desktop });
-  const names = { chrome: "nexus-companion-native-host-chrome", edge: "nexus-companion-native-host-edge", desktop: "nexus-companion" };
+  const names = { chrome: "nexus-companion-native-host-chrome", edge: "nexus-companion-native-host-edge", desktop: "nexus-companion", ...(process.platform === "linux" ? { chromium: "nexus-companion-native-host-chromium" } : {}) };
   try { mkdirSync(outputDir, { mode: 0o755 }); }
   catch (error) { throw failure(error.code === "EEXIST" ? "launcher_output_exists" : "launcher_write_failed"); }
   try {

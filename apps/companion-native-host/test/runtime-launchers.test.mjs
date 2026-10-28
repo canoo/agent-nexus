@@ -45,7 +45,7 @@ function quiet(result) {
 
 test("desktop launcher preserves literal paths/args and pins helpers with no node on PATH", (t) => {
   const f = fixture(t);
-  assert.deepEqual(createRuntimeLaunchers(options(f)), { schemaVersion: 1, ok: true, launchers: ["nexus-companion-native-host-chrome", "nexus-companion-native-host-edge", "nexus-companion"] });
+  assert.deepEqual(createRuntimeLaunchers(options(f)), { schemaVersion: 1, ok: true, launchers: ["nexus-companion-native-host-chrome", "nexus-companion-native-host-edge", "nexus-companion", ...(process.platform === "linux" ? ["nexus-companion-native-host-chromium"] : [])] });
   const args = ["literal $HOME", "$(not-a-command)", "quote ' and `backtick`"];
   const result = run(f, "nexus-companion", args);
   quiet(result);
@@ -132,4 +132,29 @@ test("launcher CLI validates flags and rejects Flatpak with fixed responses", (t
   assert.deepEqual(JSON.parse(unsupported.stderr), { schemaVersion: 1, ok: false, error: "launcher_environment_unsupported" });
   assert.equal(existsSync(f.outputDir), false);
   assert.equal(existsSync(join(f.home, ".config")), false);
+});
+
+
+test("relocated Linux Chromium wrapper uses Chrome-family consent and protocol", { skip: process.platform !== "linux" }, (t) => {
+  const f = fixture(t);
+  createRuntimeLaunchers(options(f));
+  const databasePath = join(f.home, ".config/nexus/logs/observability.sqlite");
+  createObservabilityStore({ databasePath }).migrate();
+  const db = new DatabaseSync(databasePath);
+  try {
+    const boundary = new Date(Date.now() - 10000).toISOString();
+    db.prepare("UPDATE companion_settings SET collection_enabled=1, collection_started_at=? WHERE id=1").run(boundary);
+    db.prepare("INSERT INTO companion_tool_consents (adapter_id,tool_id,enabled,consent_policy_version,updated_at) VALUES ('browser-chrome', 'chatgpt', 1, 1, ?)").run(boundary);
+  } finally { db.close(); }
+  const event = { tool_id: "chatgpt", surface: "browser", started_at: new Date(Date.now()-3000).toISOString(), ended_at: new Date(Date.now()-2000).toISOString(), detector: "selected-browser-tab", confidence: "surface-active", browser_family: "chrome", platform: "linux", schema_version: 1, consent_policy_version: 1 };
+  const result = run(f, "nexus-companion-native-host-chromium", [], encodeNativeMessage(event));
+  quiet(result);
+  assert.equal(result.stdout.readUInt32LE(0), result.stdout.length - 4);
+  assert.deepEqual(JSON.parse(result.stdout.subarray(4)), { schema_version: 1, ok: true });
+  const check = new DatabaseSync(databasePath);
+  try {
+    assert.equal(check.prepare("SELECT COUNT(*) AS count FROM tool_activity WHERE browser_family='chrome'").get().count, 1);
+    assert.equal(check.prepare("SELECT COUNT(*) AS count FROM companion_tool_consents WHERE adapter_id='browser-chromium'").get().count, 0);
+  } finally { check.close(); }
+  assert.equal(existsSync(join(f.home, ".config/chromium")), false);
 });

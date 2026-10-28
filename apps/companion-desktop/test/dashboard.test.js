@@ -655,3 +655,30 @@ test("host removal rejects unavailable/unknown browsers and sanitizes failure", 
   assert.deepEqual(calls,["get_companion_dashboard","unregister_native_host","get_companion_dashboard"]);
   assert.ok(!elements["#host-feedback"].textContent.includes("private"));
 });
+
+test("Linux Chromium registration and removal use its own target and fail closed when unavailable", async () => {
+  for (const state of ["registered", "unavailable"]) {
+    const calls = [];
+    const initial = {store:"ready",collection:"disabled",consents:[],nativeHost:{chrome:"registered",chromium:state,edge:"unregistered",registrationControl:"available"}};
+    const {elements,context} = setupEnvironment({onInvoke:async(command,payload)=>{
+      calls.push([command,payload]);
+      return initial;
+    }});
+    elements["#browser"].value = "chromium";
+    vm.runInContext(dashboardCode,context);
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(elements["#unregister-host"].disabled,state === "unavailable");
+    assert.equal(elements["#register-host"].disabled,state === "unavailable");
+    await elements["#unregister-host"].trigger("click");
+    if (state === "unavailable") assert.equal(calls.length,1);
+    else {
+      assert.equal(calls[1][0],"unregister_native_host");
+      assert.equal(JSON.stringify(calls[1][1]),JSON.stringify({request:{browser:"chromium"}}));
+      elements["#extension-id"].value = "a".repeat(32);
+      elements["#host-path"].value = "/installed/nexus-companion-native-host-chromium";
+      await elements["#native-host-form"].trigger("submit",{preventDefault(){}});
+      assert.equal(calls[2][0],"register_native_host");
+      assert.equal(calls[2][1].request.browser,"chromium");
+    }
+  }
+});

@@ -78,7 +78,7 @@ try {
   { env, encoding: "utf8", timeout: 15000 });
   assert.equal(setup.status, 0, setup.stderr);
   assert.equal(JSON.parse(setup.stdout).ok, true);
-  for (const browser of ["chrome", "edge"]) {
+  for (const browser of (process.platform === "linux" ? ["chrome", "edge", "chromium"] : ["chrome", "edge"])) {
     const message = Buffer.from("{}");
     const prefix = Buffer.alloc(4);
     prefix.writeUInt32LE(message.length);

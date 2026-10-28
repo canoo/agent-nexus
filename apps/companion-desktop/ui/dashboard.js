@@ -27,7 +27,7 @@ const unregisterHostButton = document.querySelector("#unregister-host");
 function updateRemovalState() {
   const browserSelect = document.querySelector("#browser");
   const selectedBrowser = browserSelect ? browserSelect.value : null;
-  const validBrowser = selectedBrowser === "chrome" || selectedBrowser === "edge";
+  const validBrowser = selectedBrowser === "chrome" || selectedBrowser === "edge" || (selectedBrowser === "chromium" && ["registered", "unregistered", "error"].includes(currentStatus?.nativeHost?.chromium));
   const regControlAvailable = currentStatus?.nativeHost?.registrationControl === "available";
   const browserState = validBrowser && currentStatus?.nativeHost ? currentStatus.nativeHost[selectedBrowser] : null;
   const eligibleState = browserState === "registered" || browserState === "error";
@@ -44,7 +44,7 @@ document.querySelector("#browser")?.addEventListener("change", () => {
 
 unregisterHostButton?.addEventListener("click", async () => {
   const selectedBrowser = document.querySelector("#browser")?.value;
-  const validBrowser = selectedBrowser === "chrome" || selectedBrowser === "edge";
+  const validBrowser = selectedBrowser === "chrome" || selectedBrowser === "edge" || (selectedBrowser === "chromium" && ["registered", "unregistered", "error"].includes(currentStatus?.nativeHost?.chromium));
   const regControlAvailable = currentStatus?.nativeHost?.registrationControl === "available";
   const browserState = validBrowser && currentStatus?.nativeHost ? currentStatus.nativeHost[selectedBrowser] : null;
   const eligibleState = browserState === "registered" || browserState === "error";
@@ -183,7 +183,9 @@ function updateControlStates() {
       currentStatus &&
       currentStatus.nativeHost &&
       currentStatus.nativeHost.registrationControl === "available";
-    registerHostButton.disabled = isBusy || !isHostAvailable;
+    const browser = document.querySelector("#browser")?.value;
+    const chromiumUnavailable = browser === "chromium" && !["registered", "unregistered", "error"].includes(currentStatus?.nativeHost?.chromium);
+    registerHostButton.disabled = isBusy || !isHostAvailable || chromiumUnavailable;
   }
   if (consentAcknowledgement) {
     consentAcknowledgement.disabled = isBusy || !isReady;
@@ -249,7 +251,7 @@ function renderConsents(items) {
 
     const label = document.createElement("span");
     label.className = "consent-label";
-    label.textContent = labelText;
+    label.textContent = item.adapterId === "browser-chrome" ? labelText.replace("Chrome browser:", "Chrome / Chromium:") : labelText;
 
     const state = document.createElement("span");
     state.className = `state state-${item.state}`;
@@ -331,7 +333,8 @@ function renderDashboard(status) {
   if (hostState && status.nativeHost) {
     const chrome = safeHostCopy[status.nativeHost.chrome] ?? safeHostCopy.error;
     const edge = safeHostCopy[status.nativeHost.edge] ?? safeHostCopy.error;
-    hostState.textContent = `Chrome: ${chrome}. Edge: ${edge}.`;
+    const chromium = safeHostCopy[status.nativeHost.chromium] ?? safeHostCopy.unavailable;
+    hostState.textContent = `Chrome: ${chrome}. Chromium (Linux): ${chromium}. Edge: ${edge}.`;
   }
   if (registerHostButton && status.nativeHost && status.nativeHost.registrationControl !== "available") {
     if (hostFeedback) hostFeedback.textContent = "Native-host registration is unavailable in this installation.";
@@ -389,7 +392,7 @@ async function refreshDashboard() {
       store: "error",
       setupControl: "unavailable",
       consents: [],
-      nativeHost: { chrome: "error", edge: "error", registrationControl: "unavailable" },
+      nativeHost: { chromium: "unavailable", chrome: "error", edge: "error", registrationControl: "unavailable" },
     };
     if (collectionHeading) collectionHeading.textContent = "Collection status unavailable";
     if (collectionDetail) collectionDetail.textContent = safeStoreCopy.error;

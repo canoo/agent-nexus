@@ -129,3 +129,16 @@ test("registration manifests require supplied valid extension IDs and stay brows
   );
   assert.match(manifestPath({ browser: "edge", platform: "darwin", home: "/tmp/nexus-home" }), /Microsoft Edge/);
 });
+
+
+test("Chromium registration is Linux-only and separate from Chrome and Edge", () => {
+  const options = { browser: "chromium", platform: "linux", home: "/tmp/nexus-home", extensionIds: ["a".repeat(32)], hostPath: "/opt/nexus/chrome-host" };
+  assert.equal(nativeMessagingDirectory(options), "/tmp/nexus-home/.config/chromium/NativeMessagingHosts");
+  assert.equal(createNativeHostManifest(options).path, options.hostPath);
+  for (const platform of ["darwin", "win32"]) {
+    assert.throws(() => nativeMessagingDirectory({ ...options, platform }), /Linux only/);
+    assert.throws(() => createNativeHostManifest({ ...options, platform }), /Linux only/);
+  }
+  const paths = ["chrome", "chromium", "edge"].map((browser) => manifestPath({ ...options, browser }));
+  assert.equal(new Set(paths).size, 3);
+});

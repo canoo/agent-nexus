@@ -78,6 +78,7 @@ struct SetConsentRequest {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NativeHostStatus {
+    chromium: &'static str,
     chrome: &'static str,
     edge: &'static str,
     registration_control: &'static str,
@@ -362,6 +363,7 @@ fn extension_id_is_valid(value: &str) -> bool {
 fn native_manifest_path(browser: &str) -> Result<PathBuf, ()> {
     let home = PathBuf::from(env::var_os("HOME").ok_or(())?);
     let directory = match (env::consts::OS, browser) {
+        ("linux", "chromium") => home.join(".config/chromium/NativeMessagingHosts"),
         ("linux", "chrome") => home.join(".config/google-chrome/NativeMessagingHosts"),
         ("linux", "edge") => home.join(".config/microsoft-edge/NativeMessagingHosts"),
         ("macos", "chrome") => {
@@ -424,6 +426,7 @@ fn registration_helper_is_available() -> bool {
 
 fn native_host_status() -> NativeHostStatus {
     NativeHostStatus {
+        chromium: native_host_state("chromium"),
         chrome: native_host_state("chrome"),
         edge: native_host_state("edge"),
         registration_control: if registration_helper_is_available() {
@@ -649,7 +652,7 @@ async fn register_native_host(
     app: tauri::AppHandle,
     request: NativeHostRegistrationRequest,
 ) -> Result<DashboardStatus, String> {
-    if !matches!(request.browser.as_str(), "chrome" | "edge")
+    if !companion_registration::browser_is_supported(&request.browser)
         || !extension_id_is_valid(&request.extension_id)
         || !Path::new(&request.host_path).is_absolute()
         || !Path::new(&request.host_path).is_file()
@@ -712,6 +715,7 @@ fn main() {
                 store: "unavailable",
                 consents: fixed_consents("unavailable"),
                 native_host: NativeHostStatus {
+                    chromium: "unavailable",
                     chrome: "unavailable",
                     edge: "unavailable",
                     registration_control: "unavailable",

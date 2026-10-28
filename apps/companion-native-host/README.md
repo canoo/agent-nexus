@@ -1,6 +1,6 @@
 # NEXUS Companion native host
 
-This is the local-only, fail-closed Chrome/Edge native-messaging boundary for
+This is the local-only, fail-closed Chrome/Chromium/Edge native-messaging boundary for
 the NEXUS Companion browser extension. It accepts the extension's fixed
 activity envelope over Chromium's length-prefixed stdio protocol and writes an
 accepted span only through the shared `ObservabilityStore.recordToolActivity`
@@ -63,6 +63,16 @@ Registrations remain distinct:
 | --- | --- | --- |
 | Linux | `~/.config/google-chrome/NativeMessagingHosts` | `~/.config/microsoft-edge/NativeMessagingHosts` |
 | macOS | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` | `~/Library/Application Support/Microsoft Edge/NativeMessagingHosts` |
+
+Linux native Chromium uses `--browser chromium` and
+`~/.config/chromium/NativeMessagingHosts`. It has a separate manifest and extension
+ID from Chrome. Chromium registration is rejected on macOS and other platforms.
+Chrome and Chromium intentionally share the Chrome-family protocol
+(`browser_family: "chrome"`) and the `browser-chrome` consent setting: a grant,
+pause or revocation for that adapter applies to both. Registration/removal stays
+browser-specific and does not alter consent. No new database adapter is introduced.
+Use the generated `nexus-companion-native-host-chromium` wrapper below as its host
+path. This supports the native Linux browser layout only, not Flatpak or Snap.
 
 A distributable desktop installer must own launcher placement and this lifecycle.
 The install-time launcher generator below supplies the runtime binding. Flatpak registration is not implemented or implied by this project.
@@ -164,7 +174,7 @@ The markers used by this gate are described in the official
 ## Bind an installed runtime
 
 After placing the staged payload, an external Node.js 22.13+ runtime and the
-compiled desktop executable at stable locations, generate three launchers from
+compiled desktop executable at stable locations, generate the launchers from
 this source checkout:
 
 ```sh
@@ -183,8 +193,10 @@ A failed write can leave partial output; retry with a new destination.
 
 The generated `nexus-companion-native-host-chrome` and
 `nexus-companion-native-host-edge` scripts invoke the pinned Node executable.
-Use their absolute paths as `--host-path` when explicitly registering each
-browser. The generated `nexus-companion` script invokes the chosen desktop
+On Linux it also generates `nexus-companion-native-host-chromium`, which runs
+the same Chrome-family host with the pinned Node executable; macOS gets no
+Chromium wrapper. Use each browser's corresponding absolute wrapper path as
+`--host-path` when explicitly registering it. The generated `nexus-companion` script invokes the chosen desktop
 binary and sets `NEXUS_REPO`, `NEXUS_COMPANION_NODE` and
 `NEXUS_COMPANION_NATIVE_HOST_REGISTRATION_HELPER` to the installed paths.
 Desktop data and registration helpers use this pinned runtime, so these
