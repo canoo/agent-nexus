@@ -5,7 +5,7 @@ Companion collection adapter. This experiment demonstrates an isolated Firefox-
 shaped extension event calling a native-message fixture, without production
 activity ingestion, new collection permissions or a Chrome identity alias.
 
-Branch: `codex/companion-firefox`, based on integration commit `126aa0f`.
+Branch: `codex/companion-firefox`, based on integration commit `035378d`.
 All changes are confined to `experiments/companion-firefox/` in the dedicated
 worktree. No desktop/macOS code, production schemas, user browser registrations,
 user profile or existing database is modified.
