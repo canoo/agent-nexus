@@ -83,5 +83,6 @@ separate distribution work, not prerequisites for native Saturn use.
 - `cd apps/companion-native-host && npm test` (40 tests).
 - MCP Zod pin updated to patched `4.6.7`; `npm audit` reports zero vulnerabilities.
 
-No live user consent/history was modified by these automated tests. No desktop
-Rust/UI files were edited for this work; existing local desktop edits are preserved.
+No live user consent/history was modified by these automated tests. The privacy
+CLI addition does not change desktop layouts; the separate shared-protocol bridge
+adds backend-only Rust wiring. Existing local desktop edits are preserved.
