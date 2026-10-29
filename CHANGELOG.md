@@ -6,6 +6,114 @@ All notable changes to NEXUS are documented here. Releases use
 
 ## [Unreleased]
 
+### Added
+
+- Companion native preview archives include an allowlisted unpacked development
+  extension, with build-version metadata and installation instructions. Permission
+  policy is preserved; no browser-store publication or live support is claimed.
+
+- Explicit desktop removal of one browser's native-host registration, preserving
+  collection/consent settings, local history and other browser registrations.
+
+- Explicit Companion first-run setup in the desktop and
+  `nexus companion initialize --confirm --json`. Owned migrations create only a
+  missing private store with collection off and no grants; existing files and
+  journal remnants are preserved. Dashboard/status reads remain read-only.
+
+- Native Companion development artifact builds: Linux `.deb` and unsigned macOS
+  `.app`, separate host/launcher setup payload, integrity manifest and preview
+  installation guide. CI archives are build evidence, pending live installation.
+
+- Installer-facing Companion launchers that validate the staged payload and pin
+  an external Node runtime for browser hosts and desktop helpers. Configured
+  desktop runtime paths fail closed when missing; live installation gates remain.
+
+- Separate Companion native-host staging with an allowlisted payload, owned
+  migrations, shared data helper and deterministic SHA-256/mode manifest.
+  Relocated executable and explicit registration/uninstall tests run in
+  Linux/macOS CI; live browser and distributable desktop packaging gates remain.
+
+- Shared routing settings and a deterministic CLI prompt router with explicit
+  opt-in before a failed local route falls back to `agy` (#102/#103).
+- Desktop Companion foundation: disabled-by-default activity storage,
+  Chrome/Edge extension, bounded native host, separate TUI Tool Activity view,
+  and a Tauri privacy-status window. This is development work for the v0.3.0
+  private preview; packaging and end-to-end release gates remain outstanding.
+- Explicit Companion browser consent controls and pause/resume lifecycle in the
+  desktop shell: per-tool/browser consent granting for Chrome and Edge with
+  privacy disclosure acknowledgement, atomic consent updates that do not enable
+  collection, pause retaining grants, resume requiring active browser grants,
+  read-only desktop status, fail-closed UI controls on store error, and safe error
+  filtering (#108).
+- Project memory CLI and interactive TUI screen for user-authored Markdown
+  notes (`~/.config/nexus/agent-memory/<project>/`), including `nexus memory list`,
+  `show`, `save`, `search`, and `init` commands alongside a two-pane TUI browser.
+  Memory is user-authored project context separate from consent-gated Desktop
+  Companion activity; no automatic decision capture, synchronization, or GUI
+  memory view exists yet.
+
+- Shared Companion raw-history controls for CLI and desktop: JSON status,
+  retention (0–365 days, default 14), pruning, and explicitly confirmed clear.
+  Native-host cleanup runs at startup, periodically while active, and before
+  incoming spans. Zero days keeps no raw history; MCP tasks and project memory
+  are preserved. This remains unreleased pending browser/runtime/package gates.
+
+### Changed
+
+- Split the TUI into screen and helper files within the existing Go package,
+  preserving its behavior and CLI entrypoint (#56).
+
+### Fixed
+
+- MCP and shell delegation check the selected Ollama model before inference,
+  with bounded requests and a clear missing-model recovery message. No automatic
+  downloads, retries or cloud fallback are introduced (#43).
+
+- MCP startup rejects empty or malformed band/per-task model overrides with a
+  setting-specific stderr diagnostic before opening storage; defaults and valid
+  override precedence are preserved (#35).
+
+- Companion setup, dashboard reads, consent and data controls run on background
+  workers; startup and tray disable actions also avoid waiting on SQLite or
+  helper subprocesses on the GUI event thread.
+
+- Desktop register/remove helpers run outside the GUI thread with a 15-second
+  deadline and suppressed subprocess output; failures return a fixed safe error.
+
+- Companion data helper recognizes its entry point through symlinked directory
+  aliases, including macOS temporary paths, while imports remain side-effect free.
+
+- Companion native hosts and registration/removal refuse detectable Flatpak
+  contexts and unsupported operating systems before activity, cleanup or
+  registration writes. Unsupported hosts return only a fixed negative reply.
+
+- Companion popup/options merge one-tool consent changes through the worker,
+  preserving simultaneous edits and keeping permission requests tied to user
+  gestures. Pending grants fail closed after newer revocations.
+
+- Serialize Companion browser state events, preserve revocation boundaries during
+  asynchronous work, and keep stalled native delivery from blocking consent cleanup.
+- Companion one-shot native hosts flush a fixed acknowledgement and close input,
+  allowing the extension's `sendNativeMessage` call to complete. Replies contain
+  no activity data or error text; malformed replies fail closed in the extension.
+- Observability store construction rejects unknown options before a mistyped
+  database-path option can silently fall back to the default local database.
+- Companion spans cannot include time before the latest explicit resume or tool
+  consent: crossing spans are discarded whole, exact UTC boundaries are accepted,
+  and invalid/future timestamps fail closed. Migration 005 pauses older enabled
+  preview stores once while preserving history and grants; explicit resume is
+  required after upgrade. Live browser/desktop lifecycle verification remains open.
+- Release publication waits for successful CI checks on the tagged commit (#49).
+- TUI installer closes Ollama reachability HTTP response body before running model pulls (#50).
+- TUI configuration editor Backspace removes a complete UTF-8 character,
+  preserving accented text, CJK, and emoji (#53).
+
+- Task Log reports route bands and subtracts actual local cost when calculating
+  estimated cloud savings (#113).
+- Companion upgrades preserve v0.2.2 tasks and import bookkeeping; its new
+  schema uses migration 004 after the shipped store-metadata migration.
+- Desktop builds include the window icon required by Tauri.
+
 ## [0.2.2] - 2026-10-06
 
 ### Added

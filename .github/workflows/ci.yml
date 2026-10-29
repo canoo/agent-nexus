@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:
 
 permissions:
   contents: read
@@ -19,6 +20,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
@@ -82,3 +87,89 @@ jobs:
 
       - name: Lint shell scripts
         run: shellcheck setup-nexus.sh teardown-nexus.sh install.sh
+
+  companion-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Test companion browser extension
+        working-directory: apps/companion-browser-extension
+        run: npm test
+
+      - name: Test companion native host
+        working-directory: apps/companion-native-host
+        run: npm test
+
+      - name: Install and test companion desktop
+        working-directory: apps/companion-desktop
+        run: |
+          npm ci
+          npm audit
+          npm test
+
+  companion-desktop-rust:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Install Linux prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt
+
+      - name: Check Rust formatting
+        run: cargo +stable fmt --manifest-path apps/companion-desktop/src-tauri/Cargo.toml -- --check
+
+      - name: Run Rust tests
+        run: cargo +stable test --manifest-path apps/companion-desktop/src-tauri/Cargo.toml --locked
+
+      - name: Install locked desktop build tooling
+        working-directory: apps/companion-desktop
+        run: npm ci --no-fund
+
+      - name: Build native development preview artifacts
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/apps/companion-desktop/src-tauri/target
+        run: |
+          node tools/automation/build-companion-preview.mjs \
+            --version 0.3.0-dev.1 --output "$RUNNER_TEMP/nexus-companion-preview"
+          node tools/automation/verify-companion-preview.mjs "$RUNNER_TEMP/nexus-companion-preview"
+          tar -czf "$RUNNER_TEMP/nexus-companion-preview-${RUNNER_OS}-${RUNNER_ARCH}.tar.gz" \
+            -C "$RUNNER_TEMP/nexus-companion-preview" .
+
+      - name: Upload unsigned development preview
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nexus-companion-preview-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/nexus-companion-preview-${{ runner.os }}-${{ runner.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14

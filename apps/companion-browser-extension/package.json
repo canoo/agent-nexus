@@ -1,0 +1,10 @@
+{
+  "name": "@nexus/companion-browser-extension",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Privacy-first Chrome and Edge activity-signal extension for NEXUS Companion",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/**/*.test.mjs"
+  }
+}

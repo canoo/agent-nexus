@@ -89,7 +89,7 @@ and a `nexus sync` command are planned for the Universal Sync Layer.
 
 ### 4. MCP server for local model delegation
 
-The `nexus-ollama` MCP server exposes local Ollama delegation as standard MCP tools. Any MCP-capable tool (Claude Code, Cursor, Windsurf, Cline, Continue.dev, Kiro) can route tasks locally without custom integration.
+The `nexus-ollama` MCP server exposes local Ollama delegation as standard MCP tools. Any MCP-capable client can route tasks locally when configured with the server entry below, though installer and automatic registration support varies by tool.
 
 ```json
 {
@@ -114,7 +114,48 @@ before delegating tasks to it.
 
 ### 5. TUI for setup and health
 
-An interactive terminal UI handles installation, configuration, health checks, and updates. No config file editing required to get started.
+An interactive terminal UI handles installation, configuration, health checks, updates, task logs, and project memory. No config file editing required to get started.
+
+### 6. Project memory (planned for v0.3.0)
+
+The v0.3.0 development branch adds project memory for user-authored Markdown notes (decisions, preferences, blockers) stored locally at `~/.config/nexus/agent-memory/<project>/`.
+
+Memory is explicit user-authored context, separate from consent-gated Desktop Companion activity; no automatic decision capture, synchronization, or GUI memory view exists yet.
+
+```bash
+nexus memory init my-project
+nexus memory save my-project --title "Architecture Decision" --body "Keep project decisions in local Markdown." --tags "arch,db"
+nexus memory list
+nexus memory show my-project
+# Use a filename printed by the preceding command:
+nexus memory show my-project "filename-from-project-list.md"
+nexus memory search "decisions"
+```
+
+You can also browse and manage project memories interactively via the **Project Memory** screen in the TUI (`nexus`).
+
+### Companion data controls (v0.3.0 development)
+
+The CLI and desktop share local retention and deletion controls. These commands
+return JSON for scripts and AI agents; creation and deletion require explicit confirmation.
+They affect only Companion activity, preserving MCP task history and project memory.
+
+```bash
+nexus companion initialize --confirm --json
+nexus companion data --json
+nexus companion retention --days 14 --json
+nexus companion prune --json
+nexus companion clear --confirm --json
+```
+
+Initialization creates a missing migration-owned store with collection off and no
+grants. Existing databases, symlinks and journal remnants are never replaced. The
+desktop offers the same action behind an unchecked setup acknowledgement. Opening
+the dashboard or requesting status creates nothing.
+
+Raw retention defaults to 14 days and accepts 0–365 days; zero keeps no raw history.
+The native host prunes expired spans while running. With the host inactive, use the
+prune command. Browser/desktop runtime and packaging validation remain release gates.
 
 ### Usage data attribution
 
@@ -128,21 +169,54 @@ Thank you to the Tokscale maintainers and contributors for their upstream work.
 
 ## Tool Compatibility
 
-| Tool | Config format | MCP support | NEXUS status |
+### Shipped integrations (v0.2.2)
+
+Automated tests in v0.2.2 cover installer setup, configuration projection, and MCP registration on Linux and macOS for the tools below. Installer CI validates CLI setup using a stubbed Claude CLI environment rather than live vendor E2E sessions. Ollama compute delegates are verified via MCP and shell contract tests.
+
+| Tool | Config format | MCP registration | Test coverage & status |
 |---|---|---|---|
-| Claude Code | `AGENTS.md`, `CLAUDE.md` | ✓ | ✅ Full |
-| Antigravity CLI (`agy`) | `AGENTS.md`, `.agents/skills/` | ✓ | ✅ Full |
-| Gemini CLI | `AGENTS.md` | ✓ | ✅ Full (Transitioning to `agy`) |
-| Kiro | `.kiro/steering/*.md` | ✓ | ✅ Full |
-| Cursor | `.cursor/rules/*.mdc` | ✓ | 🔄 Planned — Universal Sync |
-| Copilot | `.github/copilot-instructions.md` | GitHub-managed | 🔄 Planned — Universal Sync |
-| Windsurf | `.windsurfrules` | ✓ | 🔄 Planned — Universal Sync |
-| Cline | `.clinerules` | VS Code shared | 🔄 Planned — Universal Sync |
-| Continue.dev | `.continuerc.json` | ✓ | 🔄 Planned — Universal Sync |
-| Amazon Q | `.qrules` | ✓ | 📋 Backlog |
-| Crush | Agent Skills | ✓ | 📋 Backlog |
-| Aider | `.aider.conf.yml` | — | 📋 Backlog |
-| Zed | `.zed/settings.json` | ✓ | 📋 Backlog |
+| <img src="docs/assets/tools/claude.svg" alt="Claude Code" width="24" /> Claude Code | `~/.claude/CLAUDE.md`, agents | ✓ Automatic | ✅ Shipped — installer & MCP tests pass (CI uses stub Claude CLI) |
+| Antigravity CLI (`agy`) | Shared `~/.gemini/GEMINI.md` | ✓ Automatic | ✅ Shipped — installer & config tests pass (shared Gemini CLI config) |
+| <img src="docs/assets/tools/googlegemini.svg" alt="Gemini CLI" width="24" /> Gemini CLI | `~/.gemini/GEMINI.md` | ✓ Automatic | ✅ Shipped — installer & config tests pass (shares config with `agy`) |
+| <img src="docs/assets/tools/kiro.svg" alt="Kiro" width="24" /> Kiro | `.kiro/steering/*.md` | ✓ Automatic | ✅ Shipped — installer & steering config tests pass |
+| <img src="docs/assets/tools/ollama.svg" alt="Ollama" width="24" /> Ollama | `.env` / TUI config | N/A (Compute host) | ✅ Shipped — compute MCP & shell contracts tested |
+
+### Companion browser surfaces (unreleased v0.3.0 preview)
+
+> [!NOTE]
+> The Desktop Companion is currently an **unreleased v0.3.0 preview**. Browser adapters and provider mappings are verified under unit, protocol, and privacy contract suites; real browser extension host environments, GUI runtimes, and desktop packages are **not** yet validated. Note that Microsoft Copilot web companion integration is distinct from GitHub Copilot developer tooling.
+
+| Component / Service | Type | Scope | Test status |
+|---|---|---|---|
+| <img src="docs/assets/tools/googlechrome.svg" alt="Google Chrome" width="24" /> Google Chrome | Browser Adapter | Manifest V3 / native host | ⚠️ Preview — unit, protocol & privacy tested; browser runtime pending |
+| <img src="docs/assets/tools/microsoftedge.svg" alt="Microsoft Edge" width="24" /> Microsoft Edge | Browser Adapter | Manifest V3 / native host | ⚠️ Preview — unit, protocol & privacy tested; browser runtime pending |
+| <img src="docs/assets/tools/openai.svg" alt="ChatGPT" width="24" /> ChatGPT | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
+| <img src="docs/assets/tools/claude.svg" alt="Claude" width="24" /> Claude (Web) | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
+| <img src="docs/assets/tools/googlegemini.svg" alt="Gemini" width="24" /> Gemini (Web) | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
+| Microsoft Copilot (`copilot.microsoft.com`) | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested (distinct from GitHub Copilot) |
+| <img src="docs/assets/tools/perplexity.svg" alt="Perplexity" width="24" /> Perplexity | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
+
+### Planned Developer Tools (Universal Sync Layer Projections)
+
+The following coding tools are planned unverified targets for future Universal Sync Layer projections; live installer integration and sync are not yet active or verified:
+
+| Tool | Target config format | Target status |
+|---|---|---|
+| <img src="docs/assets/tools/openai.svg" alt="OpenAI" width="24" /> Codex | `AGENTS.md` projection | 🔄 Planned — unverified projection |
+| <img src="docs/assets/tools/cursor.svg" alt="Cursor" width="24" /> Cursor | `.cursor/rules/*.mdc` | 🔄 Planned — unverified projection |
+| <img src="docs/assets/tools/githubcopilot.svg" alt="GitHub Copilot" width="24" /> GitHub Copilot | `.github/copilot-instructions.md` | 🔄 Planned — unverified projection (distinct from Companion web Copilot) |
+| <img src="docs/assets/tools/windsurf.svg" alt="Windsurf" width="24" /> Windsurf | `.windsurfrules` | 🔄 Planned — unverified projection |
+| Cline | `.clinerules` | 🔄 Planned — unverified projection |
+| Continue.dev | `.continuerc.json` / `config.yaml` | 🔄 Planned — unverified projection |
+
+### Additional Tool Backlog
+
+Other developer environments remain in our backlog for future evaluation:
+
+- Amazon Q (`.qrules`)
+- Crush (Agent Skills)
+- Aider (`.aider.conf.yml`)
+- Zed (`.zed/settings.json`)
 
 ---
 
@@ -216,8 +290,10 @@ See [docs/model-configuration.md](docs/model-configuration.md) for hardware-spec
   Health Check
   Task Log
   Usage & Cost Dashboard
+  Companion Tool Activity
   Update NEXUS
   Uninstall NEXUS
+  Project Memory
 
 j/k: navigate • enter: select • q: quit
 ```
@@ -240,8 +316,10 @@ nexus "design authentication for a private Hub"
 | **Health Check** | Verifies Ollama reachability, symlink integrity, MCP server status |
 | **Task Log** | Read recent MCP tasks from SQLite: model, route band, latency, status, and cloud-equivalent versus actual local cost |
 | **Usage & Cost Dashboard** | NEXUS-native task routing stats and cloud-cost savings, plus Tokscale CLI usage aggregates (shown separately) |
+| **Companion Tool Activity** | Read privacy-preserving tool activity from SQLite with independent disabled states |
 | **Update** | Checks latest release and self-updates with checksum verification |
 | **Uninstall** | Removes all symlinks and binary with confirmation |
+| **Project Memory** | Browse, read, create, search, and delete local user-authored project Markdown notes |
 
 ### Maintenance
 
@@ -300,6 +378,7 @@ The next planned release and its gates are in the
 | **v0.2.2** | Stability and SQLite Task Log | Fresh-install fixes, SQLite-only task history, Go 1.27.1, zero audit vulnerabilities — [Released](docs/releases/v0.2.2.md) |
 | **v0.3.0 (planned)** | Desktop Companion private preview | Explicit consent, Chrome/Edge extension, strict native host, Linux/macOS controls, and routing foundation |
 | **v0.3.1 (planned)** | Universal sync layer | `nexus adopt`, `nexus sync`, AGENTS.md projection, tool driver system, nexus-context MCP, compatibility matrix |
+
 | **v0.3.5** | Community benchmarks | Benchmark schema, hardware-tiered test runner, community submission pipeline, results showcase |
 | **v0.4.0** | Persona marketplace & registry | Dynamic package manager (`canoo/Nexus-Personas`), `nexus persona install`, persona composition, auto-update |
 | **v1.0.0** | Stable | Windows/Docker support, team features, stable public API |
@@ -327,6 +406,12 @@ cd tools/tui && go test ./...
 
 # Full install/uninstall cycle (isolated temp $HOME)
 bash tests/test-install-cycle.sh
+
+# Companion test suite (extension, native host, desktop frontend & Rust)
+cd apps/companion-browser-extension && npm test
+cd apps/companion-native-host && npm test
+cd apps/companion-desktop && npm ci && npm audit && npm test
+cd apps/companion-desktop && cargo +stable test --manifest-path src-tauri/Cargo.toml --locked
 ```
 
 ---
@@ -345,6 +430,10 @@ NEXUS is an early open-source project and is actively looking for a few steady c
 | **Integrator** | Connecting tools, MCP servers, CLIs, and config formats | Help test NEXUS across Claude Code, Gemini CLI, Kiro, Cursor, Windsurf, Cline, Continue.dev, and local Ollama setups |
 | **Developer** | Go, Node.js, terminal UX, automation, or local AI workflows | Help with observability, tool sync, routing, tests, cross-platform support, and release polish |
 | **Documentation/discussion contributor** | Explaining workflows clearly and asking good product questions | Help write guides, forum posts, dependency proposals, and milestone summaries |
+
+Thanks to Blake Saunders ([@blakesaunders](https://github.com/blakesaunders)) for improving Claude Code support.
+
+We welcome focused integration pull requests as well as compatibility reports. When submitting compatibility results or bug reports, please include your OS, tool version, and reproduction steps as outlined in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 If any of that sounds useful, [join the Discord](https://discord.gg/qCdkHVkRHP), open a GitHub Discussion, or pick up an issue from the current milestones. Small, focused contributions are welcome.
 

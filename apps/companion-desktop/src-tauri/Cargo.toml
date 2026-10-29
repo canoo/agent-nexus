@@ -1,0 +1,16 @@
+[package]
+name = "nexus-companion"
+version = "0.0.0"
+description = "Local-only NEXUS Companion desktop shell"
+authors = ["NEXUS contributors"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["tray-icon"] }

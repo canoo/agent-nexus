@@ -1,0 +1,13 @@
+{
+  "name": "@nexus/companion-native-host",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fail-closed Chrome and Edge native-messaging host for NEXUS Companion",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}

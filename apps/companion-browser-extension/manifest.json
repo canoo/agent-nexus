@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "NEXUS Companion",
+  "description": "Opt-in local activity signals for selected supported AI-tool tabs.",
+  "version": "0.1.0",
+  "permissions": ["storage", "nativeMessaging"],
+  "optional_host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "https://copilot.microsoft.com/*",
+    "https://www.perplexity.ai/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "NEXUS Companion",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html"
+}

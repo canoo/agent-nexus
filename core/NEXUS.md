@@ -50,7 +50,10 @@ At the start of any project-scoped task:
 
 1. Identify the current project name (from repo folder name, `package.json`, or user context).
 2. Check if `~/.config/nexus/agent-memory/<project-name>/` exists.
-3. If it does, read all `.md` files in that directory **before** doing any other analysis.
+3. If it does, use `nexus memory show <project>` to list memories, then
+   `nexus memory show <project> <name>` to read each memory **before** doing any other analysis.
+   If the CLI is unavailable, read all `.md` files directly from
+   `~/.config/nexus/agent-memory/<project-name>/` as the fallback.
 4. Surface relevant context (decisions, preferences, blockers) from memory to inform the task.
 
 If no memory directory exists for the project, proceed normally and offer to create one

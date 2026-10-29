@@ -1,0 +1,10 @@
+# Packaging placeholder only. This file deliberately grants no sandbox permissions.
+# A real Flatpak recipe must be added only after native-host compatibility and
+# minimal required portals have been validated.
+app-id: com.codelogiic.NexusCompanion
+runtime: org.freedesktop.Platform
+runtime-version: "24.08"
+sdk: org.freedesktop.Sdk
+command: nexus-companion
+finish-args: []
+modules: []
