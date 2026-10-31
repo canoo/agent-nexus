@@ -221,7 +221,7 @@ func projectInstructions(root, command string, dry bool, out io.Writer) error {
 	block := projectionStart + "\n" + projectionHeader + "\n" + strings.TrimRight(string(canonical), "\n") + "\n" + projectionEnd
 	for _, driver := range instructionDrivers {
 		_, previouslyProjected := state.Blocks[driver.Path]
-		detected := driver.Name == "agents" || previouslyProjected
+		detected := driver.Name == "agents" || previouslyProjected || driverExecutable(driver.Name) != ""
 		for _, marker := range driver.Detect {
 			if _, e := os.Lstat(filepath.Join(root, marker)); e == nil {
 				detected = true

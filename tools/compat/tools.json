@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-10-30",
+  "tools": [
+    {
+      "id": "agents",
+      "instruction_file": "AGENTS.md",
+      "file_support": "project-wide text",
+      "minimum_version": "",
+      "tested_range": ""
+    },
+    {
+      "id": "claude",
+      "instruction_file": "CLAUDE.md",
+      "file_support": "project-wide text",
+      "minimum_version": "",
+      "tested_range": ""
+    },
+    {
+      "id": "gemini",
+      "instruction_file": "GEMINI.md",
+      "file_support": "project-wide text",
+      "minimum_version": "",
+      "tested_range": ""
+    },
+    {
+      "id": "copilot",
+      "instruction_file": ".github/copilot-instructions.md",
+      "file_support": "project-wide text",
+      "minimum_version": "",
+      "tested_range": ""
+    },
+    {
+      "id": "windsurf",
+      "instruction_file": ".windsurfrules",
+      "file_support": "project-wide text",
+      "minimum_version": "",
+      "tested_range": ""
+    },
+    {
+      "id": "cline",
+      "instruction_file": ".clinerules",
+      "file_support": "project-wide text",
+      "minimum_version": "",
+      "tested_range": ""
+    },
+    {
+      "id": "kiro",
+      "instruction_file": ".kiro/steering/nexus-project.md",
+      "file_support": "project-wide text",
+      "minimum_version": "",
+      "tested_range": ""
+    },
+    {
+      "id": "cursor",
+      "instruction_file": ".cursor/rules/nexus-project.mdc",
+      "file_support": "project-wide text",
+      "minimum_version": "",
+      "tested_range": ""
+    }
+  ]
+}

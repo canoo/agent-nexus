@@ -14,6 +14,7 @@ var menuItems = []string{
 	"Update NEXUS",
 	"Uninstall NEXUS",
 	"Project Memory",
+	"Tool Compatibility",
 }
 
 func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
@@ -74,6 +75,8 @@ func updateMenu(msg tea.Msg, m model) (tea.Model, tea.Cmd) {
 				return m, nil
 			case 8:
 				return startMemory(m)
+			case 9:
+				return startCompat(m)
 			}
 		}
 	}

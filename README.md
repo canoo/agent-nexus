@@ -215,6 +215,33 @@ supports unconditional rules; scoped rule import and settings/MCP merging are un
 File contracts are tested; live vendor loading is unverified. Continue.dev and
 unlisted tools remain planned. See the [capability and detection matrix](docs/projection-model.md).
 
+### Live compatibility inspection
+
+`nexus compat --dir ./project` (or `--json`) and **Tool Compatibility** in the TUI
+show project markers, detected CLI versions, and missing/partial/unverified states.
+Adopt/sync detect known installed executables on PATH as well as project markers.
+Only file-level project instruction contracts are tested; minimum vendor versions
+and tested vendor ranges are **unverified** for every driver.
+
+| Driver | Project instruction target | Known CLI detection | Minimum / tested vendor range |
+|---|---|---|---|
+| AGENTS | `AGENTS.md` (primary) | File contract | Unverified |
+| Claude | `CLAUDE.md` | `claude` | Unverified |
+| Gemini | `GEMINI.md` | `gemini` | Unverified |
+| GitHub Copilot | `.github/copilot-instructions.md` | `copilot` | Unverified |
+| Windsurf | `.windsurfrules` (legacy plain file) | `windsurf` | Unverified |
+| Cline | `.clinerules` (legacy plain file) | `cline` | Unverified |
+| Kiro | `.kiro/steering/nexus-project.md` | `kiro-cli`, `kiro` | Unverified |
+| Cursor | `.cursor/rules/nexus-project.mdc` | `cursor` | Unverified |
+
+The versioned [catalog](tools/compat/tools.json) contains no executable commands.
+Refresh explicitly with `nexus compat update` or `nexus update --compat`; TUI `u`
+uses the same worker and `s` syncs the current project. Refresh downloads a bounded,
+validated official registry into a separate cache, preserves local edits, and
+leaves data unchanged on failure. Opening the screen uses local data only.
+The official main-branch registry may be unavailable until this work is reviewed
+and landed. See [projection contracts and limits](docs/projection-model.md).
+
 ### Additional Tool Backlog
 
 Other developer environments remain in our backlog for future evaluation:
@@ -321,6 +348,7 @@ nexus "design authentication for a private Hub"
 | **Configure** | Edit Ollama host URL and model overrides inline |
 | **Health Check** | Verifies Ollama reachability, symlink and Kiro steering copy integrity, MCP server status |
 | **Task Log** | Read recent MCP tasks from SQLite: model, route band, latency, status, and cloud-equivalent versus actual local cost |
+| **Tool Compatibility** | Project markers, installed versions, unverified vendor ranges, explicit registry refresh and project sync |
 | **Usage & Cost Dashboard** | NEXUS-native task routing stats and cloud-cost savings, plus Tokscale CLI usage aggregates (shown separately) |
 | **Companion Tool Activity** | Read privacy-preserving tool activity from SQLite with independent disabled states |
 | **Update** | Checks latest release and self-updates with checksum verification |
@@ -363,7 +391,7 @@ core/           Orchestrator instructions (NEXUS.md, AGENTS.md, kiro steering)
 personas/       Specialist agent definitions
 tools/tui/      NEXUS TUI (Go / Bubbletea v2)
 tools/mcp/      nexus-ollama MCP server (Node.js)
-tools/compat/   Tool driver registry (tools.json) — planned Universal Sync Layer
+tools/compat/   Versioned file-level tool compatibility registry (tools.json)
 prompts/        Engineering rules and quality gates
 docs/           Documentation and hardware presets
 tests/          Integration tests

@@ -220,11 +220,15 @@ func runCompanionCLI(args []string, nexusDir string, out io.Writer) int {
 }
 
 // Cap output while the helper runs, rather than after buffering arbitrary data.
-type boundedCompanionOutput struct{ bytes.Buffer }
+type boundedCompanionOutput struct{ buffer bytes.Buffer }
+
+func (b *boundedCompanionOutput) Len() int       { return b.buffer.Len() }
+func (b *boundedCompanionOutput) Bytes() []byte  { return b.buffer.Bytes() }
+func (b *boundedCompanionOutput) String() string { return b.buffer.String() }
 
 func (b *boundedCompanionOutput) Write(p []byte) (int, error) {
 	if len(p) > 4096-b.Len() {
 		return 0, fmt.Errorf("companion output exceeds limit")
 	}
-	return b.Buffer.Write(p)
+	return b.buffer.Write(p)
 }

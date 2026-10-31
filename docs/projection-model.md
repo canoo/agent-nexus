@@ -18,8 +18,8 @@ nexus rollback --dir ./project
 
 All commands default to the current directory. No command reads or changes the
 user's global tool configuration. `--dry-run` validates and prints proposed paths
-without creating files or directories. Detection uses project artifacts, not
-installed executable/version discovery. File-level behavior is tested; live
+without creating files or directories. Detection uses project artifacts and known executable names on PATH (without
+executing them during adopt/sync). File-level behavior is tested; live
 vendor loading is unverified.
 
 ## Source, outputs, and ownership
@@ -59,13 +59,13 @@ MCP registration, credentials, personas, and routing configuration are not merge
 | Driver | Output | Detection | Import |
 |---|---|---|---|
 | AGENTS | `AGENTS.md` | Always primary | Yes |
-| Claude | `CLAUDE.md` | Existing file or `.claude/` | Yes; compatibility output |
-| Gemini | `GEMINI.md` | Existing file or `.gemini/` | Yes; compatibility output |
-| GitHub Copilot | `.github/copilot-instructions.md` | Existing target | Yes |
-| Windsurf | `.windsurfrules` | Existing file or `.windsurf/` | Yes, legacy plain file |
-| Cline | `.clinerules` | Existing target | Yes, legacy plain file |
-| Kiro | `.kiro/steering/nexus-project.md` | `.kiro/` | Other steering Markdown only if unconditional |
-| Cursor | `.cursor/rules/nexus-project.mdc` | `.cursor/` | Other MDC files only with `alwaysApply: true` |
+| Claude | `CLAUDE.md` | Existing file, `.claude/`, or `claude` on PATH | Yes; compatibility output |
+| Gemini | `GEMINI.md` | Existing file, `.gemini/`, or `gemini` on PATH | Yes; compatibility output |
+| GitHub Copilot | `.github/copilot-instructions.md` | Existing target or `copilot` on PATH | Yes |
+| Windsurf | `.windsurfrules` | Existing file, `.windsurf/`, or `windsurf` on PATH | Yes, legacy plain file |
+| Cline | `.clinerules` | Existing target or `cline` on PATH | Yes, legacy plain file |
+| Kiro | `.kiro/steering/nexus-project.md` | `.kiro/`, `kiro-cli`, or `kiro` on PATH | Other steering Markdown only if unconditional |
+| Cursor | `.cursor/rules/nexus-project.mdc` | `.cursor/` or `cursor` on PATH | Other MDC files only with `alwaysApply: true` |
 
 Kiro output uses `inclusion: always`; Cursor output uses `alwaysApply: true`.
 Changed output frontmatter fails validation. Scoped, conditional, unknown
@@ -145,3 +145,39 @@ leaving the root `.gitignore` alone. Keep private snapshots and archives out of
 Git; they may contain sensitive historical instruction text. Settings and
 machine-specific secrets belong in tool-local ignored files, never canonical
 instructions or version control.
+
+## Compatibility catalog
+
+`tools/compat/tools.json` (schema version 1) records the eight supported file
+contracts. `nexus compat --dir ./project` and `nexus compat --json` show project
+markers separately from installed executables and detected versions. Version
+queries invoke only known binaries with literal `--version`, with time and output
+bounds. An installed executable does not certify its instruction loading behavior.
+Minimum vendor versions and tested ranges are unknown; every vendor version is
+unverified. Missing executables and file-only partial detection remain visible.
+The registry accepts optional stable numeric `x.y.z` minimum versions and inclusive
+`x.y.z..x.y.z` tested ranges. Unknown, partial, prerelease and build-suffixed
+versions remain unverified; below-minimum and outside-range versions warn. Being
+inside a recorded range establishes only its file contract, not full vendor
+feature support. The bundled catalog has no vendor version evidence.
+
+The Tool Compatibility TUI screen loads locally in an asynchronous worker. `r`
+rechecks local state, `u` explicitly refreshes the official registry, and `s` runs
+sync for the project directory captured from the working directory on entry.
+Sync reports ownership conflicts and requires an adopted canonical source; it
+does not auto-adopt. Opening the screen performs no network request.
+
+`nexus compat update` (also `nexus update --compat`) explicitly fetches the fixed
+official HTTPS registry into a separate user cache. This alias updates only the
+compatibility catalog; it is separate from binary installation/update. Redirects,
+oversize responses, unknown schemas/drivers and unsupported evidence are rejected.
+Failed refresh leaves existing data unchanged. The checkout is never overwritten;
+a checksum detects user edits to the cached catalog and refresh refuses to replace
+them. Preserve edited data elsewhere before removing the cache to retry. Before
+the new registry exists on main, the official endpoint may return 404; that live
+refresh path remains unverified. No vendor version claims follow from a successful
+registry download.
+
+TUI architecture decision: retain #56's completed screen-file split and defer
+#100's broader package extraction. This screen adds one screen file and thin root
+wiring; a wider refactor needs separate evidence and scope.

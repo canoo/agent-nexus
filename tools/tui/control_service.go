@@ -37,6 +37,7 @@ var controlCapabilities = []controlCapability{
 	{"config.get", "Configure", false, false}, {"config.set", "Configure", true, true},
 	{"health.check", "Health Check", false, false},
 	{"tasks.list", "Task Log", false, false}, {"usage.get", "Usage & Cost Dashboard", false, false},
+	{"compat.get", "Tool Compatibility", false, false},
 	{"activity.list", "Companion Tool Activity", false, false}, {"companion.command", "Companion Tool Activity", true, false},
 	{"update.check", "Update NEXUS", false, false}, {"update.apply", "Update NEXUS", true, true},
 	{"uninstall.run", "Uninstall NEXUS", true, true},
@@ -141,6 +142,17 @@ func executeControl(req controlRequest, nexusDir string) (any, error) {
 			values[key] = m.configVals[i]
 		}
 		return values, nil
+	case "compat.get":
+		var p struct {
+			Dir string `json:"dir"`
+		}
+		if err := strictControlParams(req.Params, &p); err != nil {
+			return nil, err
+		}
+		if p.Dir == "" {
+			p.Dir = "."
+		}
+		return inspectCompatibility(nexusDir, p.Dir)
 	case "health.check":
 		if err := noParams(); err != nil {
 			return nil, controlFailure("control_params_invalid")
@@ -320,13 +332,17 @@ func executeControl(req controlRequest, nexusDir string) (any, error) {
 	return nil, controlFailure("control_operation_unknown")
 }
 
-type controlBuffer struct{ bytes.Buffer }
+type controlBuffer struct{ buffer bytes.Buffer }
+
+func (b *controlBuffer) Len() int       { return b.buffer.Len() }
+func (b *controlBuffer) Bytes() []byte  { return b.buffer.Bytes() }
+func (b *controlBuffer) String() string { return b.buffer.String() }
 
 func (b *controlBuffer) Write(p []byte) (int, error) {
 	if len(p) > controlMaxOutput-b.Len() {
 		return 0, errors.New("output limit")
 	}
-	return b.Buffer.Write(p)
+	return b.buffer.Write(p)
 }
 func runControlCLI(args []string, nexusDir string, in io.Reader, out io.Writer) int {
 	respond := func(response any, code int) int {

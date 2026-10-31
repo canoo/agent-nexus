@@ -28,6 +28,7 @@ func getInstruction(t *testing.T, root, path string) string {
 	return string(b)
 }
 func TestProjectAdoptSync(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	putInstruction(t, root, "CLAUDE.md", "Use small functions.\n")
 	putInstruction(t, root, ".gemini/settings.json", `{"secret":"not instructions"}`)
@@ -93,6 +94,7 @@ func TestProjectAdoptSync(t *testing.T) {
 	}
 }
 func TestProjectionConflictsPreflight(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	putInstruction(t, root, "AGENTS.md", "User policy\n")
 	var out bytes.Buffer
@@ -119,6 +121,7 @@ func TestProjectionConflictsPreflight(t *testing.T) {
 	}
 }
 func TestProjectionRejectsSymlinksAndMalformedMarkers(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	outside := t.TempDir()
 	putInstruction(t, outside, "policy.md", "Private policy")
@@ -141,6 +144,7 @@ func TestProjectionRejectsSymlinksAndMalformedMarkers(t *testing.T) {
 	}
 }
 func TestProjectionRejectsUnownedRuleAndJSONOnly(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	putInstruction(t, root, ".gemini/settings.json", `{"model":"x"}`)
 	var out bytes.Buffer
@@ -157,6 +161,7 @@ func TestProjectionRejectsUnownedRuleAndJSONOnly(t *testing.T) {
 	}
 }
 func TestProjectionCLIValidation(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	var out bytes.Buffer
 	if code := runProjectionCLI("sync", []string{"--dir", t.TempDir()}, &out, &out); code != 1 {
 		t.Fatal(code)
@@ -167,6 +172,7 @@ func TestProjectionCLIValidation(t *testing.T) {
 }
 
 func TestProjectionLateConflictMakesNoWrites(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	putInstruction(t, root, "AGENTS.md", "Original AGENTS\n")
 	putInstruction(t, root, "CLAUDE.md", "Original Claude\n")
@@ -188,6 +194,7 @@ func TestProjectionLateConflictMakesNoWrites(t *testing.T) {
 	}
 }
 func TestProjectionCanonicalDryRunThenIdempotent(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	putInstruction(t, root, "AGENTS.md", "Original\n")
 	var out bytes.Buffer
@@ -218,6 +225,7 @@ func TestProjectionCanonicalDryRunThenIdempotent(t *testing.T) {
 }
 
 func TestProjectionRemovedOwnedTargetConflicts(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	putInstruction(t, root, "CLAUDE.md", "Project policy\n")
 	var out bytes.Buffer
@@ -236,6 +244,7 @@ func TestProjectionRemovedOwnedTargetConflicts(t *testing.T) {
 }
 
 func TestProjectionArchivesAndValidation(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	putInstruction(t, root, "CLAUDE.md", "Original policy\n")
 	putInstruction(t, root, ".cursor/rules/always.mdc", "---\nalwaysApply: true\n---\nAlways test changes.\n")
@@ -271,6 +280,7 @@ func TestProjectionArchivesAndValidation(t *testing.T) {
 	}
 }
 func TestProjectionSnapshotRollback(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	putInstruction(t, root, "AGENTS.md", "Original\n")
 	var out bytes.Buffer
@@ -315,6 +325,7 @@ func TestProjectionSnapshotRollback(t *testing.T) {
 	}
 }
 func TestProjectionInitialAdoptionRollback(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	putInstruction(t, root, "CLAUDE.md", "Original bytes\n")
 	var out bytes.Buffer
@@ -340,6 +351,7 @@ func TestProjectionInitialAdoptionRollback(t *testing.T) {
 	}
 }
 func TestProjectionRollbackRejectsTraversal(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	putInstruction(t, root, latestInstructionSnapshot, `{"version":1,"files":[{"path":"../escape","expected_sha256":"x"}]}`)
 	var out bytes.Buffer
@@ -349,6 +361,7 @@ func TestProjectionRollbackRejectsTraversal(t *testing.T) {
 }
 
 func TestProjectionPrivacyAndIgnorePreservation(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
 	putInstruction(t, root, "AGENTS.md", "Original policy\n")
 	putInstruction(t, root, ".gitignore", "root-rule\n")

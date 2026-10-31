@@ -27,6 +27,7 @@ may take minutes, so a desktop should keep them off its UI thread.
 | `status.get` | none | Local executable/persona inventory |
 | `config.get` | none | The five current TUI configuration settings, defaults and environment precedence |
 | `config.set` | `values`: map of owned setting names to strings; `confirm:true` | Existing atomic settings writer and retention normalization; preserves unowned settings |
+| `compat.get` | optional `dir` (defaults to cwd) | Local file-contract registry, project markers and bounded known CLI version probes; no registry refresh or sync |
 | `health.check` | none | Ollama, GPU, link status, optional Tokscale and Claude-retention guidance |
 | `tasks.list` | none | Same latest-50-row SQLite mapping through a read-only connection |
 | `usage.get` | none | Native task metrics and optional Tokscale aggregates, kept separate; no raw session identifiers |

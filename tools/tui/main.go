@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -27,20 +28,24 @@ const (
 	screenTaskLog
 	screenUsageDashboard
 	screenCompanionActivity
+	screenCompat
 	screenMemory
 )
 
 // --- model ---
 
 type model struct {
-	screen   screen
-	cursor   int
-	styles   styles
-	nexusDir string
-	spinner  spinner.Model
-	width    int
-	height   int
-	memory   memoryState
+	screen         screen
+	cursor         int
+	styles         styles
+	nexusDir       string
+	compatReport   compatibilityReport
+	compatProject  string
+	compatViewport viewport.Model
+	spinner        spinner.Model
+	width          int
+	height         int
+	memory         memoryState
 
 	// install wizard
 	steps        []installStep
@@ -169,6 +174,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == screenMemory {
 			return updateMemory(msg, m)
 		}
+		if m.screen == screenCompat {
+			return updateCompat(msg, m)
+		}
 		return m, nil
 	}
 	if msg, ok := msg.(versionCheckMsg); ok {
@@ -212,6 +220,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return updateUsageDashboard(msg, m)
 	case screenCompanionActivity:
 		return updateCompanionActivity(msg, m)
+	case screenCompat:
+		return updateCompat(msg, m)
 	case screenMemory:
 		return updateMemory(msg, m)
 	}
@@ -239,6 +249,8 @@ func (m model) View() tea.View {
 		s = usageDashboardView(m)
 	case screenCompanionActivity:
 		s = companionActivityView(m)
+	case screenCompat:
+		s = compatView(m)
 	case screenMemory:
 		s = memoryView(m)
 	}
@@ -249,6 +261,13 @@ func (m model) View() tea.View {
 
 func main() {
 	args := os.Args[1:]
+	if len(args) > 0 && (args[0] == "compat" || (args[0] == "update" && len(args) == 2 && args[1] == "--compat")) {
+		compatArgs := args[1:]
+		if args[0] == "update" {
+			compatArgs = []string{"update"}
+		}
+		os.Exit(runCompatCLI(compatArgs, findNexusDir(), os.Stdout, os.Stderr))
+	}
 	if len(args) > 0 && args[0] == "persona" {
 		dir, err := os.Getwd()
 		if err != nil {
