@@ -457,3 +457,20 @@ Additional references: [Smithery MCP registry](https://smithery.ai) · [Official
 ## License
 
 [MIT](LICENSE) © 2026 [Codelogiic](https://www.codelogiic.com)
+
+### Read-only CLI diagnostics
+
+Run `nexus doctor` for actionable setup checks, or `nexus health --json` (also
+`nexus doctor --json`) for a versioned machine report without opening the TUI.
+Exit codes are 0 for healthy, 1 for failed checks, and 2 for invalid arguments.
+Checks include configured task models (band and per-task overrides), Ollama,
+Node.js 22.13+, installation targets including Kiro's managed copy, and at least
+5 GiB free for model downloads. Model sizes may require more space.
+`NEXUS_LOCAL_AI=false` skips Ollama and model-download checks. Tokscale is optional.
+
+MCP startup is tested using a bounded JSON-RPC initialize subprocess with isolated
+temporary storage; it is terminated after the probe. `mcp.running` is `null`
+(unknown), while `mcp.startable` reports the probe result. Missing MCP dependencies
+are a failed check: install them with `npm ci` in `tools/mcp`. Diagnostics never
+pull models, repair links, or start persistent services. Reports use fixed check
+labels and actions rather than raw configuration values or provider errors.

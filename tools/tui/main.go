@@ -249,6 +249,10 @@ func (m model) View() tea.View {
 
 func main() {
 	args := os.Args[1:]
+	if len(args) > 0 && (args[0] == "doctor" || args[0] == "health") {
+		home, _ := os.UserHomeDir()
+		os.Exit(runDiagnosticCLI(args, findNexusDir(), home, os.Stdout, os.Stderr))
+	}
 	if len(args) > 0 && (args[0] == "sync" || args[0] == "adopt" || args[0] == "rollback") {
 		os.Exit(runProjectionCLI(args[0], args[1:], os.Stdout, os.Stderr))
 	}
