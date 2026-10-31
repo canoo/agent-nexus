@@ -105,9 +105,8 @@ func routePromptContext(ctx context.Context, nexusDir string, request routeReque
 	if err != nil {
 		return err
 	}
-	decision := cfg.classify(request.Prompt)
+	decision := cfg.decision(nexusDir, request.Prompt)
 	if decision.Destination == "local" && routeCoolingDown(nexusDir) {
-		decision.Reason = "local route cooling down after failure or timeout"
 		if request.DryRun {
 			return json.NewEncoder(output).Encode(decision)
 		}

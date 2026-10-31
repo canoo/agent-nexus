@@ -48,7 +48,41 @@ type diagnosticReport struct {
 }
 
 var diagnosticHTTPClient = &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-var diagnosticModel = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.:/-]{0,349}$`)
+
+// Keep component validation in parity with tools/mcp/model-routes.mjs.
+var diagnosticNamePart = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}$`)
+var diagnosticNamespace = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]{0,79}$`)
+var diagnosticRegistry = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,349}$`)
+
+func validDiagnosticModel(value string) bool {
+	hasScheme := strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://")
+	rest := value
+	if strings.HasPrefix(rest, "http://") {
+		rest = strings.TrimPrefix(rest, "http://")
+	} else if strings.HasPrefix(rest, "https://") {
+		rest = strings.TrimPrefix(rest, "https://")
+	}
+	parts := strings.Split(rest, "/")
+	if hasScheme && len(parts) != 3 || !hasScheme && (len(parts) < 1 || len(parts) > 3) {
+		return false
+	}
+	final := strings.Split(parts[len(parts)-1], ":")
+	if len(final) > 2 {
+		return false
+	}
+	for _, part := range final {
+		if !diagnosticNamePart.MatchString(part) {
+			return false
+		}
+	}
+	if len(parts) == 2 && !diagnosticNamespace.MatchString(parts[0]) {
+		return false
+	}
+	if len(parts) == 3 && (!diagnosticRegistry.MatchString(parts[0]) || !diagnosticNamespace.MatchString(parts[1])) {
+		return false
+	}
+	return true
+}
 
 func collectDiagnostics(dir, home string) diagnosticReport {
 	r := diagnosticReport{SchemaVersion: 1, Healthy: true, Symlinks: []diagnosticCheck{}, Checks: []diagnosticCheck{}}
@@ -85,11 +119,11 @@ func collectDiagnostics(dir, home string) diagnosticReport {
 	models := map[string]bool{}
 	for _, band := range []string{"NEXUS_SUPERVISOR_MODEL", "NEXUS_LOGIC_MODEL"} {
 		if _, present := settings[band]; present || os.Getenv(band) != "" {
-			if !diagnosticModel.MatchString(get(band, "")) {
+			if !validDiagnosticModel(get(band, "")) {
 				valid = false
 			}
 		}
-		if v, present := os.LookupEnv(band); present && !diagnosticModel.MatchString(v) {
+		if v, present := os.LookupEnv(band); present && !validDiagnosticModel(v) {
 			valid = false
 		}
 	}
@@ -99,7 +133,7 @@ func collectDiagnostics(dir, home string) diagnosticReport {
 			band, def = "NEXUS_LOGIC_MODEL", "llama3.2:3b"
 		}
 		v := get("NEXUS_MODEL_"+task, get(band, def))
-		if !diagnosticModel.MatchString(v) {
+		if !validDiagnosticModel(v) {
 			valid = false
 		}
 		models[v] = true

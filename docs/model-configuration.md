@@ -8,8 +8,8 @@ The MCP server routes tasks to two model bands:
 
 | Band | Default Model | Tasks |
 |------|--------------|-------|
-| **Supervisor** | `qwen2.5-coder:1.5b` | commit-msg, boilerplate, test-scaffold |
-| **Logic** | `llama3.2:3b` | lint-fix, logic-refactor |
+| **Supervisor** | `qwen2.5-coder:1.5b` | commit-msg, boilerplate |
+| **Logic** | `llama3.2:3b` | test-scaffold, lint-fix, logic-refactor |
 
 These defaults target the lowest common denominator (4GB VRAM). If you have better hardware, you should upgrade to larger models for significantly better output quality.
 
@@ -410,7 +410,7 @@ ollama pull llama3.3:70b
 
 ## MCP Test Results (RTX 3050 Mobile, Default Config)
 
-Tested 2026-04-13 via JSON-RPC stdio against the MCP server with default model routing.
+Tested 2026-04-13 via JSON-RPC stdio against the MCP server with the defaults at that time. Test scaffolding now defaults to the logic band; the historical measurements below remain unchanged.
 
 | Tool | Model | Band | Time | Output Quality |
 |------|-------|------|------|---------------|
@@ -427,7 +427,7 @@ All tools returned valid responses with no CIRCUIT_BREAKER errors. The 1.5B supe
 
 ### Supervisor Band (speed-critical)
 
-Commit messages, boilerplate, and test scaffolds are **structured generation** — the model follows a rigid format. Smaller models handle this well because the output pattern is predictable. Prioritize speed over size.
+Commit messages and boilerplate are **structured generation** — the model follows a rigid format. Smaller models handle this well because the output pattern is predictable. Prioritize speed over size.
 
 | Priority | Recommendation |
 |----------|---------------|

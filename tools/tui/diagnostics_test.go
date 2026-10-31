@@ -126,3 +126,16 @@ func TestDiagnosticsRejectsMalformedNodeVersion(t *testing.T) {
 	}
 	t.Fatal("node check absent")
 }
+
+func TestDiagnosticModelReferenceParity(t *testing.T) {
+	for _, value := range []string{"qwen2.5-coder:1.5b", "team/model:latest", "registry.example:5000/team/model:7b", "http://localhost:5000/team/model:v1", "https://registry.example/team/model"} {
+		if !validDiagnosticModel(value) {
+			t.Errorf("rejected %q", value)
+		}
+	}
+	for _, value := range []string{"model:tag:other", "registry//model", "a/b/c/d", "model:", "team/", "bad.namespace/model", "https://registry/model", " model", "model\u2028"} {
+		if validDiagnosticModel(value) {
+			t.Errorf("accepted %q", value)
+		}
+	}
+}

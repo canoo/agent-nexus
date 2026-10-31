@@ -108,7 +108,7 @@ export function createModelRoutes(settings = {}) {
       : supervisorModel,
     'test-scaffold': Object.hasOwn(settings, 'NEXUS_MODEL_TEST_SCAFFOLD')
       ? settings.NEXUS_MODEL_TEST_SCAFFOLD
-      : supervisorModel,
+      : logicModel,
     'lint-fix': Object.hasOwn(settings, 'NEXUS_MODEL_LINT_FIX')
       ? settings.NEXUS_MODEL_LINT_FIX
       : logicModel,

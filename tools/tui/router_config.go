@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -99,22 +101,110 @@ func routeHealthPreflight(ctx context.Context, dir string) error {
 	return nil
 }
 
-// A short circuit prefers a ready frontier route over repeatedly waiting for an
-// unhealthy local node. The file contains only a timestamp, never prompt data.
+// A short circuit stores only an owned marker and timestamp, never prompts.
 func routeStatePath(dir string) string { return filepath.Join(dir, ".nexus", "route-failure") }
+
+type routeFailureState struct {
+	Owner     string `json:"owner"`
+	Timestamp int64  `json:"timestamp"`
+}
+
+const routeStateOwner = "nexus-route-failure-v1"
+
+func routeStateRoot(dir string, create bool) (*os.Root, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	if create {
+		if err := root.Mkdir(".nexus", 0700); err != nil && !os.IsExist(err) {
+			return nil, err
+		}
+	}
+	info, err := root.Lstat(".nexus")
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("unsafe route state directory")
+	}
+	return root.OpenRoot(".nexus")
+}
+func readRouteState(root *os.Root) (routeFailureState, error) {
+	var state routeFailureState
+	info, err := root.Lstat("route-failure")
+	if err != nil {
+		return state, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 256 {
+		return state, fmt.Errorf("foreign route state")
+	}
+	data, err := root.ReadFile("route-failure")
+	if err != nil {
+		return state, err
+	}
+	if json.Unmarshal(data, &state) != nil || state.Owner != routeStateOwner || state.Timestamp <= 0 {
+		return state, fmt.Errorf("foreign route state")
+	}
+	return state, nil
+}
 func routeCoolingDown(dir string) bool {
-	data, err := os.ReadFile(routeStatePath(dir))
+	root, err := routeStateRoot(dir, false)
 	if err != nil {
 		return false
 	}
-	stamp, err := strconv.ParseInt(string(data), 10, 64)
-	age := time.Since(time.Unix(0, stamp))
-	return err == nil && age >= 0 && age < 30*time.Second
+	defer root.Close()
+	state, err := readRouteState(root)
+	if err != nil {
+		return false
+	}
+	age := time.Since(time.Unix(0, state.Timestamp))
+	return age >= 0 && age < 30*time.Second
 }
 func recordRouteFailure(dir string) {
-	path := routeStatePath(dir)
-	if os.MkdirAll(filepath.Dir(path), 0700) == nil {
-		_ = os.WriteFile(path, []byte(strconv.FormatInt(time.Now().UnixNano(), 10)), 0600)
+	root, err := routeStateRoot(dir, true)
+	if err != nil {
+		return
+	}
+	defer root.Close()
+	if _, err := readRouteState(root); err != nil && !os.IsNotExist(err) {
+		return
+	}
+	name := ".route-failure-" + rand.Text()
+	file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return
+	}
+	defer root.Remove(name)
+	err = json.NewEncoder(file).Encode(routeFailureState{routeStateOwner, time.Now().UnixNano()})
+	if err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err != nil || closeErr != nil {
+		return
+	}
+	// Recheck ownership before replacing the directory entry atomically.
+	if _, err := readRouteState(root); err != nil && !os.IsNotExist(err) {
+		return
+	}
+	_ = root.Rename(name, "route-failure")
+}
+func clearRouteFailure(dir string) {
+	root, err := routeStateRoot(dir, false)
+	if err != nil {
+		return
+	}
+	defer root.Close()
+	if _, err := readRouteState(root); err == nil {
+		_ = root.Remove("route-failure")
 	}
 }
-func clearRouteFailure(dir string) { _ = os.Remove(routeStatePath(dir)) }
+func (cfg routeConfig) decision(dir, prompt string) routeDecision {
+	decision := cfg.classify(prompt)
+	if decision.Destination == "local" && routeCoolingDown(dir) {
+		decision.Reason = "local route cooling down after failure or timeout"
+	}
+	return decision
+}

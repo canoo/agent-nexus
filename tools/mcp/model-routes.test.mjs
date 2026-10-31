@@ -44,7 +44,7 @@ test('invalid names reject empty parts, ambiguous separators and unsafe characte
 test('routing keeps defaults and per-task over band precedence', () => {
   assert.deepEqual(createModelRoutes(), {
     'commit-msg': 'qwen2.5-coder:1.5b', boilerplate: 'qwen2.5-coder:1.5b',
-    'test-scaffold': 'qwen2.5-coder:1.5b', 'lint-fix': 'llama3.2:3b',
+    'test-scaffold': 'llama3.2:3b', 'lint-fix': 'llama3.2:3b',
     'logic-refactor': 'llama3.2:3b',
   });
   assert.deepEqual(createModelRoutes({
@@ -52,7 +52,7 @@ test('routing keeps defaults and per-task over band precedence', () => {
     NEXUS_MODEL_COMMIT_MSG: 'commit:v4', NEXUS_MODEL_LOGIC_REFACTOR: 'refactor:v5',
   }), {
     'commit-msg': 'commit:v4', boilerplate: 'supervisor:v2',
-    'test-scaffold': 'supervisor:v2', 'lint-fix': 'logic:v3',
+    'test-scaffold': 'logic:v3', 'lint-fix': 'logic:v3',
     'logic-refactor': 'refactor:v5',
   });
 });

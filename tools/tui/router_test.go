@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -148,5 +149,76 @@ func TestRouteCooldownDoesNotSilentlyEscalate(t *testing.T) {
 	clearRouteFailure(dir)
 	if routeCoolingDown(dir) {
 		t.Fatal("state not cleared")
+	}
+}
+
+func TestRouteStateRefusesForeignFilesAndSymlinks(t *testing.T) {
+	for _, kind := range []string{"parent-link", "state-link", "foreign-file"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			outside := t.TempDir()
+			target := filepath.Join(outside, "target")
+			if err := os.WriteFile(target, []byte("foreign"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			stateDir := filepath.Join(dir, ".nexus")
+			if kind == "parent-link" {
+				if err := os.Symlink(outside, stateDir); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := os.Mkdir(stateDir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				path := routeStatePath(dir)
+				if kind == "state-link" {
+					if err := os.Symlink(target, path); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					if err := os.WriteFile(path, []byte("foreign"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			recordRouteFailure(dir)
+			if routeCoolingDown(dir) {
+				t.Fatal("accepted foreign state")
+			}
+			clearRouteFailure(dir)
+			data, _ := os.ReadFile(target)
+			if string(data) != "foreign" {
+				t.Fatal("overwrote target")
+			}
+			if kind != "parent-link" {
+				info, err := os.Lstat(routeStatePath(dir))
+				if err != nil {
+					t.Fatal("removed foreign state", err)
+				}
+				if kind == "state-link" && info.Mode()&os.ModeSymlink == 0 {
+					t.Fatal("replaced symlink")
+				}
+			}
+		})
+	}
+}
+func TestControlAndCLIPreviewShareCooldownDecision(t *testing.T) {
+	dir := t.TempDir()
+	recordRouteFailure(dir)
+	result, code := controlCall(t, dir, "route.preview", false, map[string]any{"prompt": "commit message"})
+	if code != 0 {
+		t.Fatal(result)
+	}
+	var output bytes.Buffer
+	if err := routePrompt(dir, routeRequest{Prompt: "commit message", DryRun: true}, &output); err != nil {
+		t.Fatal(err)
+	}
+	var cli routeDecision
+	if err := json.Unmarshal(output.Bytes(), &cli); err != nil {
+		t.Fatal(err)
+	}
+	control := result["result"].(map[string]any)
+	if control["reason"] != cli.Reason || control["destination"] != cli.Destination || !strings.Contains(cli.Reason, "cooling down") {
+		t.Fatalf("control=%v cli=%v", control, cli)
 	}
 }

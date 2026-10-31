@@ -288,10 +288,7 @@ func executeControl(req controlRequest, nexusDir string) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		decision := cfg.classify(p.Prompt)
-		if decision.Destination == "local" && routeCoolingDown(nexusDir) {
-			decision.Reason = "local route cooling down after failure or timeout"
-		}
+		decision := cfg.decision(nexusDir, p.Prompt)
 		if req.Operation == "route.preview" {
 			return decision, nil
 		}

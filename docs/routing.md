@@ -28,7 +28,7 @@ Each attempt has a deadline, and retries wait 100ms, 200ms, then 400ms.
 Failed attempts discard provider output. Unix cancellation kills the delegation
 process group. Caller cancellation never triggers cloud fallback.
 
-After exhausted failures, `.nexus/route-failure` stores only a timestamp. For
+After exhausted failures, `.nexus/route-failure` stores only a versioned ownership marker and timestamp. For
 30 seconds subsequent requests avoid another slow local attempt; preview
 explains the cooldown and execution requires consent before using cloud.
 Success clears the timestamp. Timing logs contain only task, attempt number,
