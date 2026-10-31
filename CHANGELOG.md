@@ -114,6 +114,14 @@ All notable changes to NEXUS are documented here. Releases use
   schema uses migration 004 after the shipped store-metadata migration.
 - Desktop builds include the window icon required by Tauri.
 
+### Changed
+
+- `~/.kiro/steering/nexus-orchestrator.md` is now installed as a copy instead
+  of a symlink, because Kiro tooling such as KiroCrew refuses symlinked steering
+  files. Re-run `setup-nexus.sh` after editing `core/kiro-nexus-steering.md`.
+  Setup upgrades an existing symlink in place, and teardown removes only a copy
+  carrying the NEXUS marker. The TUI health check reports a stale copy.
+
 ## [0.2.2] - 2026-10-06
 
 ### Added

@@ -1257,13 +1257,12 @@ func TestInstallStepSymlinkCoreFiles(t *testing.T) {
 	m.nexusDir = dir
 
 	msg := installStepSymlinkCoreFiles(1, m)
-	if !msg.ok || msg.idx != 1 || msg.detail != "3 core files linked" {
+	if !msg.ok || msg.idx != 1 || msg.detail != "3 core files installed" {
 		t.Fatalf("got %+v", msg)
 	}
 	for _, link := range []struct{ dst, src string }{
 		{filepath.Join(home, ".gemini", "GEMINI.md"), filepath.Join(dir, "core/NEXUS.md")},
 		{filepath.Join(home, ".claude", "CLAUDE.md"), filepath.Join(dir, "core/CLAUDE.md")},
-		{filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md"), filepath.Join(dir, "core/kiro-nexus-steering.md")},
 	} {
 		target, err := os.Readlink(link.dst)
 		if err != nil {
@@ -1272,6 +1271,81 @@ func TestInstallStepSymlinkCoreFiles(t *testing.T) {
 		if target != link.src {
 			t.Errorf("%s -> %s, want %s", link.dst, target, link.src)
 		}
+	}
+	kiro := filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")
+	if fi, err := os.Lstat(kiro); err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("kiro steering must be a regular file (KiroCrew refuses symlinks): %v %v", fi, err)
+	}
+	if got := kiroSteeringStatus(filepath.Join(dir, "core/kiro-nexus-steering.md"), kiro); got != "✓ Kiro: copied" {
+		t.Errorf("status = %q", got)
+	}
+}
+
+func TestSafeCopyKiroSteering(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.md")
+	dst := filepath.Join(dir, "steering", "nexus-orchestrator.md")
+	write := func(p, s string) {
+		t.Helper()
+		if err := os.WriteFile(p, []byte(s), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(p string) string {
+		t.Helper()
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	write(src, "v1")
+
+	// A legacy symlink is replaced by a marked copy, with no backup.
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	if err := safeCopyKiroSteering(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Lstat(dst); fi.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("symlink not replaced")
+	}
+	if got := read(dst); got != "v1\n"+kiroCopyMarker+"\n" {
+		t.Fatalf("copy = %q", got)
+	}
+	if _, err := os.Stat(dst + ".bak"); !os.IsNotExist(err) {
+		t.Fatal("symlink must not be backed up")
+	}
+
+	// A stale NEXUS copy is reported, then updated in place without a backup.
+	write(src, "v2")
+	if got := kiroSteeringStatus(src, dst); got != "⚠ Kiro: copy out of date (re-run setup)" {
+		t.Errorf("stale status = %q", got)
+	}
+	if err := safeCopyKiroSteering(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(read(dst), "v2\n") {
+		t.Fatal("copy not updated")
+	}
+	if _, err := os.Stat(dst + ".bak"); !os.IsNotExist(err) {
+		t.Fatal("NEXUS copy must not be backed up")
+	}
+
+	// A user's own file is backed up before the copy is written.
+	write(dst, "mine")
+	if got := kiroSteeringStatus(src, dst); got != "⚠ Kiro: exists (not installed by NEXUS)" {
+		t.Errorf("foreign status = %q", got)
+	}
+	if err := safeCopyKiroSteering(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	if read(dst+".bak") != "mine" {
+		t.Fatal("user file not backed up")
 	}
 }
 
