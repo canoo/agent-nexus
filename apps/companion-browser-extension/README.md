@@ -20,7 +20,7 @@ permission.
 | Copilot | `https://copilot.microsoft.com/*` |
 | Perplexity | `https://www.perplexity.ai/*` |
 
-No other origin can produce an event. The only native-message envelope is the
+No other origin can produce an event. The activity native-message envelope is the
 schema described in [`docs/nexus-companion.md`](../../docs/nexus-companion.md):
 `tool_id`, surface, bounded timestamps, detector/confidence, browser family,
 optional supported platform, and schema/consent-policy versions. URLs, titles,
@@ -28,9 +28,12 @@ DOM/page text, prompts, responses, account identifiers, query strings, source
 code, and arbitrary metadata are never copied into the event or active-span
 state.
 
-The options page shows a fixed-field schema preview, not captured activity
-data. It lists the only fields that could leave the browser if the separate
-native host is installed and collection is enabled.
+The Chrome options page is the graphical NEXUS Control Center. It provides
+Install, Configure, Health, Task Log, Usage, Update, Uninstall, Memory and Routing
+views, plus Companion controls and browser/native consent management. Explicit
+user-authored memory and routing requests use a separate closed control protocol;
+they are never derived from tab content. See [publication gates and permission
+audit](PUBLICATION.md).
 
 ## Load for local development
 
@@ -39,8 +42,9 @@ native host is installed and collection is enabled.
 3. Open the extension popup or options page. Each tool is off until you toggle
    it and approve that tool's small optional-origin request.
 
-The extension attempts native messaging only when a selected enabled surface
-ends. Until the separately installed and explicitly browser-registered NEXUS
+Activity delivery attempts native messaging when a selected enabled surface
+ends. Opening the Control Center or activating its buttons also sends explicit
+control requests to the same host. Until the separately installed and explicitly browser-registered NEXUS
 native host exists, delivery fails closed: it does not log, queue, retry, or
 send the envelope elsewhere. The strict host foundation lives in
 [`apps/companion-native-host/`](../companion-native-host/), but it has no
@@ -57,7 +61,7 @@ npm test
 
 ## Native acknowledgement
 
-A one-shot host replies only with `schema_version:1` and a boolean `ok`, never
+For activity ingestion, a one-shot host replies only with `schema_version:1` and a boolean `ok`, never
 activity data or error text. Dispatch succeeds only for an exact positive reply;
 missing, negative or malformed replies fail closed without logs, fallback, or
 retry queues. Host executable tests cover this lifecycle, including a caller
@@ -96,7 +100,8 @@ permission granted, but tool consent stays off; another explicit checkbox click
 is required. Browser `permissions.onAdded` events never imply a tool grant.
 Pending grants are not persisted for replay after an unexpected worker shutdown;
 that failure remains closed. No manifest permissions, origin list or capture
-fields changed, and collection still requires separate desktop/CLI consent.
+fields changed. Collection still requires separate native policy consent, now
+available in the Chrome Control Center as well as through the existing CLI.
 
 Chromium's upstream `UserGestureFromExtensionPage` and
 `UserGestureFromContentScript` browser tests verify gesture propagation to an MV3
@@ -107,3 +112,12 @@ regressions verify popup-response loss, denial, late results, expiry during
 storage writes, concurrent tools and revocation. They do not establish gesture
 propagation or first-click behavior in the user's installed Chromium; that needs
 a fresh user-assisted permission prompt after updating the installed extension.
+
+## Build the Chrome store artifact
+
+```sh
+node tools/automation/build-chrome-extension.mjs --version 0.3.0-extension.1 --output /tmp/nexus-extension-store
+```
+
+Run from the repository root. Review [PUBLICATION.md](PUBLICATION.md) before any
+submission. Building a ZIP does not approve publishing or complete the live GUI gate.

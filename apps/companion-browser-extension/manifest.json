@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "NEXUS Companion",
-  "description": "Opt-in local activity signals for selected supported AI-tool tabs.",
+  "name": "NEXUS Control Center",
+  "description": "Visual NEXUS controls, local AI routing, memory, health and opt-in activity signals for supported AI tools.",
   "version": "0.1.0",
   "permissions": ["storage", "nativeMessaging"],
   "optional_host_permissions": [
@@ -17,7 +17,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "NEXUS Companion",
+    "default_title": "NEXUS Control Center",
     "default_popup": "popup.html"
   },
   "options_page": "options.html"

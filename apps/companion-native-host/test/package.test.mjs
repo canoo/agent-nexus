@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { stageNativeHostPackage } from "../lib/package.mjs";
 import { encodeNativeMessage } from "../lib/native-messaging.mjs";
 
@@ -38,6 +39,15 @@ function assertQuiet(result) {
   assert.equal(result.status, 0, result.stderr?.toString());
   assert.equal(result.stderr?.toString(), "");
 }
+
+test("relocated payload imports Chrome control dependencies without the checkout", async (t) => {
+  const directory = temporaryDirectory(t);
+  const outputDir = join(directory, "standalone");
+  stageNativeHostPackage({ outputDir, version: VERSION });
+  const { handleControl } = await import(pathToFileURL(join(outputDir, "apps/companion-native-host/lib/control.mjs")));
+  assert.equal(handleControl({ operation: "unknown" }).error, "request_invalid");
+  await import(pathToFileURL(join(outputDir, "apps/companion-native-host/lib/host.mjs")));
+});
 
 test("staged payload is complete, deterministic and excludes unrelated files", (t) => {
   const directory = temporaryDirectory(t);

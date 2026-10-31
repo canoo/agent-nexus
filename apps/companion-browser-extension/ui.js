@@ -1,6 +1,8 @@
 import { TOOL_DEFINITIONS, definitionForTool, sanitizeConsents } from "./lib/policy.js";
 import { changeToolConsent } from "./lib/consent.js";
 
+import { identity } from "./lib/identity.js";
+
 const CONSENTS_KEY = "toolConsents";
 
 async function readConsents() {
@@ -70,8 +72,6 @@ export async function renderToolToggles(container) {
     checkbox.type = "checkbox";
     checkbox.checked = consents[tool.id];
     checkbox.setAttribute("aria-label", `Enable ${tool.label} activity signals`);
-    const text = document.createElement("span");
-    text.textContent = tool.label;
     checkbox.addEventListener("change", async () => {
       checkbox.disabled = true;
       const requestedEnabled = checkbox.checked;
@@ -91,7 +91,7 @@ export async function renderToolToggles(container) {
       }
       checkbox.disabled = false;
     });
-    row.append(checkbox, text);
+    row.append(checkbox, identity(tool.label));
     container.append(row);
   }
 }

@@ -1,3 +1,4 @@
+import { handleControl } from "./control.mjs";
 import { createObservabilityStore, normalizeToolActivityEvent } from "../../../tools/mcp/lib/observability-store.mjs";
 import { NativeMessageDecoder, encodeNativeMessage } from "./native-messaging.mjs";
 import { nativeHostRuntimeSupported } from "./platform-support.mjs";
@@ -115,6 +116,12 @@ export function runNativeMessagingHost({ browserFamily, store } = {}) {
     if (!frame) return;
     replied = true;
     process.stdin.pause();
+    // Chrome alone exposes the visual control API; the Edge ingestion path is unchanged.
+    if (browserFamily === "chrome" && frame.ok && frame.message?.kind === "nexus-control") {
+      const response = handleControl(frame.message);
+      process.stdout.write(encodeNativeMessage(response), close);
+      return;
+    }
     let accepted = false;
     try { accepted = frame.ok && host.handleMessage(frame.message).ok === true; } catch {}
     // Flush the reply before closing input. Never return fields from the event
