@@ -249,6 +249,15 @@ func (m model) View() tea.View {
 
 func main() {
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "persona" {
+		dir, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		home, _ := os.UserHomeDir()
+		os.Exit(runPersonaCLI(args[1:], dir, home, os.Stdout, os.Stderr))
+	}
 	if len(args) > 0 && (args[0] == "doctor" || args[0] == "health") {
 		home, _ := os.UserHomeDir()
 		os.Exit(runDiagnosticCLI(args, findNexusDir(), home, os.Stdout, os.Stderr))

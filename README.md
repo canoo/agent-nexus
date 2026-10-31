@@ -79,6 +79,13 @@ This matters more as AI Credits pricing shifts toward token-based billing across
 
 NEXUS ships a library of specialist agent personas — engineering roles with defined responsibilities, tooling knowledge, and escalation behaviour. The orchestrator delegates to the right specialist rather than doing everything in one context.
 
+Use `nexus persona list` and `nexus persona install <id>` to download from the
+official registry into `.agents/skills/<id>/SKILL.md`; add `--global` for
+`~/.config/nexus/personas/<id>.md`. Existing edits are preserved and downloaded
+bytes are checked against Git blob metadata. Installation preserves the source
+Markdown; harness loading and tool permission semantics require separate review.
+See [persona packages](docs/cli/personas.md).
+
 Personas live in `~/.config/nexus/personas/` as markdown files. The active persona set is projected into every configured tool automatically.
 
 ### 3. Unified config projection
@@ -379,7 +386,7 @@ The next planned release and its gates are in the
 | **v0.3.1 (planned)** | Universal sync layer | Project instruction adopt/sync and AGENTS.md drivers implemented on the core work branch; nexus-context MCP and broader configuration sync planned |
 
 | **v0.3.5** | Community benchmarks | Benchmark schema, hardware-tiered test runner, community submission pipeline, results showcase |
-| **v0.4.0** | Persona marketplace & registry | Dynamic package manager (`canoo/Nexus-Personas`), `nexus persona install`, persona composition, auto-update |
+| **v0.4.0** | Persona marketplace & registry | Persona composition and auto-update (initial `nexus persona list/install` implemented on core work branch) |
 | **v1.0.0** | Stable | Windows/Docker support, team features, stable public API |
 
 ---
