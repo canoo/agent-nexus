@@ -84,8 +84,11 @@ Personas live in `~/.config/nexus/personas/` as markdown files. The active perso
 ### 3. Unified config projection
 
 Steering files, personas, and routing rules are maintained in one place. The
-installer links them into currently supported tools. Broader tool projection
-and a `nexus sync` command are planned for the Universal Sync Layer.
+installer links them into currently supported tools. Project-local `nexus adopt`
+imports plain instruction files into `.nexus/source.md`; `nexus sync`
+projects them to AGENTS.md and detected supported tools with ownership checks
+and `--dry-run`. Sync snapshots support `nexus rollback`; unsupported settings
+and rule scopes are listed in `AGENTS.validation.json`. See the [driver contract and limitations](docs/projection-model.md).
 
 ### 4. MCP server for local model delegation
 
@@ -196,18 +199,14 @@ Automated tests in v0.2.2 cover installer setup, configuration projection, and M
 | Microsoft Copilot (`copilot.microsoft.com`) | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested (distinct from GitHub Copilot) |
 | <img src="docs/assets/tools/perplexity.svg" alt="Perplexity" width="24" /> Perplexity | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
 
-### Planned Developer Tools (Universal Sync Layer Projections)
+### Project instruction projection drivers
 
-The following coding tools are planned unverified targets for future Universal Sync Layer projections; live installer integration and sync are not yet active or verified:
-
-| Tool | Target config format | Target status |
-|---|---|---|
-| <img src="docs/assets/tools/openai.svg" alt="OpenAI" width="24" /> Codex | `AGENTS.md` projection | 🔄 Planned — unverified projection |
-| <img src="docs/assets/tools/cursor.svg" alt="Cursor" width="24" /> Cursor | `.cursor/rules/*.mdc` | 🔄 Planned — unverified projection |
-| <img src="docs/assets/tools/githubcopilot.svg" alt="GitHub Copilot" width="24" /> GitHub Copilot | `.github/copilot-instructions.md` | 🔄 Planned — unverified projection (distinct from Companion web Copilot) |
-| <img src="docs/assets/tools/windsurf.svg" alt="Windsurf" width="24" /> Windsurf | `.windsurfrules` | 🔄 Planned — unverified projection |
-| Cline | `.clinerules` | 🔄 Planned — unverified projection |
-| Continue.dev | `.continuerc.json` / `config.yaml` | 🔄 Planned — unverified projection |
+`nexus adopt` and `nexus sync` implement project-local file projection for AGENTS,
+Claude, Gemini, GitHub Copilot, legacy Windsurf/Cline plain instruction files,
+Kiro, and Cursor. AGENTS.md is always the primary target. Kiro/Cursor import
+supports unconditional rules; scoped rule import and settings/MCP merging are unsupported.
+File contracts are tested; live vendor loading is unverified. Continue.dev and
+unlisted tools remain planned. See the [capability and detection matrix](docs/projection-model.md).
 
 ### Additional Tool Backlog
 
@@ -377,7 +376,7 @@ The next planned release and its gates are in the
 | **v0.2.1** | CLI usage ingestion | Tokscale adapter and separate Usage & Cost Dashboard — [Released](docs/releases/v0.2.1.md) |
 | **v0.2.2** | Stability and SQLite Task Log | Fresh-install fixes, SQLite-only task history, Go 1.27.1, zero audit vulnerabilities — [Released](docs/releases/v0.2.2.md) |
 | **v0.3.0 (planned)** | Desktop Companion private preview | Explicit consent, Chrome/Edge extension, strict native host, Linux/macOS controls, and routing foundation |
-| **v0.3.1 (planned)** | Universal sync layer | `nexus adopt`, `nexus sync`, AGENTS.md projection, tool driver system, nexus-context MCP, compatibility matrix |
+| **v0.3.1 (planned)** | Universal sync layer | Project instruction adopt/sync and AGENTS.md drivers implemented on the core work branch; nexus-context MCP and broader configuration sync planned |
 
 | **v0.3.5** | Community benchmarks | Benchmark schema, hardware-tiered test runner, community submission pipeline, results showcase |
 | **v0.4.0** | Persona marketplace & registry | Dynamic package manager (`canoo/Nexus-Personas`), `nexus persona install`, persona composition, auto-update |
