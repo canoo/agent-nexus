@@ -10,7 +10,7 @@ cd agent-nexus
 bash setup-nexus.sh
 ```
 
-To build the TUI from source (requires Go 1.25+):
+To build the TUI from source (requires Go 1.27.3+):
 
 ```bash
 cd tools/tui

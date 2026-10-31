@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/canoo/agent-nexus?style=flat-square)](https://github.com/canoo/agent-nexus/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/canoo/agent-nexus/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/canoo/agent-nexus/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.27.1-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.27.3-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![Linux](https://img.shields.io/badge/Linux-supported-FCC624?style=flat-square&logo=linux&logoColor=black)](https://github.com/canoo/agent-nexus)
 [![macOS](https://img.shields.io/badge/macOS-supported-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/canoo/agent-nexus)
 [![Discord](https://img.shields.io/badge/Discord-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/qCdkHVkRHP)
@@ -346,7 +346,7 @@ cd agent-nexus
 bash setup-nexus.sh
 ```
 
-Requires Go 1.27.1 or newer to build the TUI binary.
+Requires Go 1.27.3 or newer to build the TUI binary.
 
 ---
 

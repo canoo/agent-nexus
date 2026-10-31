@@ -97,7 +97,7 @@ func installStepSymlinkCoreFiles(idx int, m model) stepDoneMsg {
 	nexus := m.nexusDir
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
-		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: /home/cano unset"}
+		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
 	}
 	links := []struct{ src, dst string }{
 		{"core/NEXUS.md", filepath.Join(home, ".gemini", "GEMINI.md")},
@@ -121,7 +121,7 @@ func installStepSymlinkConfigDirs(idx int, m model) stepDoneMsg {
 	nexus := m.nexusDir
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
-		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: /home/cano unset"}
+		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
 	}
 	configDir := filepath.Join(home, ".config", "nexus")
 	dirs := []string{"core", "personas", "tools", "prompts", "agent-memory"}
@@ -140,7 +140,7 @@ func installStepConfigureMCP(idx int, m model) stepDoneMsg {
 	nexus := m.nexusDir
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
-		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: /home/cano unset"}
+		return stepDoneMsg{idx: idx, ok: false, detail: "cannot resolve home directory: $HOME unset"}
 	}
 	configDir := filepath.Join(home, ".config", "nexus")
 	serverPath := filepath.Join(configDir, "tools", "mcp", "server.mjs")
