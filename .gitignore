@@ -18,3 +18,6 @@ tools/tui/tui
 .DS_Store
 Thumbs.db
 tools/automation/setup-discord.mjs
+
+# CLI latency circuit timestamp
+.nexus/route-failure

@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type routeDecision struct {
@@ -48,6 +51,8 @@ func parseRouteRequest(args []string) (routeRequest, error) {
 					return routeRequest{}, errors.New("--goal requires a prompt")
 				}
 				prompt = append(prompt, value)
+			} else if strings.HasPrefix(args[i], "-") {
+				return routeRequest{}, fmt.Errorf("unknown route option: %s", args[i])
 			} else {
 				prompt = append(prompt, args[i])
 			}
@@ -73,7 +78,7 @@ func classifyPrompt(prompt string) routeDecision {
 	}{
 		{"commit-msg", "simple", []string{"commit message", "commit msg", "conventional commit"}},
 		{"boilerplate", "simple", []string{"boilerplate", "generate a component", "generate component"}},
-		{"test-scaffold", "simple", []string{"test scaffold", "scaffold test"}},
+		{"test-scaffold", "medium", []string{"test scaffold", "scaffold test"}},
 		{"lint-fix", "medium", []string{"lint error", "lint fix", "fix lint"}},
 		{"logic-refactor", "medium", []string{"refactor", "extract function"}},
 	} {
@@ -90,47 +95,118 @@ var runLocalRoute = defaultLocalRoute
 var runCloudRoute = defaultCloudRoute
 
 func routePrompt(nexusDir string, request routeRequest, output io.Writer) error {
-	decision := classifyPrompt(request.Prompt)
-	if request.DryRun {
-		return json.NewEncoder(output).Encode(decision)
-	}
-	if decision.Destination == "agy" {
-		return runCloudRoute(request.Prompt)
-	}
-	if err := runLocalRoute(nexusDir, decision.TaskType, request.Prompt); err != nil {
-		if !request.AllowCloudFallback {
-			return fmt.Errorf("local %s route failed: %w; rerun with --allow-cloud-fallback to send this prompt to agy", decision.TaskType, err)
-		}
-		fmt.Fprintln(os.Stderr, "NEXUS: local route failed; using explicitly approved cloud fallback.")
-		return runCloudRoute(request.Prompt)
-	}
-	return nil
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return routePromptContext(ctx, nexusDir, request, output)
 }
 
-func defaultLocalRoute(nexusDir, taskType, prompt string) error {
-	if !localAIEnabled(nexusDir) {
-		return errors.New("NEXUS_LOCAL_AI is disabled")
-	}
-	context, err := os.CreateTemp("", "nexus-route-*")
+func routePromptContext(ctx context.Context, nexusDir string, request routeRequest, output io.Writer) error {
+	cfg, err := loadRouteConfig(nexusDir)
 	if err != nil {
 		return err
 	}
-	path := context.Name()
+	decision := cfg.classify(request.Prompt)
+	if decision.Destination == "local" && routeCoolingDown(nexusDir) {
+		decision.Reason = "local route cooling down after failure or timeout"
+		if request.DryRun {
+			return json.NewEncoder(output).Encode(decision)
+		}
+		if !request.AllowCloudFallback {
+			return errors.New("local route cooling down; rerun with --allow-cloud-fallback to send this prompt to agy")
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		fmt.Fprintln(os.Stderr, "NEXUS route: failover=agy consent=true reason=cooldown")
+		return runCloudRoute(ctx, request.Prompt)
+	}
+	if request.DryRun {
+		return json.NewEncoder(output).Encode(decision)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if decision.Destination == "agy" {
+		return runCloudRoute(ctx, request.Prompt)
+	}
+	var routeErr error
+	for attempt := 0; attempt <= cfg.retries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		started := time.Now()
+		attemptCtx, cancel := context.WithTimeout(ctx, cfg.timeout)
+		routeErr = runLocalRoute(attemptCtx, nexusDir, decision.TaskType, request.Prompt)
+		cancel()
+		status := "success"
+		if routeErr != nil {
+			status = "failed"
+		}
+		fmt.Fprintf(os.Stderr, "NEXUS route: task=%s attempt=%d elapsed_ms=%d status=%s\n", decision.TaskType, attempt+1, time.Since(started).Milliseconds(), status)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if routeErr == nil {
+			clearRouteFailure(nexusDir)
+			return nil
+		}
+		if attempt < cfg.retries {
+			timer := time.NewTimer(time.Duration(1<<attempt) * 100 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	recordRouteFailure(nexusDir)
+	if !request.AllowCloudFallback {
+		return errors.New("local route unavailable; rerun with --allow-cloud-fallback to send this prompt to agy")
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	fmt.Fprintln(os.Stderr, "NEXUS route: failover=agy consent=true")
+	return runCloudRoute(ctx, request.Prompt)
+}
+
+func defaultLocalRoute(ctx context.Context, nexusDir, taskType, prompt string) error {
+	if !localAIEnabled(nexusDir) {
+		return errors.New("NEXUS_LOCAL_AI is disabled")
+	}
+	if err := routeHealthPreflight(ctx, nexusDir); err != nil {
+		return err
+	}
+	contextFile, err := os.CreateTemp("", "nexus-route-*")
+	if err != nil {
+		return err
+	}
+	path := contextFile.Name()
 	defer os.Remove(path)
-	if err := context.Chmod(0600); err != nil {
-		context.Close()
+	if err := contextFile.Chmod(0600); err != nil {
+		contextFile.Close()
 		return err
 	}
-	if _, err := context.WriteString(prompt); err != nil {
-		context.Close()
+	if _, err := contextFile.WriteString(prompt); err != nil {
+		contextFile.Close()
 		return err
 	}
-	if err := context.Close(); err != nil {
+	if err := contextFile.Close(); err != nil {
 		return err
 	}
-	cmd := exec.Command("bash", filepath.Join(nexusDir, "tools", "automation", "ollama-delegate.sh"), taskType, path)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
+	cmd := exec.CommandContext(ctx, "bash", filepath.Join(nexusDir, "tools", "automation", "ollama-delegate.sh"), taskType, path)
+	var output controlBuffer
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, &output, &output
+	configureRouteProcess(cmd)
+	err = cmd.Run()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err == nil {
+		_, err = os.Stdout.Write(output.Bytes())
+	}
+	return err
 }
 
 func localAIEnabled(nexusDir string) bool {
@@ -150,11 +226,12 @@ func readFileOrEmpty(path string) string {
 	return string(data)
 }
 
-func defaultCloudRoute(prompt string) error {
+func defaultCloudRoute(ctx context.Context, prompt string) error {
 	if _, err := exec.LookPath("agy"); err != nil {
 		return errors.New("agy is not installed or not on PATH")
 	}
-	cmd := exec.Command("agy", "--prompt-interactive", prompt)
+	cmd := exec.CommandContext(ctx, "agy", "--prompt-interactive", prompt)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	configureRouteProcess(cmd)
 	return cmd.Run()
 }

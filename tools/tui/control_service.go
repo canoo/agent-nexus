@@ -284,7 +284,14 @@ func executeControl(req controlRequest, nexusDir string) (any, error) {
 		if err := strictControlParams(req.Params, &p); err != nil || strings.TrimSpace(p.Prompt) == "" {
 			return nil, controlFailure("control_params_invalid")
 		}
-		decision := classifyPrompt(p.Prompt)
+		cfg, err := loadRouteConfig(nexusDir)
+		if err != nil {
+			return nil, err
+		}
+		decision := cfg.classify(p.Prompt)
+		if decision.Destination == "local" && routeCoolingDown(nexusDir) {
+			decision.Reason = "local route cooling down after failure or timeout"
+		}
 		if req.Operation == "route.preview" {
 			return decision, nil
 		}
@@ -303,6 +310,9 @@ func executeControl(req controlRequest, nexusDir string) (any, error) {
 		}
 		cmd := exec.CommandContext(ctx, binary, args...)
 		cmd.Env = append(os.Environ(), "NEXUS_REPO="+nexusDir)
+		configureRouteProcess(cmd)
+		// Let the routed CLI cancel its own delegation group before the hard kill.
+		cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
 		var out controlBuffer
 		cmd.Stdout = &out
 		if err := cmd.Run(); err != nil {

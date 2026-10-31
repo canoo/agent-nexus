@@ -65,7 +65,7 @@ get_model() {
   case "$TASK_TYPE" in
     commit-msg)      echo "${NEXUS_MODEL_COMMIT_MSG:-${NEXUS_SUPERVISOR_MODEL:-qwen2.5-coder:1.5b}}" ;;
     boilerplate)     echo "${NEXUS_MODEL_BOILERPLATE:-${NEXUS_SUPERVISOR_MODEL:-qwen2.5-coder:1.5b}}" ;;
-    test-scaffold)   echo "${NEXUS_MODEL_TEST_SCAFFOLD:-${NEXUS_SUPERVISOR_MODEL:-qwen2.5-coder:1.5b}}" ;;
+    test-scaffold)   echo "${NEXUS_MODEL_TEST_SCAFFOLD:-${NEXUS_LOGIC_MODEL:-llama3.2:3b}}" ;;
     lint-fix)        echo "${NEXUS_MODEL_LINT_FIX:-${NEXUS_LOGIC_MODEL:-llama3.2:3b}}" ;;
     logic-refactor)  echo "${NEXUS_MODEL_LOGIC_REFACTOR:-${NEXUS_LOGIC_MODEL:-llama3.2:3b}}" ;;
     *)
