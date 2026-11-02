@@ -616,7 +616,7 @@ func buildInstallSteps() []installStep {
 		{label: "Symlink config directories"},
 		{label: "Configure MCP server"},
 		{label: "Check dependencies"},
-		{label: "Pull Ollama models"},
+		{label: "Setup Ollama + models"},
 	}
 }
 
@@ -634,7 +634,7 @@ func runInstallStep(m model, idx int) tea.Cmd {
 		case 4:
 			return installStepCheckDependencies(idx, m)
 		case 5:
-			return installStepPullOllamaModels(idx, m)
+			return installStepSetupOllama(idx, m)
 		}
 		return stepDoneMsg{idx: idx, ok: true}
 	}
@@ -754,31 +754,24 @@ func installStepCheckDependencies(idx int, _ model) stepDoneMsg {
 	return stepDoneMsg{idx: idx, ok: true, detail: detail}
 }
 
-// installStepPullOllamaModels pulls the default local models when ollama is
-// installed and reachable. Every outcome is ok=true: models are best-effort.
-func installStepPullOllamaModels(idx int, m model) stepDoneMsg {
-	if _, err := exec.LookPath("ollama"); err != nil {
-		return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not installed)"}
-	}
-	// Check if ollama is reachable using the configured URL
-	client := &http.Client{Timeout: 3 * time.Second}
+// installStepSetupOllama installs/starts Ollama when local AI is enabled, then
+// pulls the default models. Failures are non-critical (ok=false) so the wizard
+// surfaces an actionable detail without aborting earlier success.
+func installStepSetupOllama(idx int, m model) stepDoneMsg {
 	ollamaURL := m.configVals[1]
 	if ollamaURL == "" {
-		ollamaURL = "http://localhost:11434"
+		ollamaURL = defaultOllamaURL
 	}
-	if _, err := client.Get(ollamaURL); err != nil {
-		return stepDoneMsg{idx: idx, ok: true, detail: "skipped (ollama not running)"}
+	if err := ensureOllamaReady(ollamaURL); err != nil {
+		return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
 	}
-	models := []string{"qwen2.5-coder:1.5b", "llama3.2:3b"}
-	var pulled []string
-	for _, name := range models {
-		cmd := exec.Command("ollama", "pull", name)
-		if err := cmd.Run(); err == nil {
-			pulled = append(pulled, name)
-		}
-	}
+	pulled := pullDefaultOllamaModels(ollamaURL)
 	if len(pulled) == 0 {
-		return stepDoneMsg{idx: idx, ok: true, detail: "no models pulled (check ollama)"}
+		detail := "ollama ready but no models pulled (check disk/network)"
+		if !isLocalOllamaURL(ollamaURL) {
+			detail = "remote Ollama reachable but no models pulled (need local ollama CLI, or pull on the remote host)"
+		}
+		return stepDoneMsg{idx: idx, ok: false, detail: detail}
 	}
 	return stepDoneMsg{idx: idx, ok: true, detail: strings.Join(pulled, ", ")}
 }
