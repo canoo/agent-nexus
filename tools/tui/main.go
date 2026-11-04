@@ -2029,6 +2029,14 @@ func main() {
 		}
 		return
 	}
+	if len(args) > 0 && args[0] == "memory" {
+		root, err := memoryRoot()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Cannot locate memory root:", err)
+			os.Exit(1)
+		}
+		os.Exit(runMemoryCLI(args[1:], root, os.Stdin, os.Stdout, os.Stderr))
+	}
 	if len(args) > 0 && args[0] == "route" {
 		args = args[1:]
 	}

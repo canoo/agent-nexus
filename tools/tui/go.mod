@@ -6,6 +6,7 @@ require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.1.0
 	charm.land/lipgloss/v2 v2.0.6
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.61.0
 )
 
