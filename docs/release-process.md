@@ -6,8 +6,10 @@ after the code, release notes, website, and community announcement are ready.
 ## Release gates
 
 1. **Scope:** the milestone's acceptance criteria and supported platforms pass.
-2. **Verification:** run the focused Node and Go tests, install-cycle tests, and
-   platform packaging checks appropriate to the release.
+2. **Verification:** all existing CI checks (Go build/vet/test, MCP tests,
+   install-cycle tests, and shell linter) must pass on the tagged commit via the
+   reusable CI workflow gate before the release workflow publishes artifacts.
+   Also run platform packaging checks appropriate to the release.
 3. **Release log:** the release PR must add a dated `## [X.Y.Z]` heading in
    `CHANGELOG.md` immediately below `Unreleased` and a matching
    `docs/releases/vX.Y.Z.md` file. Move only changes that shipped into the
