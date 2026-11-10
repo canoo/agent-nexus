@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -249,4 +250,41 @@ func formatCompanionDuration(duration time.Duration) string {
 		return "<1s"
 	}
 	return duration.Round(time.Second).String()
+}
+
+// companionActivityEntry contains only the fixed, privacy-preserving fields
+// that the Companion migration permits the TUI to read. It deliberately has
+// no generic metadata, session, browser, provider, or task fields.
+type companionActivityEntry struct {
+	toolID    string
+	surface   string
+	startedAt time.Time
+	endedAt   time.Time
+}
+
+type companionActivityLoadState int
+
+const (
+	companionActivityLoading companionActivityLoadState = iota
+	companionActivityReady
+	companionActivityDisabled
+	companionActivityNoConsent
+	companionActivityUnavailable
+	companionActivityDegraded
+)
+
+// companionActivityMsg is an intentionally error-free result. Database
+// diagnostics can contain local paths or other details that do not belong in
+// the TUI, so a failed read is represented by a fixed state only.
+type companionActivityMsg struct {
+	entries []companionActivityEntry
+	state   companionActivityLoadState
+}
+
+func defaultObservabilityDatabasePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".config", "nexus", "logs", "observability.sqlite")
 }
