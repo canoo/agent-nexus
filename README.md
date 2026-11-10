@@ -181,21 +181,6 @@ Automated tests in v0.2.2 cover installer setup, configuration projection, and M
 | <img src="docs/assets/tools/kiro.svg" alt="Kiro" width="24" /> Kiro | `.kiro/steering/*.md` | ✓ Automatic | ✅ Shipped — installer & steering config tests pass |
 | <img src="docs/assets/tools/ollama.svg" alt="Ollama" width="24" /> Ollama | `.env` / TUI config | N/A (Compute host) | ✅ Shipped — compute MCP & shell contracts tested |
 
-### Companion browser surfaces (unreleased v0.3.0 preview)
-
-> [!NOTE]
-> The Desktop Companion is currently an **unreleased v0.3.0 preview**. Browser adapters and provider mappings are verified under unit, protocol, and privacy contract suites; real browser extension host environments, GUI runtimes, and desktop packages are **not** yet validated. Note that Microsoft Copilot web companion integration is distinct from GitHub Copilot developer tooling.
-
-| Component / Service | Type | Scope | Test status |
-|---|---|---|---|
-| <img src="docs/assets/tools/googlechrome.svg" alt="Google Chrome" width="24" /> Google Chrome | Browser Adapter | Manifest V3 / native host | ⚠️ Preview — unit, protocol & privacy tested; browser runtime pending |
-| <img src="docs/assets/tools/microsoftedge.svg" alt="Microsoft Edge" width="24" /> Microsoft Edge | Browser Adapter | Manifest V3 / native host | ⚠️ Preview — unit, protocol & privacy tested; browser runtime pending |
-| <img src="docs/assets/tools/openai.svg" alt="ChatGPT" width="24" /> ChatGPT | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
-| <img src="docs/assets/tools/claude.svg" alt="Claude" width="24" /> Claude (Web) | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
-| <img src="docs/assets/tools/googlegemini.svg" alt="Gemini" width="24" /> Gemini (Web) | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
-| Microsoft Copilot (`copilot.microsoft.com`) | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested (distinct from GitHub Copilot) |
-| <img src="docs/assets/tools/perplexity.svg" alt="Perplexity" width="24" /> Perplexity | Web Service Mapping | Selected-tab presence and duration | ⚠️ Preview — origin mapping & privacy contracts tested |
-
 ### Planned Developer Tools (Universal Sync Layer Projections)
 
 The following coding tools are planned unverified targets for future Universal Sync Layer projections; live installer integration and sync are not yet active or verified:
@@ -367,9 +352,6 @@ tests/          Integration tests
 
 ## Roadmap
 
-The next planned release and its gates are in the
-[Companion release plan](docs/companion-release-plan.md).
-
 | Version | Theme | Key deliverables |
 |---|---|---|
 | **v0.1.6** | Security fixes | Checksum hardening, input validation, PAT removal — [Released] |
@@ -407,11 +389,6 @@ cd tools/tui && go test ./...
 # Full install/uninstall cycle (isolated temp $HOME)
 bash tests/test-install-cycle.sh
 
-# Companion test suite (extension, native host, desktop frontend & Rust)
-cd apps/companion-browser-extension && npm test
-cd apps/companion-native-host && npm test
-cd apps/companion-desktop && npm ci && npm audit && npm test
-cd apps/companion-desktop && cargo +stable test --manifest-path src-tauri/Cargo.toml --locked
 ```
 
 ---
