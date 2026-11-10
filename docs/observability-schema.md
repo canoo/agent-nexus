@@ -40,13 +40,19 @@ snapshots. The existing file is kept on disk but untouched.
 ## Entity Model
 
 ```text
-sessions 1 -> many tasks
-tasks    1 -> many routing_decisions
+sessions      1 -> many tasks
+tasks         1 -> many routing_decisions
+sessions      1 -> many tool_activity spans (optional)
 ```
 
 `sessions` describe where a group of tasks came from. `tasks` describe what was
 executed and how it performed. `routing_decisions` describe why a route/model was
 selected, including rejected alternatives and fallback details.
+
+`tool_activity` represents a privacy-preserving signal that an enabled AI-tool
+surface was active. It is not a task and must not be joined to a task merely by
+timestamp: activity does not demonstrate a request, model selection, token use,
+or response.
 
 ## Schema
 
@@ -116,6 +122,21 @@ CREATE TABLE IF NOT EXISTS routing_decisions (
     latency_budget_ms INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS tool_activity (
+    id TEXT PRIMARY KEY,
+    session_id TEXT REFERENCES sessions(id),
+    tool_id TEXT NOT NULL,             -- allowlisted identifier, e.g. chatgpt
+    surface TEXT NOT NULL,             -- browser, desktop
+    started_at TEXT NOT NULL,
+    ended_at TEXT NOT NULL,
+    detector TEXT NOT NULL,            -- selected-browser-tab, foreground-app
+    confidence TEXT NOT NULL,          -- surface-active; never request-sent
+    browser_family TEXT,
+    platform TEXT,
+    schema_version INTEGER NOT NULL,
+    consent_policy_version INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_start_time
     ON sessions(start_time);
 
@@ -136,7 +157,25 @@ CREATE INDEX IF NOT EXISTS idx_tasks_routing
 
 CREATE INDEX IF NOT EXISTS idx_routing_decisions_task_id
     ON routing_decisions(task_id);
+
+CREATE INDEX IF NOT EXISTS idx_tool_activity_started_at
+    ON tool_activity(started_at);
+
+CREATE INDEX IF NOT EXISTS idx_tool_activity_tool_id
+    ON tool_activity(tool_id);
 ```
+
+The same migration also creates device-local Companion configuration tables:
+
+- `companion_settings` has one disabled-by-default row with the initial
+  14-day raw-span and 90-day aggregate-retention defaults.
+- `companion_tool_consents` reserves explicit per-adapter, per-tool consent;
+  the strict native host can write only after the existing collection and
+  matching device-local consent gates are explicitly enabled; a consent UI and
+  lifecycle integration remain future work.
+
+These tables are local configuration only and are never inputs to `nexus sync`
+or `nexus adopt`.
 
 ## Field Mapping From MCP JSONL
 
@@ -267,12 +306,21 @@ prompts, diffs, source files, generated code, environment variables, or provider
 API keys. Store sizes, hashes, model names, routing reasons, latency, status, and
 cost metadata instead.
 
+Companion activity capture is disabled by default and requires separate
+device-local consent for each browser/desktop adapter and enabled tool. Its rows
+must never contain browser titles, URLs or URL fragments, DOM or network data,
+account identifiers, project paths, clipboard content, prompts, or responses.
+An activity span states only that a configured surface was active. It must not
+be used as evidence that a model request was sent or correlated automatically
+with a CLI task. See [NEXUS Companion — Activity Signals Design](nexus-companion.md)
+for the fixed event envelope, retention policy, and native-host boundary.
+
 `input_hash` can be used to correlate repeated tasks without retaining the input
 itself. Hashes should be treated as metadata, not as a security boundary.
 
-SQLite retention should mirror the current JSONL rotation behavior at first:
-keep recent local history bounded, document the default, and make longer
-retention an explicit setting later.
+The migration stores initial Companion retention defaults (14 raw-span days and
+90 aggregate days) locally. A deletion job and activity export/deletion controls
+are not implemented yet, so no consumer may claim active retention enforcement.
 
 ## Compatibility Notes
 
