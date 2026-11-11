@@ -8,6 +8,8 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Added
 
+- Decision logging (#87): `nexus memory decision` / `nexus memory decisions` and MCP tools `nexus_log_decision` / `nexus_get_decisions` write architectural decisions (what, why, ruled-out alternatives) to agent-memory as tagged Markdown entries, readable across sessions and tools. Including recent decisions in `nexus_get_context` is still pending on #84.
+
 - Companion native preview archives include an allowlisted unpacked development
   extension, with build-version metadata and installation instructions. Permission
   policy is preserved; no browser-store publication or live support is claimed.

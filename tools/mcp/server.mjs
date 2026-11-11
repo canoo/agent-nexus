@@ -14,6 +14,12 @@ import { z } from "zod";
 import { taskLogEntry } from "./lib/task-event.mjs";
 
 import { loadSettings, ollamaFetch } from "./settings.mjs";
+import {
+  saveDecision,
+  listDecisions,
+  formatDecisions,
+  defaultProject,
+} from "./lib/agent-memory.mjs";
 import { createModelRoutes } from "./model-routes.mjs";
 import { ensureModelAvailable } from "./model-readiness.mjs";
 
@@ -306,6 +312,84 @@ server.tool(
       ],
     };
   }
+);
+
+// Decision logging (issue #87) — writes architectural decisions to
+// agent-memory (~/.config/nexus/agent-memory/<project>/) as Markdown +
+// YAML frontmatter, the same store `nexus memory decision` uses, so
+// decisions survive the session and are readable by any tool.
+// Call this whenever you choose between two architectural options, defer
+// a task to a later session, or override a previous pattern.
+server.tool(
+  "nexus_log_decision",
+  "Log an architectural decision to agent-memory so the next session (even in a different tool) can read it back. Call when choosing between architectural options, deferring a task to a later session, or overriding a previous pattern.",
+  {
+    what: z.string().min(1).max(10000).describe("The decision taken, e.g. 'JWT over sessions'"),
+    why: z.string().min(1).max(50000).describe("The rationale: why this option won"),
+    ruled_out: z
+      .string()
+      .max(10000)
+      .optional()
+      .describe("Rejected alternatives, comma-separated, e.g. 'cookie sessions (stateful), OAuth (too heavy)'"),
+    project: z
+      .string()
+      .max(100)
+      .optional()
+      .describe("Agent-memory project (defaults to NEXUS_MEMORY_PROJECT or the launch directory name)"),
+  },
+  async ({ what, why, ruled_out, project }) => {
+    try {
+      const target = project || defaultProject();
+      const ruledOut = ruled_out ? ruled_out.split(",") : [];
+      const file = saveDecision({ project: target, what, why, ruledOut });
+      const [entry] = listDecisions({ project: target, limit: 1 });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Decision logged to ${file}\n\n${formatDecisions(entry ? [entry] : [])}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: `Could not log decision: ${error.message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// Decision read-back — the slice nexus_get_context (#84) will include once
+// that server lands. Until then this is how a session loads past decisions.
+server.tool(
+  "nexus_get_decisions",
+  "Read recent architectural decisions logged to agent-memory for a project, newest first. Use at session start to recover decisions made in earlier sessions.",
+  {
+    project: z
+      .string()
+      .max(100)
+      .optional()
+      .describe("Agent-memory project (defaults to NEXUS_MEMORY_PROJECT or the launch directory name)"),
+    limit: z.number().int().min(1).max(100).optional().describe("Maximum decisions to return (default 10)"),
+  },
+  async ({ project, limit }) => {
+    try {
+      const target = project || defaultProject();
+      const decisions = listDecisions({ project: target, limit: limit ?? 10 });
+      if (decisions.length === 0) {
+        return {
+          content: [{ type: "text", text: `No decisions logged yet for project "${target}".` }],
+        };
+      }
+      return { content: [{ type: "text", text: formatDecisions(decisions) }] };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: `Could not read decisions: ${error.message}` }],
+        isError: true,
+      };
+    }
+  },
 );
 
 // Commit message generator — supervisor band (1.5B)
