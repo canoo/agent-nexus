@@ -5,10 +5,12 @@
   "main": "server.mjs",
   "type": "module",
   "bin": {
-    "nexus-ollama-mcp": "./server.mjs"
+    "nexus-ollama-mcp": "./server.mjs",
+    "nexus-context-mcp": "./context-server.mjs"
   },
   "scripts": {
     "start": "node server.mjs",
+    "start:context": "node context-server.mjs",
     "test": "node --test"
   },
   "engines": {
