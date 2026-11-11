@@ -17,7 +17,7 @@
 #
 # Exit codes:
 #   0  — Success, output written to stdout
-#   3  — CIRCUIT_BREAKER: Ollama unreachable or timed out (do NOT fallback silently)
+#   3  — CIRCUIT_BREAKER: Ollama/model unavailable or timed out (do NOT fallback silently)
 #   4  — BAD_OUTPUT: Model returned empty or malformed response (retry once, then exit 4)
 #   1  — Usage error
 
@@ -161,21 +161,34 @@ PROMPT
   esac
 }
 
-# ── Circuit breaker: check Ollama reachability ────────────────────────────────
-check_ollama() {
-  local health_url="${OLLAMA_HOST_URL}/api/tags"
+# ── Circuit breaker: verify the selected model before reading context ──────────
+check_model() {
+  local model="$1"
+  local payload
+  payload=$(jq -n --arg model "$model" '{model:$model}')
+
   local http_code
+  http_code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --connect-timeout "$CONNECT_TIMEOUT" --max-time "$CONNECT_TIMEOUT" \
+    -X POST -H 'Content-Type: application/json' \
+    "${OLLAMA_HOST_URL}/api/show" --data "$payload" 2>/dev/null) || {
+    echo "CIRCUIT_BREAKER: Ollama model availability check failed or timed out; verify the configured Ollama instance." >&2
+    exit 3
+  }
 
-  http_code=$(curl --silent --output /dev/null \
-    --write-out "%{http_code}" \
-    --connect-timeout "$CONNECT_TIMEOUT" \
-    --max-time "$CONNECT_TIMEOUT" \
-    "$health_url" 2>/dev/null) || true
-
-  if [ "$http_code" != "200" ]; then
-    echo "CIRCUIT_BREAKER: Ollama at ${OLLAMA_HOST_URL} returned HTTP ${http_code} (or timed out after ${CONNECT_TIMEOUT}s)" >&2
+  if [ "$http_code" = "404" ]; then
+    local escaped_model
+    escaped_model=$(jq -Rn --arg model "$model" '$model')
+    echo "CIRCUIT_BREAKER: Ollama model ${escaped_model} is not installed on the configured Ollama instance. Run ollama pull with this model name on that instance, or change the NEXUS model setting." >&2
     exit 3
   fi
+
+  if [ "$http_code" != "200" ]; then
+    echo "CIRCUIT_BREAKER: Ollama model availability check returned HTTP ${http_code}; verify the configured Ollama instance." >&2
+    exit 3
+  fi
+
+  return 0
 }
 
 # ── Call Ollama ───────────────────────────────────────────────────────────────
@@ -216,9 +229,8 @@ call_ollama() {
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-check_ollama
-
 MODEL=$(get_model)
+check_model "$MODEL"
 PROMPT=$(build_prompt)
 
 echo "Delegating ${TASK_TYPE} to ${MODEL} at ${OLLAMA_HOST_URL}..." >&2

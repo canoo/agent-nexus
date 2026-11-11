@@ -57,6 +57,62 @@ NEXUS_MODEL_LOGIC_REFACTOR="qwen2.5:7b"
 Per-task env var  →  Band-level env var  →  Built-in default
 ```
 
+## Startup validation
+
+The MCP server validates both band settings and all five per-task model overrides
+before opening the observability store or starting the MCP transport. An explicit
+empty value is an error; remove that setting to use the default. Process environment
+values still override `.env` values, and per-task settings still override their band.
+
+Use an Ollama model reference such as `llama3.2`, `qwen2.5-coder:1.5b`,
+`team/model:tag`, or `registry.example:5000/team/model:tag`. Model/tag components
+are at most 80 ASCII characters, start with a letter, digit or underscore, and
+contain letters, digits, underscores, dots or hyphens. Namespaces omit dots;
+registry components may include ports and are at most 350 characters. Empty
+components, whitespace, shell expressions, query strings and digest suffixes are
+rejected. The component rules follow
+[Ollama's model-name parser](https://github.com/ollama/ollama/blob/main/types/model/name.go).
+
+An invalid setting exits with code 1 and a diagnostic on stderr naming only the
+setting key; stdout remains reserved for MCP. For example:
+
+```text
+NEXUS model configuration: NEXUS_LOGIC_MODEL must be a non-empty Ollama model name (for example qwen2.5-coder:1.5b).
+```
+
+This validates syntax. It does not check whether a model is pulled, download a
+model, or contact Ollama at startup. Selected-model readiness is checked before inference as described below.
+
+## Selected-model readiness
+
+Both the MCP server and `ollama-delegate.sh` check the selected model immediately
+before each inference using
+[Ollama's `/api/show` endpoint](https://github.com/ollama/ollama/blob/main/docs/api.md#show-model-information).
+This lets Ollama resolve bare names, tags, namespaces and registry references.
+The check sends only the model reference, discards the response body and has a
+five-second timeout. It never downloads a model. Rechecking each request catches
+models removed after an earlier successful delegation.
+
+A missing model produces a `CIRCUIT_BREAKER` message naming the model and asking
+you to pull it on the configured Ollama instance or change the NEXUS model setting.
+For the default local instance, for example:
+
+```bash
+ollama pull qwen2.5-coder:1.5b
+ollama pull llama3.2:3b
+```
+
+For a remote `OLLAMA_HOST_URL`, install the model on that server. The shell exits
+3 on missing/unreachable models; MCP returns a tool error. Neither silently
+falls back to a cloud model. Other failed checks report only a fixed category or
+HTTP status, never provider response bodies. The check verifies endpoint-reported
+availability; it does not measure hardware capacity or guarantee inference succeeds.
+
+MCP startup remains usable while Ollama is offline. Its deterministic commit
+fast paths do not need a model, and `NEXUS_LOCAL_AI=false` prevents both the
+readiness request and inference. The shell checks availability before reading
+context into a prompt. Health checks still report general Ollama status.
+
 ## Hardware Profiles
 
 ### RTX 3050 Mobile / 4GB VRAM (Default)

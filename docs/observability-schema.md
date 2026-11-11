@@ -40,13 +40,19 @@ snapshots. The existing file is kept on disk but untouched.
 ## Entity Model
 
 ```text
-sessions 1 -> many tasks
-tasks    1 -> many routing_decisions
+sessions      1 -> many tasks
+tasks         1 -> many routing_decisions
+sessions      1 -> many tool_activity spans (optional)
 ```
 
 `sessions` describe where a group of tasks came from. `tasks` describe what was
 executed and how it performed. `routing_decisions` describe why a route/model was
 selected, including rejected alternatives and fallback details.
+
+`tool_activity` represents a privacy-preserving signal that an enabled AI-tool
+surface was active. It is not a task and must not be joined to a task merely by
+timestamp: activity does not demonstrate a request, model selection, token use,
+or response.
 
 ## Schema
 
@@ -116,6 +122,21 @@ CREATE TABLE IF NOT EXISTS routing_decisions (
     latency_budget_ms INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS tool_activity (
+    id TEXT PRIMARY KEY,
+    session_id TEXT REFERENCES sessions(id),
+    tool_id TEXT NOT NULL,             -- allowlisted identifier, e.g. chatgpt
+    surface TEXT NOT NULL,             -- browser, desktop
+    started_at TEXT NOT NULL,
+    ended_at TEXT NOT NULL,
+    detector TEXT NOT NULL,            -- selected-browser-tab, foreground-app
+    confidence TEXT NOT NULL,          -- surface-active; never request-sent
+    browser_family TEXT,
+    platform TEXT,
+    schema_version INTEGER NOT NULL,
+    consent_policy_version INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_start_time
     ON sessions(start_time);
 
@@ -136,7 +157,27 @@ CREATE INDEX IF NOT EXISTS idx_tasks_routing
 
 CREATE INDEX IF NOT EXISTS idx_routing_decisions_task_id
     ON routing_decisions(task_id);
+
+CREATE INDEX IF NOT EXISTS idx_tool_activity_started_at
+    ON tool_activity(started_at);
+
+CREATE INDEX IF NOT EXISTS idx_tool_activity_tool_id
+    ON tool_activity(tool_id);
 ```
+
+The same migration also creates device-local Companion configuration tables:
+
+- `companion_settings` has one disabled-by-default row with the initial
+  14-day raw-span and 90-day aggregate-retention defaults. Migration 005 adds
+  nullable `collection_started_at`, the UTC time of the latest explicit resume;
+  pause/disable clears it. Retention updates do not change this boundary.
+- `companion_tool_consents` reserves explicit per-adapter, per-tool consent;
+  the strict native host can write only after the existing collection and
+  matching device-local consent gates are explicitly enabled. The v0.3.0
+  development desktop supplies explicit browser consent and pause/resume controls.
+
+These tables are local configuration only and are never inputs to `nexus sync`
+or `nexus adopt`.
 
 ## Field Mapping From MCP JSONL
 
@@ -267,12 +308,35 @@ prompts, diffs, source files, generated code, environment variables, or provider
 API keys. Store sizes, hashes, model names, routing reasons, latency, status, and
 cost metadata instead.
 
+Companion activity capture is disabled by default and requires separate
+device-local consent for each browser/desktop adapter and enabled tool. Its rows
+must never contain browser titles, URLs or URL fragments, DOM or network data,
+account identifiers, project paths, clipboard content, prompts, or responses.
+An activity span states only that a configured surface was active. It must not
+be used as evidence that a model request was sent or correlated automatically
+with a CLI task. See [NEXUS Companion — Activity Signals Design](nexus-companion.md)
+for the fixed event envelope, retention policy, and native-host boundary.
+
 `input_hash` can be used to correlate repeated tasks without retaining the input
 itself. Hashes should be treated as metadata, not as a security boundary.
 
-SQLite retention should mirror the current JSONL rotation behavior at first:
-keep recent local history bounded, document the default, and make longer
-retention an explicit setting later.
+The migration stores initial Companion retention defaults (14 raw-span days and
+90 aggregate days) locally. In v0.3.0 development, raw-span cleanup runs at native
+host startup, every 30 minutes while it runs, and before validated incoming spans.
+It also runs explicitly through the shared data helper used by the CLI and desktop.
+An inactive host does not run cleanup; use `nexus companion prune --json`.
+
+Raw retention accepts integer days from 0 through 365. A span is expired when its
+`ended_at` is strictly before the UTC cutoff (current time minus retention days);
+the exact cutoff is retained. Setting a shorter window updates policy and removes
+expired rows atomically. Zero days removes all raw activity and rejects new raw
+spans without changing collection state or consents. Confirmed clear removes only
+`tool_activity`; MCP tasks, sessions, routing, import bookkeeping, project memory,
+and collection/consent settings are preserved. Status reads never prune or create
+a database. Maintenance requires an existing store and fails with fixed error codes.
+
+The 90-day aggregate setting is reserved: no daily aggregates are generated yet.
+Activity export and packaged/browser runtime verification remain outstanding.
 
 ## Compatibility Notes
 
@@ -282,3 +346,20 @@ retention an explicit setting later.
 - Store routing alternatives as JSON text so Go, Node.js, and shell tooling can
   read/write the database without a custom extension.
 - Do not require network access for observability storage.
+
+## Companion collection boundaries (v0.3.0 development)
+
+Ingestion checks collection, current consent, and timestamps in the same immediate
+transaction. A span must start at or after both the latest explicit resume
+(`collection_started_at`) and the matching tool consent's `updated_at`.
+Spans crossing either boundary are discarded whole; no post-resume tail is inferred.
+The exact millisecond boundary is accepted. Missing or invalid boundaries and
+future end times fail closed with fixed error codes. Legacy SQLite consent
+`CURRENT_TIMESTAMP` values are interpreted explicitly as UTC.
+
+Migration 005 pauses any enabled preview store without a trustworthy boundary
+once, preserving activity history and per-tool grants. The user must explicitly
+resume afterwards. Reapplying migrations does not pause a subsequently resumed
+store. New consent writes and resume timestamps use UTC millisecond precision.
+Desktop status fails closed on a schema without this boundary; migrations remain
+owned by the observability store, never by the Rust shell.
