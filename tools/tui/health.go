@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -106,7 +107,7 @@ func healthView(m model) string {
 			s += "  " + m.styles.success.Render(fmt.Sprintf("✓ NEXUS guidance is %d days", m.health.claudeSessionRetentionDays)) + "\n"
 		}
 
-		s += "\nSymlinks:\n"
+		s += "\nInstalled files:\n"
 		for _, l := range m.health.links {
 			s += "  " + l + "\n"
 		}
@@ -140,10 +141,11 @@ func checkHealth(nexusDir, ollamaURL string, claudeSessionRetentionDays int, tok
 			h.links = append(h.links, "✗ home directory: $HOME unset")
 			return h
 		}
+		kiroSteering := filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")
 		links := []struct{ label, path string }{
 			{"Gemini", filepath.Join(home, ".gemini", "GEMINI.md")},
 			{"Claude", filepath.Join(home, ".claude", "CLAUDE.md")},
-			{"Kiro", filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")},
+			{"Kiro", kiroSteering},
 			{"Core", filepath.Join(home, ".config", "nexus", "core")},
 			{"Personas", filepath.Join(home, ".config", "nexus", "personas")},
 			{"Tools", filepath.Join(home, ".config", "nexus", "tools")},
@@ -151,6 +153,14 @@ func checkHealth(nexusDir, ollamaURL string, claudeSessionRetentionDays int, tok
 			{"Agent Memory", filepath.Join(home, ".config", "nexus", "agent-memory")},
 		}
 		for _, l := range links {
+			if l.path == kiroSteering {
+				source := ""
+				if nexusDir != "" {
+					source = filepath.Join(nexusDir, "core", "kiro-nexus-steering.md")
+				}
+				h.links = append(h.links, kiroSteeringStatus(source, l.path))
+				continue
+			}
 			fi, err := os.Lstat(l.path)
 			if err != nil {
 				h.links = append(h.links, "✗ "+l.label+": missing")
@@ -166,6 +176,31 @@ func checkHealth(nexusDir, ollamaURL string, claudeSessionRetentionDays int, tok
 		}
 		return h
 	}
+}
+
+// kiroSteeringStatus describes the installed Kiro steering copy for the health
+// screen. source is empty when the repo location is unknown.
+func kiroSteeringStatus(source, target string) string {
+	fi, err := os.Lstat(target)
+	switch {
+	case err != nil:
+		return "✗ Kiro: missing"
+	case fi.Mode()&os.ModeSymlink != 0:
+		return "⚠ Kiro: symlink (re-run setup to install a copy)"
+	}
+	have, err := os.ReadFile(target)
+	if err != nil {
+		return "✗ Kiro: unreadable"
+	}
+	if !isKiroSteeringCopy(have) {
+		return "⚠ Kiro: exists (not installed by NEXUS)"
+	}
+	if source != "" {
+		if want, err := kiroSteeringCopy(source); err == nil && !bytes.Equal(have, want) {
+			return "⚠ Kiro: copy out of date (re-run setup)"
+		}
+	}
+	return "✓ Kiro: copied"
 }
 
 func detectTokscaleHealth(ctx context.Context, adapter TokscaleAdapter) tokscaleHealth {
