@@ -76,6 +76,8 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           node --check server.mjs
+          node --check context-server.mjs
+          node --check context-store.mjs
           npm test
 
   shellcheck:

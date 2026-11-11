@@ -112,6 +112,33 @@ Available tools: `ollama_health`, `ollama_commit_msg`, `ollama_boilerplate`, `ol
 available models, so an AI client can verify the local compute plane is up
 before delegating tasks to it.
 
+#### Agent memory and personas (`nexus-context`)
+
+The `nexus-context` MCP server (`tools/mcp/context-server.mjs`) exposes agent
+memory and personas as MCP tools, so any MCP-capable client gets real-time,
+bidirectional project context without steering-file support. It reads and
+writes the same files as `nexus memory` (`~/.config/nexus/agent-memory/<project>/`)
+and the installed personas (`~/.config/nexus/personas/`, falling back to the
+repo-bundled `personas/`).
+
+```json
+{
+  "mcpServers": {
+    "nexus-context": {
+      "command": "node",
+      "args": ["/home/you/.config/nexus/tools/mcp/context-server.mjs"]
+    }
+  }
+}
+```
+
+Available tools: `nexus_get_context`, `nexus_log_decision`, `nexus_get_persona`,
+`nexus_list_personas`, `nexus_get_session_summary`.
+
+`nexus sync` auto-adding this server to tool MCP configs is gated on #81 and
+not done yet — until then, add the entry manually (use your absolute home path;
+MCP clients do not expand `~` in `args`).
+
 ### 5. TUI for setup and health
 
 An interactive terminal UI handles installation, configuration, health checks, updates, task logs, and project memory. No config file editing required to get started.
@@ -341,7 +368,7 @@ Requires Go 1.27.1 or newer to build the TUI binary.
 core/           Orchestrator instructions (NEXUS.md, AGENTS.md, kiro steering)
 personas/       Specialist agent definitions
 tools/tui/      NEXUS TUI (Go / Bubbletea v2)
-tools/mcp/      nexus-ollama MCP server (Node.js)
+tools/mcp/      nexus-ollama + nexus-context MCP servers (Node.js)
 tools/compat/   Tool driver registry (tools.json) — planned Universal Sync Layer
 prompts/        Engineering rules and quality gates
 docs/           Documentation and hardware presets
