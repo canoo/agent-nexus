@@ -662,8 +662,9 @@ func installStepValidateRepo(idx int, m model) stepDoneMsg {
 	return stepDoneMsg{idx: idx, ok: true, detail: nexus}
 }
 
-// installStepSymlinkCoreFiles links the three core prompt files into the
-// vendor config locations.
+// installStepSymlinkCoreFiles links the Gemini and Claude core prompt files
+// into the vendor config locations and installs the Kiro steering file as a
+// copy (see safeCopyKiroSteering).
 func installStepSymlinkCoreFiles(idx int, m model) stepDoneMsg {
 	nexus := m.nexusDir
 	home, err := os.UserHomeDir()
@@ -673,14 +674,17 @@ func installStepSymlinkCoreFiles(idx int, m model) stepDoneMsg {
 	links := []struct{ src, dst string }{
 		{"core/NEXUS.md", filepath.Join(home, ".gemini", "GEMINI.md")},
 		{"core/CLAUDE.md", filepath.Join(home, ".claude", "CLAUDE.md")},
-		{"core/kiro-nexus-steering.md", filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")},
 	}
 	for _, l := range links {
 		if err := safeLink(filepath.Join(nexus, l.src), l.dst); err != nil {
 			return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
 		}
 	}
-	return stepDoneMsg{idx: idx, ok: true, detail: "3 core files linked"}
+	kiro := filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")
+	if err := safeCopyKiroSteering(filepath.Join(nexus, "core", "kiro-nexus-steering.md"), kiro); err != nil {
+		return stepDoneMsg{idx: idx, ok: false, detail: err.Error()}
+	}
+	return stepDoneMsg{idx: idx, ok: true, detail: "3 core files installed"}
 }
 
 // installStepSymlinkConfigDirs links the nexus content dirs into
@@ -965,7 +969,7 @@ func healthView(m model) string {
 			s += "  " + m.styles.success.Render(fmt.Sprintf("✓ NEXUS guidance is %d days", m.health.claudeSessionRetentionDays)) + "\n"
 		}
 
-		s += "\nSymlinks:\n"
+		s += "\nInstalled files:\n"
 		for _, l := range m.health.links {
 			s += "  " + l + "\n"
 		}
@@ -1645,10 +1649,11 @@ func checkHealth(nexusDir, ollamaURL string, claudeSessionRetentionDays int, tok
 			h.links = append(h.links, "✗ home directory: $HOME unset")
 			return h
 		}
+		kiroSteering := filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")
 		links := []struct{ label, path string }{
 			{"Gemini", filepath.Join(home, ".gemini", "GEMINI.md")},
 			{"Claude", filepath.Join(home, ".claude", "CLAUDE.md")},
-			{"Kiro", filepath.Join(home, ".kiro", "steering", "nexus-orchestrator.md")},
+			{"Kiro", kiroSteering},
 			{"Core", filepath.Join(home, ".config", "nexus", "core")},
 			{"Personas", filepath.Join(home, ".config", "nexus", "personas")},
 			{"Tools", filepath.Join(home, ".config", "nexus", "tools")},
@@ -1656,6 +1661,14 @@ func checkHealth(nexusDir, ollamaURL string, claudeSessionRetentionDays int, tok
 			{"Agent Memory", filepath.Join(home, ".config", "nexus", "agent-memory")},
 		}
 		for _, l := range links {
+			if l.path == kiroSteering {
+				source := ""
+				if nexusDir != "" {
+					source = filepath.Join(nexusDir, "core", "kiro-nexus-steering.md")
+				}
+				h.links = append(h.links, kiroSteeringStatus(source, l.path))
+				continue
+			}
 			fi, err := os.Lstat(l.path)
 			if err != nil {
 				h.links = append(h.links, "✗ "+l.label+": missing")
@@ -1750,6 +1763,86 @@ func safeLink(source, target string) error {
 	}
 
 	return os.Symlink(source, target)
+}
+
+// kiroCopyMarker is appended to the installed Kiro steering copy so setup,
+// teardown and the health check can tell it from a user's own file. Keep in
+// sync with NEXUS_COPY_MARKER in setup-nexus.sh and teardown-nexus.sh.
+const kiroCopyMarker = "<!-- Installed by agent-nexus. Edit core/kiro-nexus-steering.md and re-run setup-nexus.sh. -->"
+
+// kiroSteeringCopy returns the bytes setup installs for a given source file.
+func kiroSteeringCopy(source string) ([]byte, error) {
+	data, err := os.ReadFile(source)
+	if err != nil {
+		return nil, err
+	}
+	return append(data, []byte("\n"+kiroCopyMarker+"\n")...), nil
+}
+
+// isKiroSteeringCopy reports whether data was installed by NEXUS.
+func isKiroSteeringCopy(data []byte) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		if line == kiroCopyMarker {
+			return true
+		}
+	}
+	return false
+}
+
+// safeCopyKiroSteering installs the Kiro steering file as a copy rather than a
+// symlink: some Kiro tooling (e.g. KiroCrew) refuses symlinked steering. A
+// legacy symlink or an earlier NEXUS copy is replaced; any other file is moved
+// to .bak first, matching safeLink.
+func safeCopyKiroSteering(source, target string) error {
+	want, err := kiroSteeringCopy(source)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+		return err
+	}
+	if fi, err := os.Lstat(target); err == nil {
+		switch {
+		case fi.Mode()&os.ModeSymlink != 0:
+			os.Remove(target)
+		case fi.Mode().IsRegular():
+			have, _ := os.ReadFile(target)
+			if bytes.Equal(have, want) {
+				return nil // already up to date
+			}
+			if !isKiroSteeringCopy(have) {
+				os.Rename(target, target+".bak")
+			}
+		default:
+			os.Rename(target, target+".bak")
+		}
+	}
+	return os.WriteFile(target, want, 0644)
+}
+
+// kiroSteeringStatus describes the installed Kiro steering copy for the health
+// screen. source is empty when the repo location is unknown.
+func kiroSteeringStatus(source, target string) string {
+	fi, err := os.Lstat(target)
+	switch {
+	case err != nil:
+		return "✗ Kiro: missing"
+	case fi.Mode()&os.ModeSymlink != 0:
+		return "⚠ Kiro: symlink (re-run setup to install a copy)"
+	}
+	have, err := os.ReadFile(target)
+	if err != nil {
+		return "✗ Kiro: unreadable"
+	}
+	if !isKiroSteeringCopy(have) {
+		return "⚠ Kiro: exists (not installed by NEXUS)"
+	}
+	if source != "" {
+		if want, err := kiroSteeringCopy(source); err == nil && !bytes.Equal(have, want) {
+			return "⚠ Kiro: copy out of date (re-run setup)"
+		}
+	}
+	return "✓ Kiro: copied"
 }
 
 // mergeMCPConfig merges the nexus-ollama server entry into raw MCP config
