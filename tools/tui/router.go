@@ -11,11 +11,41 @@ import (
 	"strings"
 )
 
+// routeDecision is the deterministic routing result for one prompt.
+// Confidence and Tier are display-only in this step: they are added to
+// the dry-run JSON so a TUI routing panel can show them, but they do
+// not change execution. routePrompt still routes exactly as before
+// (local vs agy), and low-confidence decisions are NOT escalated
+// automatically — escalation to an advisor model is a proposed future
+// step, documented in docs/core-0.3.1-routing.md, not implemented here.
 type routeDecision struct {
-	Complexity  string `json:"complexity"`
-	Destination string `json:"destination"`
-	TaskType    string `json:"taskType,omitempty"`
-	Reason      string `json:"reason"`
+	Complexity  string  `json:"complexity"`
+	Destination string  `json:"destination"`
+	TaskType    string  `json:"taskType,omitempty"`
+	Reason      string  `json:"reason"`
+	Confidence  float64 `json:"confidence"`
+	Tier        string  `json:"tier"`
+}
+
+// Provider-agnostic tier labels for the routing panel. These are labels
+// for the existing destinations, not new providers:
+//   - "cheap": small local model, simple recognised tasks
+//   - "main": main local model, medium recognised tasks
+//   - "advisor": top tier, complex or ambiguous tasks (currently agy)
+const (
+	routeTierCheap   = "cheap"
+	routeTierMain    = "main"
+	routeTierAdvisor = "advisor"
+)
+
+// lowConfidenceThreshold is the deterministic fork-layer gate: a
+// decision below this score is a split that, in the proposed design,
+// would escalate to a model instead of being resolved in code.
+// This function only reports the gate; routePrompt does not act on it yet.
+const lowConfidenceThreshold = 0.70
+
+func isLowConfidence(d routeDecision) bool {
+	return d.Confidence < lowConfidenceThreshold
 }
 
 type routeRequest struct {
@@ -64,7 +94,7 @@ func classifyPrompt(prompt string) routeDecision {
 	text := strings.ToLower(prompt)
 	for _, keyword := range []string{"security", "authenticate", "authentication", "authorization", "password", "credential", "architecture", "database migration", "production incident", "deploy"} {
 		if strings.Contains(text, keyword) {
-			return routeDecision{Complexity: "complex", Destination: "agy", Reason: "sensitive or architecture keyword: " + keyword}
+			return routeDecision{Complexity: "complex", Destination: "agy", Reason: "sensitive or architecture keyword: " + keyword, Confidence: 0.90, Tier: routeTierAdvisor}
 		}
 	}
 	for _, rule := range []struct {
@@ -79,11 +109,17 @@ func classifyPrompt(prompt string) routeDecision {
 	} {
 		for _, keyword := range rule.keywords {
 			if strings.Contains(text, keyword) {
-				return routeDecision{Complexity: rule.complexity, Destination: "local", TaskType: rule.task, Reason: "recognized " + rule.task + " request"}
+				confidence := 0.85
+				tier := routeTierMain
+				if rule.complexity == "simple" {
+					confidence = 0.95
+					tier = routeTierCheap
+				}
+				return routeDecision{Complexity: rule.complexity, Destination: "local", TaskType: rule.task, Reason: "recognized " + rule.task + " request", Confidence: confidence, Tier: tier}
 			}
 		}
 	}
-	return routeDecision{Complexity: "complex", Destination: "agy", Reason: "ambiguous requests use the interactive frontier agent"}
+	return routeDecision{Complexity: "complex", Destination: "agy", Reason: "ambiguous requests use the interactive frontier agent", Confidence: 0.50, Tier: routeTierAdvisor}
 }
 
 var runLocalRoute = defaultLocalRoute
