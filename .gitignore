@@ -18,3 +18,4 @@ tools/tui/tui
 .DS_Store
 Thumbs.db
 tools/automation/setup-discord.mjs
+.claude/settings.local.json
