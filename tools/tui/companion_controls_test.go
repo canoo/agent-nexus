@@ -32,10 +32,13 @@ func TestCompanionControlsBinaryLifecycle(t *testing.T) {
 	// Actual executable uses its pinned runtime even when node is absent from PATH.
 	t.Setenv("HOME", home)
 	payload := filepath.Join(t.TempDir(), "relocated host")
-	stage := exec.Command(node, "--input-type=module", "-e", "import {stageNativeHostPackage} from './apps/companion-native-host/lib/package.mjs';stageNativeHostPackage({outputDir:process.argv[1],version:'0.3.0-dev.3'});", payload)
-	stage.Dir = root
-	if output, err := stage.CombinedOutput(); err != nil {
-		t.Fatalf("stage: %v %s", err, output)
+	// The app code moved to nexus-app, so there is no native-host package to
+	// stage anymore. The CLI-owned tools/mcp tree is everything this test's
+	// payload needs: the CLI shells out to tools/mcp/companion-data.mjs and
+	// tools/mcp/companion-controls.mjs, and lib/observability-store.mjs
+	// resolves its migrations from ../migrations.
+	if err := stageCompanionPayload(root, payload); err != nil {
+		t.Fatalf("stage: %v", err)
 	}
 	t.Setenv("NEXUS_REPO", payload)
 	t.Setenv("NEXUS_COMPANION_NODE", node)
@@ -109,6 +112,15 @@ func TestCompanionControlsBinaryLifecycle(t *testing.T) {
 	t.Setenv("NEXUS_COMPANION_NODE", "/missing/runtime")
 	run(1, "status", "--json")
 }
+
+// stageCompanionPayload copies the CLI-owned tools/mcp tree into dst,
+// preserving the relative layout the CLI shells out to
+// (<NEXUS_REPO>/tools/mcp/companion-data.mjs and companion-controls.mjs,
+// with lib/observability-store.mjs resolving migrations from ../migrations).
+func stageCompanionPayload(root, dst string) error {
+	return os.CopyFS(filepath.Join(dst, "tools", "mcp"), os.DirFS(filepath.Join(root, "tools", "mcp")))
+}
+
 func TestCompanionControlsRejectUnsafeHelperReplies(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "tools", "mcp")

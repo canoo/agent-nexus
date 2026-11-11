@@ -5,7 +5,6 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
 import {createObservabilityStore} from '../lib/observability-store.mjs';
-import {startCompanionRetentionMaintenance} from '../../../apps/companion-native-host/lib/host.mjs';
 const NOW=Date.parse('2026-10-07T12:00:00.345Z');
 function fixture(t) {
  const dir=mkdtempSync(join(tmpdir(),'nexus-retention-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
@@ -62,9 +61,4 @@ test('prune/clear preserve tasks, sessions, receipts, metadata, policy and conse
  db(databasePath,c=>{enable(c);seed(c,'expired','2026-09-01T00:00:00Z');seed(c,'recent',new Date(NOW).toISOString());});
  const snapshot=()=>db(databasePath,c=>Object.fromEntries(tables.map(table=>[table,JSON.stringify(c.prepare(`SELECT * FROM ${table}`).all())]))),before=snapshot();
  assert.equal(store.pruneToolActivity().deleted,1);assert.equal(store.clearToolActivity().deleted,1);assert.deepEqual(snapshot(),before);
-});
-test('host maintenance is immediate, periodic, silent and does not keep process alive',()=>{
- let runs=0,tick,unreferenced=false,cancelled=false;const timer={unref(){unreferenced=true;}};
- const stop=startCompanionRetentionMaintenance({pruneToolActivity(){runs++;throw new Error('private');}},{schedule(callback,interval){assert.equal(interval,1800000);tick=callback;return timer;},cancel(value){assert.equal(value,timer);cancelled=true;}});
- assert.equal(runs,1);tick();assert.equal(runs,2);assert.equal(unreferenced,true);stop();assert.equal(cancelled,true);assert.doesNotThrow(()=>startCompanionRetentionMaintenance({})());
 });
