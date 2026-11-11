@@ -1,6 +1,8 @@
 # NEXUS core 0.3.1 — routing, tiered execution, and TUI routing panel
 
-Status: draft PR #124 only, not merged to main.
+Status: draft PR #124 only, not merged to main. Routing config port below is on a separate branch, feat/nexus-routing-99-12, as a new draft PR, not merged.
+
+Note (Nov 10, after #126 merged): main now already contains the memory vault files from step 2 above (memory_store.go, memory_cli.go, tests including memory_tui_test.go) via PR #126. The #124 memory port is therefore redundant on the new main; what remains of #124 is the routing display work (step 1 + step 3).
 
 Implemented in this branch, in order:
 1. Confidence + tier on the existing deterministic classifier, display-only
@@ -52,3 +54,19 @@ Milestone proposal (not applied):
   proposed title "v0.3.1 — Core: Routing, MCPs, Token and Memory".
   Renaming #8 would mislabel its 15 sync issues; keeping it is
   the cleaner trade-off, for Emi to decide in one line.
+
+4. Routing config + execution hardening, ported minimally from
+   feat/nexus-core-pivot (branch feat/nexus-routing-99-12, #99/#12):
+   `tools/tui/router_config.go` (configurable NEXUS_ROUTE_TIMEOUT,
+   NEXUS_ROUTE_RETRIES, NEXUS_ROUTE_*_KEYWORDS via .env/env, sensitive
+   keywords always route to agy, Ollama health preflight, 30s
+   cooldown after a local failure with a safe .nexus/route-failure
+   state file), `router_process_unix.go` / `router_process_other.go`
+   (process-group kill on timeout), and `routePromptContext` with
+   retries + backoff, per-attempt timeout, interrupt handling, and
+   output buffering so a failed local run leaks no provider output.
+   Unknown `--` route options are now rejected. Advisor escalation
+   is STILL not implemented: isLowConfidence remains display-only.
+   Verified live on Saturn: dry-run JSON shows confidence/tier,
+   and a real local route produced "fix(login): fix login bug" via
+   qwen2.5-coder:1.5b in ~10.5s.
