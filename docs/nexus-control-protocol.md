@@ -31,6 +31,7 @@ may take minutes, so a desktop should keep them off its UI thread.
 | `tasks.list` | none | Same latest-50-row SQLite mapping through a read-only connection |
 | `usage.get` | none | Native task metrics and optional Tokscale aggregates, kept separate; no raw session identifiers |
 | `activity.list` | none | Existing allowlisted read-only tool/surface/time view, at most 50 rows |
+| `activity.record` | fixed activity envelope (same fields as `normalizeToolActivityEvent`) | Native Go writer: consent-gated SQLite insert into the shared observability store, no node runtime or repo checkout |
 | `companion.command` | `args`: existing companion CLI arguments including `--json` | Privacy/data helpers, explicit policy acknowledgement and clear/disable confirmation |
 | `memory.command` | `args`: existing memory CLI args; optional `input` for stdin content | Project list/init, list/read/search, create/import and fixed component validation |
 | `memory.delete` | `project`, `name`; `confirm:true` | Same TUI delete helper and component checks |
@@ -46,6 +47,8 @@ Confirmation is a top-level request field, not a parameter. For example:
 ```json
 {"schemaVersion":1,"operation":"config.set","confirm":true,"params":{"values":{"NEXUS_LOCAL_AI":"false"}}}
 ```
+
+`activity.record` is the ingestion half of the companion contract: the native host sends the same fixed envelope it used to pass to the vendored store's `recordToolActivity`, and the CLI validates it with the same allowlists, checks collection and the adapter/tool grant in one immediate transaction, and inserts the span. It fails closed with the store's fixed codes (`companion_collection_disabled`, `companion_tool_consent_missing`, `companion_activity_crosses_boundary`, `companion_activity_future`, `companion_activity_expired`, `companion_retention_disabled`, `companion_activity_boundary_unavailable`, `companion_store_unavailable`) so the host can map them to its fixed acknowledgement. Unlike `companion.command`, it needs only the installed `nexus` binary and the local store: it applies the companion migrations (004/005) idempotently when absent and never shells out to repo helpers.
 
 `memory.command` intentionally exposes the existing local file-import command;
 content is read or written only through an explicit memory request. It is not an

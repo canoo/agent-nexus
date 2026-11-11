@@ -8,6 +8,8 @@ All notable changes to NEXUS are documented here. Releases use
 
 ### Added
 
+- Control-protocol v1 `activity.record` operation: the native host can record a consented Companion activity span through `nexus control --json` instead of a vendored copy of the observability store. Native Go writer with the same envelope, allowlists, consent/boundary/retention gates and fixed error codes as the JS store; applies companion migrations 004/005 idempotently and needs no node runtime or repo checkout.
+
 - Companion native preview archives include an allowlisted unpacked development
   extension, with build-version metadata and installation instructions. Permission
   policy is preserved; no browser-store publication or live support is claimed.

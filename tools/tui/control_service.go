@@ -37,7 +37,7 @@ var controlCapabilities = []controlCapability{
 	{"config.get", "Configure", false, false}, {"config.set", "Configure", true, true},
 	{"health.check", "Health Check", false, false},
 	{"tasks.list", "Task Log", false, false}, {"usage.get", "Usage & Cost Dashboard", false, false},
-	{"activity.list", "Companion Tool Activity", false, false}, {"companion.command", "Companion Tool Activity", true, false},
+	{"activity.list", "Companion Tool Activity", false, false}, {"activity.record", "Companion Tool Activity", true, false}, {"companion.command", "Companion Tool Activity", true, false},
 	{"update.check", "Update NEXUS", false, false}, {"update.apply", "Update NEXUS", true, true},
 	{"uninstall.run", "Uninstall NEXUS", true, true},
 	{"memory.command", "Project Memory", true, false}, {"memory.delete", "Project Memory", true, true},
@@ -179,6 +179,23 @@ func executeControl(req controlRequest, nexusDir string) (any, error) {
 			rows = append(rows, map[string]any{"toolId": e.toolID, "surface": e.surface, "startedAt": e.startedAt, "endedAt": e.endedAt})
 		}
 		return map[string]any{"state": state, "entries": rows}, nil
+	case "activity.record":
+		// Flat params: the event envelope itself, identical to the JS
+		// normalizeToolActivityEvent input. The writer is native Go, so a
+		// bare installed binary records without node or a repo checkout.
+		var event companionActivityEvent
+		if err := strictControlParams(req.Params, &event); err != nil {
+			return nil, controlFailure("control_params_invalid")
+		}
+		normalized, err := validateCompanionActivityEvent(event, req.Params)
+		if err != nil {
+			return nil, controlFailure("control_params_invalid")
+		}
+		id, err := recordCompanionActivity(normalized)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"recorded": true, "id": id}, nil
 	case "companion.command":
 		var p struct {
 			Args []string `json:"args"`
@@ -346,7 +363,8 @@ func runControlCLI(args []string, nexusDir string, in io.Reader, out io.Writer) 
 	if err != nil {
 		code := err.Error()
 		switch code {
-		case "control_protocol_unsupported", "control_operation_unknown", "control_confirmation_required", "control_params_invalid", "control_cloud_acknowledgement_required":
+		case "control_protocol_unsupported", "control_operation_unknown", "control_confirmation_required", "control_params_invalid", "control_cloud_acknowledgement_required",
+			"companion_collection_disabled", "companion_tool_consent_missing", "companion_activity_crosses_boundary", "companion_activity_future", "companion_activity_expired", "companion_retention_disabled", "companion_activity_boundary_unavailable", "companion_store_unavailable":
 		default:
 			code = "control_operation_failed"
 		}
