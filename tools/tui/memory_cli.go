@@ -13,6 +13,8 @@ import (
 const memoryUsage = `Usage: nexus memory list
        nexus memory show <project> [<name>]
        nexus memory save <project> --title "..." [--body "..." | --file <path>] [--tags a,b]
+       nexus memory decision <project> --what "..." --why "..." [--ruled-out "a, b"]
+       nexus memory decisions <project> [--limit N]
        nexus memory search <query>
        nexus memory init <project>`
 
@@ -122,6 +124,54 @@ func runMemoryCLI(args []string, root string, in io.Reader, out, stderr io.Write
 			path, err = saveMemory(root, args[1], *title, content, tagList, time.Now())
 			if err == nil {
 				fmt.Fprintln(out, path)
+			}
+		}
+	case "decision":
+		if len(args) < 2 || !validMemoryComponent(args[1]) {
+			return usage("")
+		}
+		flags := flag.NewFlagSet("memory decision", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		what := flags.String("what", "", "Decision taken")
+		why := flags.String("why", "", "Rationale for the decision")
+		ruledOut := flags.String("ruled-out", "", "Comma-separated rejected alternatives")
+		if flags.Parse(args[2:]) != nil {
+			return usage("")
+		}
+		if flags.NArg() != 0 || strings.TrimSpace(*what) == "" || strings.TrimSpace(*why) == "" {
+			return usage("--what and --why are required; unexpected positional arguments are not accepted")
+		}
+		var ruled []string
+		for _, r := range strings.Split(*ruledOut, ",") {
+			if r = strings.TrimSpace(r); r != "" {
+				ruled = append(ruled, r)
+			}
+		}
+		var path string
+		path, err = saveDecision(root, args[1], *what, *why, ruled, time.Now())
+		if err == nil {
+			fmt.Fprintln(out, path)
+		}
+	case "decisions":
+		if len(args) < 2 || !validMemoryComponent(args[1]) {
+			return usage("")
+		}
+		flags := flag.NewFlagSet("memory decisions", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		limit := flags.Int("limit", 10, "Maximum decisions to show (0 shows all)")
+		if flags.Parse(args[2:]) != nil {
+			return usage("")
+		}
+		if flags.NArg() != 0 || *limit < 0 {
+			return usage("unexpected positional arguments are not accepted; --limit must be >= 0")
+		}
+		var decisions []memoryEntry
+		decisions, err = listDecisions(root, args[1], *limit)
+		if err == nil {
+			if len(decisions) == 0 {
+				fmt.Fprintln(out, "No decisions logged yet. Run nexus memory decision "+args[1]+" --what \"...\" --why \"...\".")
+			} else {
+				_, err = io.WriteString(out, formatDecisions(decisions))
 			}
 		}
 	case "search":

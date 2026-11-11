@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -20,6 +21,7 @@ type memoryProject struct {
 type memoryEntry struct {
 	Filename, Title, Date, Preview, Body, Content string
 	Modified                                      time.Time
+	Tags                                          []string
 }
 type memoryMatch struct{ Project, Filename, Line string }
 type memoryMetadata struct {
@@ -131,6 +133,7 @@ func parseMemory(filename, content string) memoryEntry {
 				if yaml.Unmarshal([]byte(strings.Join(lines[1:i], "\n")), &meta) == nil {
 					e.Title = meta.Title
 					e.Date = meta.Date
+					e.Tags = meta.Tags
 					e.Body = strings.Join(lines[i+1:], "\n")
 				}
 				break
@@ -234,6 +237,87 @@ func saveMemory(root, project, title, body string, tags []string, now time.Time)
 	}
 	return "", errors.New("too many filename collisions")
 }
+
+// saveDecision writes one architectural decision (issue #87) through the
+// memory store: title is the decision ("what"), body is the rationale
+// ("why") plus an optional "Ruled out: ..." line naming rejected
+// alternatives. The entry is tagged "decision" so decisions can be listed
+// separately from free-form notes.
+func saveDecision(root, project, what, why string, ruledOut []string, now time.Time) (string, error) {
+	if strings.TrimSpace(what) == "" {
+		return "", errors.New("decision title (what) is required")
+	}
+	if strings.TrimSpace(why) == "" {
+		return "", errors.New("decision rationale (why) is required")
+	}
+	body := strings.TrimSpace(why)
+	var ruled []string
+	for _, r := range ruledOut {
+		if r = strings.TrimSpace(r); r != "" {
+			ruled = append(ruled, r)
+		}
+	}
+	if len(ruled) > 0 {
+		body += "\n\nRuled out: " + strings.Join(ruled, "; ") + "."
+	}
+	return saveMemory(root, project, what, body, []string{"decision"}, now)
+}
+
+func isDecision(e memoryEntry) bool {
+	for _, t := range e.Tags {
+		if t == "decision" {
+			return true
+		}
+	}
+	return false
+}
+
+// listDecisions returns decision entries newest first. limit <= 0 means all.
+func listDecisions(root, project string, limit int) ([]memoryEntry, error) {
+	entries, err := listMemories(root, project)
+	if err != nil {
+		return nil, err
+	}
+	var decisions []memoryEntry
+	for _, e := range entries {
+		if isDecision(e) {
+			decisions = append(decisions, e)
+		}
+	}
+	sort.Slice(decisions, func(i, j int) bool {
+		if !decisions[i].Modified.Equal(decisions[j].Modified) {
+			return decisions[i].Modified.After(decisions[j].Modified)
+		}
+		return decisions[i].Filename > decisions[j].Filename
+	})
+	if limit > 0 && len(decisions) > limit {
+		decisions = decisions[:limit]
+	}
+	return decisions, nil
+}
+
+// formatDecisions renders decisions in the issue #87 read-back format:
+//
+//	## 2026-04-28 — JWT over sessions
+//	Chose JWT for auth because the API needs to be stateless for horizontal scaling.
+//	Ruled out: cookie sessions (stateful), OAuth (too heavy for internal API).
+func formatDecisions(entries []memoryEntry) string {
+	var b strings.Builder
+	for i, e := range entries {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		date := e.Date
+		if t, err := time.Parse(time.RFC3339, e.Date); err == nil {
+			date = t.Format("2006-01-02")
+		} else if len(e.Date) >= 10 {
+			date = e.Date[:10]
+		}
+		fmt.Fprintf(&b, "## %s — %s\n%s\n", date, e.Title, strings.TrimSpace(e.Body))
+	}
+	return b.String()
+}
+
 func searchMemories(root, query string) ([]memoryMatch, error) {
 	projects, err := listProjects(root)
 	if err != nil {

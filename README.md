@@ -120,7 +120,7 @@ An interactive terminal UI handles installation, configuration, health checks, u
 
 The v0.3.0 development branch adds project memory for user-authored Markdown notes (decisions, preferences, blockers) stored locally at `~/.config/nexus/agent-memory/<project>/`.
 
-Memory is explicit user-authored context, separate from consent-gated Desktop Companion activity; no automatic decision capture, synchronization, or GUI memory view exists yet.
+Memory is explicit user-authored context, separate from consent-gated Desktop Companion activity. Architectural decisions are logged explicitly — `nexus memory decision` on the CLI or `nexus_log_decision` over MCP — and read back with `nexus memory decisions` (or `nexus_get_decisions` over MCP). There is no automatic capture, synchronization, or GUI memory view yet, and including recent decisions in `nexus_get_context` is still pending (#84).
 
 ```bash
 nexus memory init my-project
@@ -130,6 +130,8 @@ nexus memory show my-project
 # Use a filename printed by the preceding command:
 nexus memory show my-project "filename-from-project-list.md"
 nexus memory search "decisions"
+nexus memory decision my-project --what "JWT over sessions" --why "The API must stay stateless for horizontal scaling." --ruled-out "cookie sessions, OAuth"
+nexus memory decisions my-project
 ```
 
 You can also browse and manage project memories interactively via the **Project Memory** screen in the TUI (`nexus`).
